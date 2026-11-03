@@ -4,7 +4,7 @@ import { Modal } from '../../components/ui/Modal';
 import { InternalLink } from '../../components/ui/InternalLink';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { CalculationEvidence } from './OperationsCalculationDetails';
-import { readCalculationDetails, approvalEvidenceError, operationDate, operationMoney as money } from './operationsDetails';
+import { readCalculationDetails, approvalEvidenceError, operationDate, operationInstant, calculationColumns, operationMoney as money } from './operationsDetails';
 
 import { OperationsBatch } from './OperationsBatch';
 
@@ -14,13 +14,16 @@ function ApprovalDialog({ embedded, titulo, children, rodape, focusRef, ...props
   return embedded ? <section className="operacoes-conferencia-detalhe" aria-label={titulo}><h3 ref={focusRef} tabIndex={-1}>{titulo}</h3>{children}<div className="operacoes-acoes operacoes-destinos">{rodape}</div></section> : <Modal titulo={titulo} {...props} rodape={rodape}>{children}</Modal>;
 }
 
-export function OperationsApproval({ api, rows, competencia, onChanged, onBusyChange, embedded = false }) {
+export function OperationsApproval({ api, rows, competencia, onChanged, onBusyChange, embedded = false, stage = null }) {
   const [data, setData] = useState({}), [error, setError] = useState(''), [mutationBusy, setBusy] = useState(false);
   const [routineBusy, setRoutineBusy] = useState(false), [routineDetail, setRoutineDetail] = useState(false);
   const busy = mutationBusy || routineBusy;
   const [selected, setSelected] = useState(null), [schedule, setSchedule] = useState(''), [batch, setBatch] = useState(null);
   const [version, setVersion] = useState(0), [message, setMessage] = useState('');
   const [checked, setChecked] = useState({});
+  const [stageFilter,setStageFilter] = useState('all');
+  const [query, setQuery] = useState(''), [confirmPreview, setConfirmPreview] = useState(null);
+  const [confirmation, setConfirmation] = useState({});
   const context = useRef({ api, competencia });
   if (context.current.api !== api || context.current.competencia !== competencia) context.current = { api, competencia };
   useEffect(() => {
@@ -29,6 +32,8 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   }, [api, competencia]);
   const lock = useRef(false);
   const detailRef = useRef(null), triggerRefs = useRef(new Map()), batchRef = useRef(null), refreshRef = useRef(null);
+  const previewHeading=useRef(null);
+  useEffect(()=>{if(confirmPreview)previewHeading.current?.focus();},[confirmPreview]);
   const returnTo = useRef(null), wasDetail = useRef(false);
   const detailOpen = Boolean(batch || (selected && data[selected] && rows.some(r => r.company.companyId === selected)));
   useEffect(() => {
@@ -48,7 +53,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   const ids = rows.map(r => r.company.companyId).sort().join('|');
   useEffect(() => {
     let active = true;
-    setData({}); setChecked({}); setBatch(null); setSelected(null); setConfirmCompetencia(''); setError(''); setReading(true);
+    setData({}); setConfirmation({}); setConfirmPreview(null); setChecked({}); setBatch(null); setSelected(null); setConfirmCompetencia(''); setError(''); setReading(true);
     if (!api?.getCompanyOperation) return;
     // Leituras exclusivamente locais, sequenciais para limitar carga na carteira.
     (async () => {
@@ -60,13 +65,18 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
           const details = await readCalculationDetails(api, id, competencia);
           if (!active) return;
           setData(old => ({ ...old, [id]: { ...value, details } }));
+          if (stage && api.getOperationsTransmissionDocuments) {
+            const proof = await api.getOperationsTransmissionDocuments(id, competencia).catch(() => null);
+            if (!active) return;
+            if (proof?.companyId === id && proof.competencia === competencia) setConfirmation(old => ({ ...old, [id]: proof.confirmation?.fingerprint === value.fingerprint ? proof.confirmation : null }));
+          }
         } catch { if (active) setError('Algumas empresas não puderam ser conferidas. Atualize antes de liberar.'); }
         if (!active) return;
       }
       if (active) setReading(false);
     })();
     return () => { active = false; };
-  }, [api, ids, competencia, version]);
+  }, [api, ids, competencia, version, stage]);
   if (!api?.getCompanyOperation) return <p role="alert">Conferência indisponível neste ambiente. Abra a apuração da empresa para conferir os dados.</p>;
   const sorted = [...rows].sort((a, b) => (data[a.company.companyId]?.schedule || '9999').localeCompare(data[b.company.companyId]?.schedule || '9999'));
   const row = rows.find(r => r.company.companyId === selected);
@@ -112,11 +122,30 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
       setData({});
     } finally { lock.current = false; setBusy(false); if (context.current === origin) { setBatch(null); setSelected(null); setChecked({}); setConfirmCompetencia(''); } }
   }
+  const confirmable = Object.values(data).filter(v => !['CONFIRMED','RELEASED','EXECUTED'].includes(v.status) && !approvalEvidenceError(v) && !v.blocked && !v.execution && writable.current.has(v.companyId));
+  const stageEligible = stage === 'calculado' ? confirmable : confirmed;
+  const stageRows = sorted.filter(r => stage !== 'confirmado' || ['CONFIRMED','RELEASED','EXECUTED','ATTENTION','INVALIDATED'].includes(data[r.company.companyId]?.status))
+    .filter(r => stageFilter === 'all' || (stageFilter === 'done' ? !!data[r.company.companyId]?.calculation : stageFilter === 'pending' ? !!data[r.company.companyId] && !data[r.company.companyId].calculation : stageFilter === 'error' ? !!data[r.company.companyId]?.blocked || !!data[r.company.companyId]?.execution && data[r.company.companyId].execution.status !== 'DONE' : !data[r.company.companyId]))
+    .filter(r => `${r.company.razao || r.company.razaoSocial || ''} ${r.company.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const visibleEligible = stageEligible.filter(d => stageRows.some(r => r.company.companyId === d.companyId));
+  const stageChosen = stageEligible.filter(d => checked[d.companyId] === d.revision);
   return <section aria-label="Conferência e programação de Operações">
-    {api?.previewOperationsBatch && <OperationsBatch key={competencia} api={api} competencia={competencia} disabled={mutationBusy || Boolean(selected || batch)} onChanged={onChanged} embedded={embedded} onBusyChange={setRoutineBusy} onDetailChange={setRoutineDetail} />}
-    {!(embedded && ((row && current) || batch || routineDetail)) && <><div className="operacoes-cabecalho"><h3>Apurações da competência</h3><div className="operacoes-acoes"><Button ref={refreshRef} variant="secondary" disabled={busy || reading} onClick={() => setVersion(v => v + 1)}>Atualizar conferências</Button>{writable.current.size > 0 && <><Button variant="secondary" disabled={busy || reading || !confirmed.length || !!error} onClick={() => setChecked(Object.fromEntries(confirmed.map(v => [v.companyId, v.revision])))}>Selecionar elegíveis ({confirmed.length})</Button><Button ref={batchRef} variant="secondary" disabled={busy || reading || !chosen.length || !!error} onClick={() => { returnTo.current = 'batch'; setBatch(chosen.map(v => ({ ...v }))); }}>Transmitir selecionadas ({chosen.length})</Button></>}</div></div>
+    {stage !== 'calculado' && api?.previewOperationsBatch && <OperationsBatch key={competencia} api={api} competencia={competencia} disabled={mutationBusy || Boolean(selected || batch)} onChanged={onChanged} embedded={embedded} onBusyChange={setRoutineBusy} onDetailChange={setRoutineDetail} />}
+    {!stage && !(embedded && ((row && current) || batch || routineDetail)) && <><div className="operacoes-cabecalho"><h3>Apurações da competência</h3><div className="operacoes-acoes"><Button ref={refreshRef} variant="secondary" disabled={busy || reading} onClick={() => setVersion(v => v + 1)}>Atualizar conferências</Button>{writable.current.size > 0 && <><Button variant="secondary" disabled={busy || reading || !confirmed.length || !!error} onClick={() => setChecked(Object.fromEntries(confirmed.map(v => [v.companyId, v.revision])))}>Selecionar elegíveis ({confirmed.length})</Button><Button ref={batchRef} variant="secondary" disabled={busy || reading || !chosen.length || !!error} onClick={() => { returnTo.current = 'batch'; setBatch(chosen.map(v => ({ ...v }))); }}>Transmitir selecionadas ({chosen.length})</Button></>}</div></div>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     <div className="operacoes-tabela-scroll" role="region" aria-label="Conferência das empresas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao">Selecionar</th><th>Empresa</th><th>Cálculo salvo</th><th>Faturamento salvo</th><th>Anexo do formulário</th><th>Conferência e pendências</th><th>Ação</th></tr></thead><tbody>{sorted.map(({ company }) => { const d = data[company.companyId], name = company.razao || company.razaoSocial || company.cnpj; return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} disabled={busy || reading || !confirmed.some(v => v.companyId === company.companyId)} checked={Boolean(d && checked[company.companyId] === d.revision)} onChange={e => setChecked(old => ({ ...old, [company.companyId]: e.target.checked ? d.revision : null }))} /></label></td><th scope="row">{name}</th><td>{money(d?.calculation?.dasValor)}</td><td>Interno: {money(d?.details?.snapshot?.value?.receitaInterna)}<br />Externo: {money(d?.details?.snapshot?.value?.receitaExterna)}</td><td>{d?.details?.snapshot?.value?.atividadesEscolhidas?.map(a => a.anexoImplicito ?? 'Não registrado').join(' · ') || 'Não disponível no snapshot'}</td><td>{d ? `${d.schedule ? operationDate(d.schedule) + ' · ' + d.schedule.slice(11,16) : 'Sem programação'} · ${labels[d.status] || 'A verificar'}${d.pending.length ? ` · ${d.pending.length} pendência(s) do período` : ''}` : reading ? 'Conferindo…' : 'Conferência indisponível'}{d?.blocked && <p>{d.blocked}</p>}{d && approvalEvidenceError(d, { historical: true }) && <p role="alert">{approvalEvidenceError(d, { historical: true })}. Atualize a conferência ou abra a empresa para verificar.</p>}<p>Auditoria: {d?.details?.auditoria?.value ? `${d.details.auditoria.value.totalAchados ?? 'A verificar'} achados` : 'Indisponível; não equivale a aprovação'}</p></td><td><Button ref={el => { if (el) triggerRefs.current.set(company.companyId, el); else triggerRefs.current.delete(company.companyId); }} size="sm" variant="secondary" disabled={!d || busy || reading} onClick={() => { returnTo.current = company.companyId; setSelected(company.companyId); setSchedule(d.schedule || ''); }}>Conferir</Button></td></tr>; })}</tbody></table></div></>}
+    {stage && !row && !batch && !routineDetail && <>
+      <p>Competência {competencia} · {stage === 'calculado' ? 'Conferir registra a revisão, sem transmitir.' : 'Fila não comprova transmissão. Liberar rotina inclui todas as confirmadas elegíveis, independentemente da seleção manual.'}</p>
+      <label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
+      {stage==='calculado'&&<label className="operacoes-rotinas-filtros">Situação da etapa<select aria-label="Situação da etapa" disabled={busy} value={stageFilter} onChange={e=>setStageFilter(e.target.value)}><option value="all">Todas as empresas deste conjunto</option><option value="done">Calculadas</option><option value="pending">Não calculadas</option><option value="error">Atenção ou bloqueio</option><option value="unknown">A verificar</option></select></label>}
+      {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}{reading && <p role="status">Lendo cálculos e evidências…</p>}
+      <div className="operacoes-tabela-scroll" role="region" aria-label={stage === 'calculado' ? 'Cálculos para conferência' : 'Apurações confirmadas'} tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao"><input type="checkbox" aria-label="Selecionar elegíveis exibidas" disabled={busy||reading||!visibleEligible.length} checked={visibleEligible.length>0&&visibleEligible.every(d=>checked[d.companyId]===d.revision)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,...Object.fromEntries(visibleEligible.map(d=>[d.companyId,e.target.checked?d.revision:null]))}));}}/></th><th>Empresa</th><th>{stage==='calculado'?'Receita calculada':'Receita confirmada'}</th><th>Impostos</th>{stage==='calculado'?<><th>Avisos</th><th>Erros</th></>:<th>Confirmação</th>}<th>Situação / ações</th></tr></thead><tbody>{stageRows.map(({company})=>{
+        const d=data[company.companyId], c=calculationColumns(d), name=company.razao||company.razaoSocial||company.cnpj, proof=confirmation[company.companyId];
+        return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} checked={!!d&&checked[company.companyId]===d.revision} disabled={busy||reading||!stageEligible.some(v=>v.companyId===company.companyId)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,[company.companyId]:e.target.checked?d.revision:null}));}}/></label></td><th scope="row">{name}</th><td>{money(c.receita)}</td><td>{c.impostos.length?c.impostos.map(t=><div key={t.nome}>{t.nome}<strong className="operacoes-valor">{money(t.valor)}</strong></div>):'Impostos indisponíveis'}</td>{stage==='calculado'?<><td>{c.warnings.join(' · ')||'Nenhum aviso identificado nesta leitura'}</td><td>{c.errors.join(' · ')||'Nenhum erro impeditivo identificado'}</td></>:<td>{proof?.by || 'Autor não disponível'}<small>{operationInstant(proof?.at)}</small></td>}<td>{d?labels[d.status]||'A verificar':reading?'Lendo…':'Leitura indisponível'}{stage!=='calculado'&&c.errors.length>0&&<p>{c.errors.join(' · ')}</p>}<Button ref={el=>{if(el)triggerRefs.current.set(company.companyId,el);else triggerRefs.current.delete(company.companyId);}} size="sm" variant="secondary" disabled={!d||busy||reading} onClick={()=>{returnTo.current=company.companyId;setSelected(company.companyId);setSchedule(d.schedule||'');}}>Conferir detalhes</Button></td></tr>;
+      })}</tbody></table></div>{!stageRows.length&&!reading&&<p>Nenhuma empresa nesta etapa ou busca.</p>}
+      {confirmPreview && <div className="operacoes-previa"><h3 ref={previewHeading} tabIndex={-1}>Conferir liberação para transmissão</h3><p>Registrar conferência destas empresas na competência {competencia}, sem transmitir.</p><ul>{confirmPreview.map(d=><li key={d.companyId}>{rows.find(r=>r.company.companyId===d.companyId)?.company.razao||d.companyId}</li>)}</ul><Button disabled={busy||confirmPreview.some(d=>!confirmable.some(c=>c.companyId===d.companyId&&c.revision===d.revision))} onClick={()=>{const items=confirmPreview;setConfirmPreview(null);change(items,'confirm');}}>Confirmar cálculos selecionados</Button> <Button variant="secondary" disabled={busy} onClick={()=>{setConfirmPreview(null);batchRef.current?.focus();}}>Cancelar</Button></div>}
+      <div className="operacoes-stage-footer"><span>{stageChosen.length} selecionadas · {stageChosen.filter(d=>!stageRows.some(r=>r.company.companyId===d.companyId)).length} fora da busca</span><Button ref={refreshRef} variant="secondary" disabled={busy||reading} onClick={()=>setVersion(v=>v+1)}>Atualizar conferências</Button><Button ref={batchRef} disabled={busy||reading||!stageChosen.length||!!error||(stage==='confirmado'&&!api?.executeCompanyOperation)} onClick={()=>{returnTo.current='batch';if(stage==='calculado')setConfirmPreview(stageChosen.map(d=>({...d})));else setBatch(stageChosen.map(d=>({...d})));}}>{stage==='calculado'?'Liberar para transmissão':'Transmitir selecionadas'}</Button></div>
+    </>}
     {row && current && <ApprovalDialog focusRef={detailRef} embedded={embedded} className="operacoes-dialogo" titulo={`Conferir ${row.company.razao || row.company.razaoSocial || row.company.cnpj}`} ocupado={busy} aoFechar={() => !busy && setSelected(null)} rodape={<Button disabled={busy} variant="secondary" onClick={() => setSelected(null)}>{embedded ? 'Voltar' : 'Fechar'}</Button>}>
       <p>Competência {competencia} · {labels[current.status]}</p>
       <p>Imposto salvo: {money(current.calculation?.dasValor)}</p><CalculationEvidence details={current.details} />

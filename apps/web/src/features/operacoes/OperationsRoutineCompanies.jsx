@@ -74,11 +74,8 @@ export function OperationsRoutineCompanies({ api, companies = EMPTY_COMPANIES, c
     event.currentTarget.parentElement.children[next].focus();
   }
   return <section className="operacoes-rotinas-unico" aria-label="Rotinas">
-    <button type="button" className="operacoes-rotinas-card" aria-haspopup="dialog" onClick={() => { setGroup('errors'); setQuery(''); }}>
-      <span className="operacoes-cabecalho"><strong>Rotinas</strong><span className="operacoes-erro" aria-label="Consultas com erro">{consultaItems?.length ? `⚠ ${consultaItems.length}` : consultaItems ? '' : '—'}</span></span>
-      <span>Habilitadas / desabilitadas</span><strong>{unavailable ? '— / —' : `${count(true)} / ${count(false)}`}</strong>
-      {!unavailable && unknown.length > 0 && <small>{unknown.length} a verificar</small>}
-    </button>
+    <h3>Rotinas</h3><div className="operacoes-rotinas-contadores">{[['enabled','Habilitadas',unavailable ? null : count(true)],['disabled','Desabilitadas',unavailable ? null : count(false)],['errors','Com erro',consultaItems ? new Set(consultaItems.map(i => i.companyId)).size : null]].map(([key,label,total]) => <button type="button" className="operacoes-quadro" aria-haspopup="dialog" key={key} onClick={() => { setGroup(key); setQuery(''); }}><span>{label}</span><strong>{total ?? '—'}</strong></button>)}</div>
+    {!unavailable && unknown.length > 0 && <small>{unknown.length} a verificar</small>}
     <small>Seleção por empresa. Agenda global e pausa SERPRO permanecem independentes.</small>
     {pending && <p role="status">Carregando rotinas…</p>}
     {(error || companyError) && <p role="alert">{error || companyError} {retryButton}</p>}

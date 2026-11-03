@@ -1,6 +1,40 @@
-import { act, render, screen } from '@testing-library/react';
-import { OperationsCalculationDetails, OperationsTransmissionValues } from '../OperationsCalculationDetails';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { OperationsCalculationDetails, OperationsTransmissionValues, OperationsTransmissionTable } from '../OperationsCalculationDetails';
 const apiFor = () => ({getApuracaoSnapshot:jest.fn(async(id,competencia)=>({ok:true,snapshot:{portalClientId:id,competencia,estado:'transmitida',idempotencyKey:'calculo-1',dasRetornadoSerpro:74,transmitidoEm:'2026-10-20T12:00:00Z',numeroDeclaracao:'123',receitaInterna:1200,receitaExterna:0,dasSimuladoSerpro:72,atividadesEscolhidas:[{idAtividade:'a',anexoImplicito:'III',valorInterno:1200,valorExterno:0}]}})),getAuditoriaNotas:jest.fn(async()=>({auditoria:{competencia:'2026-10',totalAchados:1,foraDaConferencia:{total:2},perguntas:[{id:'x',titulo:'Divergência de nota',situacao:'NAO_CONFERIVEL',achados:[{}],naoAvaliadas:[],motivo:'Dados insuficientes'}]}})),getPgdasHistorico:jest.fn(async()=>({ok:true,competencia:'2026-10',versoes:[{numeroDeclaracao:'123',atual:true,dasTotal:73,origem:'CONSULTA_PGDAS'}]})),saveCompanyOperation:jest.fn(),executeCompanyOperation:jest.fn()});
+
+const transmissionRows = ['a', 'b'].map(id => ({ company: { companyId: id, razao: `Empresa ${id}` } }));
+const transmissionResponse = (companyId, competencia) => ({ ok: true, companyId, competencia, items: [{ companyId, competencia, releaseId: 'r', versionId: 'a'.repeat(64), calculoId: 'calc-historico', proofHash: 'b'.repeat(64), numeroDeclaracao: '123', receitaBruta: 1200, dasTotal: 72, documentos: { extrato: true, recibo: true } }], limitado: false });
+test('linked transmission table uses dedicated historical DTO and navigation does not rectify', async () => {
+ const api = { ...apiFor(), getOperationsTransmissionDocuments: jest.fn(async (id, period) => transmissionResponse(id, period)), downloadOperationsTransmissionDocuments: jest.fn() };
+ render(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={transmissionRows} competencia="2026-10" />);
+ await waitFor(() => expect(screen.getAllByText(/Declaração 123/)).toHaveLength(2));
+ expect(screen.getAllByText(/1.200,00/)).toHaveLength(2);
+ for (const link of screen.getAllByRole('link', { name: 'Retificar' })) expect(link.getAttribute('href')).toContain('competencia=2026-10');
+ expect(api.getApuracaoSnapshot).not.toHaveBeenCalled(); expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+ expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();
+});
+test('ZIP freezes exact selection including hidden company and requires explicit preview confirmation', async () => {
+ const api = { getOperationsTransmissionDocuments: jest.fn(async (id, period) => transmissionResponse(id, period)), downloadOperationsTransmissionDocuments: jest.fn(async () => { throw Error('Arquivo indisponível'); }) };
+ const view = render(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={transmissionRows} competencia="2026-10" />);
+ await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Selecionar extrato de Empresa a' })).toBeEnabled());
+ fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar extrato de Empresa a' }));
+ view.rerender(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={[transmissionRows[1]]} competencia="2026-10" />);
+ expect(screen.getByText(/1 empresas selecionadas · 1 fora/)).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button', { name: 'Baixar extratos selecionados (1)' }));
+ expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button', { name: 'Confirmar download' }));
+ await screen.findByText(/Download não confirmado/);
+ expect(api.downloadOperationsTransmissionDocuments).toHaveBeenCalledWith([{ companyId: 'a', competencia: '2026-10', releaseId: 'r', versionId: 'a'.repeat(64), tipo: 'extrato' }], true);
+});
+test('linked table rejects mismatched response and discards old period', async () => {
+ let finish;
+ const api = { getOperationsTransmissionDocuments: jest.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue({ ...transmissionResponse('a', '2026-10'), competencia: '2026-09' }) };
+ const view = render(<OperationsTransmissionTable api={api} rows={[transmissionRows[0]]} visibleRows={[transmissionRows[0]]} competencia="2026-10" />);
+ view.rerender(<OperationsTransmissionTable api={api} rows={[transmissionRows[1]]} visibleRows={[transmissionRows[1]]} competencia="2026-09" />);
+ await screen.findByText('Identidade ou revisão documental incompatível.');
+ await act(async () => finish(transmissionResponse('a', '2026-10')));
+ expect(screen.queryByText(/1.200,00/)).not.toBeInTheDocument(); expect(screen.getByRole('checkbox', { name: 'Selecionar extrato de Empresa b' })).toBeDisabled();
+});
 test('mostra faturamento/anexo congelados, auditoria e extratos independentes da revisão sem mutação',async()=>{
  const api=apiFor();render(<OperationsCalculationDetails api={api} companyId="a" competencia="2026-10"/>);await screen.findByText('III');expect(screen.getAllByText(/1.200,00/).length).toBeGreaterThan(0);expect(screen.getByText(/72,00/)).toBeInTheDocument();expect(screen.getByText(/73,00/)).toBeInTheDocument();expect(screen.getByText('Dados insuficientes')).toBeInTheDocument();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });

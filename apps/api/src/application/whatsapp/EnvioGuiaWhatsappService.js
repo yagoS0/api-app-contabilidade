@@ -362,7 +362,9 @@ export async function enviarGuiaPorWhatsapp({
   log = logPadrao,
   reenviar = false,
   automacao = null,
+  operationsGuard = null,
 }) {
+  if (operationsGuard) await operationsGuard.beforeDispatch({ guide, canal: 'WHATSAPP', destino: contato.telefoneE164 });
   if (automacao) await automacao.beforeDispatch({ stage: "prepare", guide, contato });
   try { await conferirParcelasParaEnvio([guide]); } catch (err) {
     return { ok: false, estado: "bloqueado", enviada: false, guideId: guide.id, motivo: err.code, mensagem: err.message, podeTentarDeNovo: false };
@@ -408,8 +410,10 @@ export async function enviarGuiaPorWhatsapp({
   const competenciaLabel = competenciaPorExtenso(guide.competencia);
 
   let aceitoWamid = null;
+  let operationsPdf = null;
   let vinculoReservado = null, conversaReservada = null;
   const conferirDestinatario = async () => {
+    if (operationsGuard) await operationsGuard.beforeDispatch({ guide, canal: 'WHATSAPP', destino: contato.telefoneE164, pdfBytes: operationsPdf });
     if (automacao) await automacao.beforeDispatch({ stage: "dispatch", guide, contato });
     await conferirParcelasParaEnvio([guide]);
     if (!identidadeWhatsappV2Ativa()) return;
@@ -449,6 +453,7 @@ export async function enviarGuiaPorWhatsapp({
     }
 
     const conteudoPdf = await carregarPdf(guide);
+    operationsPdf = conteudoPdf;
     if (!conteudoPdf?.length) {
       // ⚠ "Registro existe, arquivo não" é caso REAL neste projeto (o volume do Railway é efêmero).
       // Falha declarada, com o motivo que o contador consegue agir.
@@ -683,6 +688,7 @@ export async function enviarParaTodosOsDestinatarios({
   log,
   reenviar = false,
   destinatarios = null,
+  operationsGuard = null,
 }) {
   const lista = (destinatarios || linha?.destinatarios || []).filter((c) => String(c?.telefoneE164 || "").trim());
   // ⚠ Sem lista, o comportamento é o de antes: o contato único que a prévia escolheu. É o que
@@ -693,7 +699,7 @@ export async function enviarParaTodosOsDestinatarios({
   const resultados = [];
   for (const contato of alvos) {
     // eslint-disable-next-line no-await-in-loop
-    resultados.push(await enviarGuiaPorWhatsapp({ guide, sequencia, contato, canal, cliente, carregarPdf, log, reenviar }));
+    resultados.push(await enviarGuiaPorWhatsapp({ guide, sequencia, contato, canal, cliente, carregarPdf, log, reenviar, operationsGuard }));
   }
 
   return resumirDestinatarios(resultados);

@@ -1,5 +1,6 @@
+import { OperationsProcurationTable } from './OperationsProcurationTable';
 import { OperationsGuides } from './OperationsGuides';
-import { OperationsCalculationDetails, OperationsTransmissionValues } from './OperationsCalculationDetails';
+import { OperationsCalculationDetails, OperationsTransmissionTable } from './OperationsCalculationDetails';
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceNavigation } from '../../app/navigation/WorkspaceNavigation.shared';
 import { Button } from '../../components/ui/Button';
@@ -36,17 +37,10 @@ function Progress({ label, metric, unavailable, color, onClick, stage = false })
   </Tag>;
 }
 function Pizza({ title, groups, unavailable, onSelect }) {
-  const [expanded, setExpanded] = useState(false);
-  const trigger = useRef(null);
   const total = groups.reduce((n, g) => n + g.items.length, 0);
   let cursor = 0;
   const stops = groups.map(g => { const start = cursor; cursor += total ? g.items.length / total * 100 : 0; return `${g.color} ${start}% ${cursor}%`; });
-  return <div className="operacoes-pizza-tile">
-    <button ref={trigger} type="button" disabled={unavailable} aria-expanded={expanded} onClick={() => setExpanded(v => !v)} aria-label={`${title}: ${unavailable ? 'indisponível' : groups.map(g => `${g.label} ${g.items.length}`).join(', ')}`}>
-      <strong>{title}</strong><span className="operacoes-pizza" aria-hidden="true" style={{ background: unavailable || !total ? 'var(--border)' : `conic-gradient(${stops.join(',')})` }} />
-    </button>
-    <div className="operacoes-pizza-tooltip" data-expanded={expanded} aria-label={`Categorias de ${title}`}>{groups.map(g => <button type="button" disabled={unavailable} key={g.key} onClick={() => { trigger.current?.focus(); setExpanded(false); onSelect(g.key); }}>{g.label}: {unavailable ? '—' : g.items.length}</button>)}</div>
-  </div>;
+  return <section className="operacoes-pizza-tile" aria-label={title}><strong>{title}</strong><div className="operacoes-grafico-corpo"><span className="operacoes-pizza" aria-hidden="true" style={{ background: unavailable || !total ? 'var(--border)' : `conic-gradient(${stops.join(',')})` }} /><div className="operacoes-grafico-legenda">{groups.map(g => <button type="button" disabled={unavailable} key={g.key} onClick={() => onSelect(g.key)}><span style={{ background: g.color }} aria-hidden="true" />{g.label}<strong>{unavailable ? '—' : g.items.length}</strong></button>)}</div></div></section>;
 }
 export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, loading = false, error, onRefresh, onChangeCompetencia, acoesGuia = {} }) {
   const navigation = useWorkspaceNavigation();
@@ -89,7 +83,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
   const closePanel = () => { setCalculationRow(null); setPanel(null); saveFilter(null); };
   const [chart, setChart] = useState(null);
   const [selection, setSelection] = useState(null);
-  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [approvalOpen, setApprovalOpen] = useState(false), [approvalStage, setApprovalStage] = useState('confirmado');
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [preview, setPreview] = useState(false), [busy, setBusy] = useState(false), [result, setResult] = useState(null);
   const sending = useRef(false);
@@ -142,7 +136,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
           <button className="operacoes-titulo" aria-label="Apuração" onClick={() => show('apurar','Apuração','all')} disabled={unavailable}>Apuração</button>
           {[['calculado','Calculado'],['confirmado','Confirmado'],['transmitido','Transmitido']].map(([key,label]) => {
             const warnings = summary.items.filter(r => key === 'confirmado' ? r.operation?.status === 'INVALIDATED' : key === 'transmitido' && r.operation?.execution && r.operation.execution.status !== 'DONE');
-            return <div className="operacoes-status-com-aviso" key={key}><Progress label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable || (key === 'confirmado' && (evidence.loading || Boolean(evidence.error)))} onClick={() => { if (key === 'confirmado') { setApprovalRows(null); setApprovalOpen(true); } else show(key,label); }} />
+            return <div className="operacoes-status-com-aviso" key={key}><Progress label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable || (key === 'confirmado' && (evidence.loading || Boolean(evidence.error)))} onClick={() => { if (key === 'confirmado' || key === 'calculado' && api?.getCompanyOperation) { setApprovalStage(key); setApprovalRows(null); setApprovalOpen(true); } else show(key,label); }} />
               {key === 'calculado' ? <OperationsAlerts api={api} compact /> : !unavailable && warnings.length > 0 && <button type="button" className="operacoes-aviso-etapa operacoes-erro" aria-label={`Avisos de ${label}: ${warnings.length} empresas`} onClick={() => show(key,`Avisos de ${label}`,'warnings')}>⚠ {warnings.length}</button>}
             </div>;
           })}
@@ -161,22 +155,22 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
       </div>
       <OperationsRoutineCompanies api={api} companies={companies} competencia={competencia} loading={loading} error={error} onRefreshCompanies={refresh} />
     </div>
-    {panel?.competencia === competencia && !unavailable && !(manualUnavailable && ['guias','concluido','disponivel','enviado','pago'].includes(panel.key)) && <Modal titulo={panel.title} tamanho="lg" className="operacoes-dialogo" suspenso={Boolean(calculationRow)} aoFechar={closePanel}>
+    {panel?.competencia === competencia && !unavailable && !(manualUnavailable && ['guias','concluido','disponivel','enviado','pago'].includes(panel.key)) && <Modal titulo={panel.title} tamanho="lg" className="operacoes-dialogo" suspenso={Boolean(calculationRow)} ocupado={busy} aoFechar={() => !busy && closePanel()}>
       <p>Competência {competencia} · {panelRows.length} empresas {panel.mode === 'warnings' ? 'com avisos nesta etapa' : panel.mode === 'stage' ? 'nesta etapa' : panel.mode === 'missing' ? 'com etapa pendente ou a verificar' : 'elegíveis'}</p>
       <label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" value={query} onChange={e => { setQuery(e.target.value); setPage(0); }} /></label>
       {['calculado','transmitido','disponivel','enviado','pago'].includes(panel.key) && <label className="operacoes-rotinas-filtros">Situação da etapa<select aria-label="Situação da etapa" value={effectiveStageFilter} onChange={e => { setStageFilter(e.target.value); setPage(0); }}><option value="all">Todas as empresas deste conjunto</option><option value="done">{panel.key === 'calculado' ? 'Calculadas' : 'Com conclusão comprovada'}</option><option value="pending">{panel.key === 'calculado' ? 'Não calculadas' : 'Pendentes'}</option>{attentionFilterAvailable && <option value="error">Atenção ou bloqueio</option>}<option value="unknown">A verificar</option></select><span>{compactCalculationPanel ? 'Erros podem coexistir com a conclusão registrada.' : 'A barra conta empresas com conclusão comprovada, não documentos. Erros podem coexistir com outros estados.'}</span></label>}
-      {panel.key === 'transmitido' && <p>Simulação e extrato são fontes distintas. Correspondência com a revisão: a verificar.</p>}
-      {guidePanel ? <OperationsGuides key={`${competencia}:${panel.key}`} api={api} rows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} stage={panel.key} onManualInss={row => { closePanel(); setSelection({ group: 'revisoes', id: `${row.company.companyId}:inss-detalhe`, manualCompanyId: row.company.companyId, competencia }); setPreview(false); setResult(null); }} /> : <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas da etapa" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th>{compactCalculationPanel && <th className="operacoes-acao-curta">Ação</th>}{compactCalculationPanel ? <th>{panelNames[panel.key]}</th> : accountingPanel ? CHECKLIST_OPERACOES.map(([key,label]) => <th key={key}>{label}</th>) : <><th>Calculado</th><th>Confirmado</th><th>Transmitido</th></>}{panel.key === 'transmitido' && <><th>Cálculo salvo</th><th>Imposto do extrato salvo</th></>}{!compactCalculationPanel && <th>Evidências e ações</th>}</tr></thead><tbody>{filtered.slice(page * 30, page * 30 + 30).map(row => <tr key={row.company.companyId}>
+      {panel.key === 'transmitido' && <OperationsTransmissionTable key={competencia} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} />}
+      {panel.key === 'transmitido' ? null : guidePanel ? <OperationsGuides key={`${competencia}:${panel.key}`} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} stage={panel.key} onBusyChange={setBusy} onManualInss={row => { closePanel(); setSelection({ group: 'revisoes', id: `${row.company.companyId}:inss-detalhe`, manualCompanyId: row.company.companyId, competencia }); setPreview(false); setResult(null); }} /> : <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas da etapa" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th>{compactCalculationPanel && <th className="operacoes-acao-curta">Ação</th>}{compactCalculationPanel ? <th>{panelNames[panel.key]}</th> : accountingPanel ? CHECKLIST_OPERACOES.map(([key,label]) => <th key={key}>{label}</th>) : <><th>Calculado</th><th>Confirmado</th><th>Transmitido</th></>}{!compactCalculationPanel && <th>Evidências e ações</th>}</tr></thead><tbody>{filtered.slice(page * 30, page * 30 + 30).map(row => <tr key={row.company.companyId}>
         <th scope="row">{nome(row.company)}{compactCalculationPanel && <>
           {row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}
           {row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}
         </>}</th>
         {compactCalculationPanel && <td className="operacoes-acao-curta"><Button size="sm" variant="secondary" aria-label={`Ver evidências de ${nome(row.company)}`} onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Detalhes</Button></td>}
         {compactCalculationPanel ? <td>{statusText(row.axes[panel.key])}</td> : accountingPanel ? CHECKLIST_OPERACOES.map(([key]) => <td key={key}>{statusText(row.axes[key])}{row.fluxo.contabilizacao?.checklistAutomatico?.[key] ? ' · automática' : ''}</td>) : ['calculado','confirmado','transmitido'].map(key => <td key={key}>{statusText(row.axes[key])}</td>)}
-        {panel.key === 'transmitido' && <OperationsTransmissionValues api={api} companyId={row.company.companyId} competencia={competencia} />}
+
         {!compactCalculationPanel && <td>{accountingPanel ? <><p>Fechamento: {row.fluxo.contabilizacao?.rotulo || 'A verificar'} · Importação ERP: {row.fluxo.contabilizacao?.importados ?? '—'}/{row.fluxo.contabilizacao?.total ?? '—'}</p>{row.fluxo.contabilizacao?.conferenciaDesatualizada && <p role="status">Conferência desatualizada · revise a correção do mês fechado.</p>}</> : <><p>Revisão: {row.operation?.revision || 'A verificar'}</p>{row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}{row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}<Button size="sm" variant="secondary" onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Ver evidências de {nome(row.company)}</Button></>}
           <details><summary>Subetapas e evidências</summary><ul>{(row.fluxo.tarefas || []).map(t => <li key={t.chave}>{t.titulo} · {t.concluida ? 'Concluída' : 'Pendente'}{t.revisar ? ' · Revisar dados alterados' : ''}</li>)}</ul></details>
-          <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,accountingPanel ? 'lancamentos' : 'cadastroFiscal')}>{accountingPanel ? 'Abrir contabilidade' : 'Abrir apuração'}</InternalLink>
+          <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,accountingPanel ? 'lancamentos' : 'cadastroFiscal')}>{accountingPanel ? 'Abrir lançamentos' : 'Abrir apuração'}</InternalLink>
           {!accountingPanel && <><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,'obrigacoes')}>Abrir obrigações</InternalLink>{['ACCOUNTANT','FIRM_ADMIN'].includes(row.company.myRole) && <Button size="sm" variant="secondary" disabled={!row.operation} onClick={() => { setApprovalRows([row]); closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}</>}
           </div>
         </td>}
@@ -207,15 +201,16 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
       <div className="operacoes-tabela-scroll" role="region" aria-label="Pendências da operação" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th><th>Etapa</th><th>Causa</th><th>Próxima ação</th></tr></thead><tbody>{groups[active.group].map(t => <tr key={t.id}><th scope="row">{nome(t.company)}</th><td>{t.titulo}</td><td>{t.tag?.envioErro || t.tag?.emailLastError || 'Conferir evidências do item'}</td><td><Button size="sm" variant="secondary" onClick={() => open(active.group,t.id)}>Ver detalhes</Button></td></tr>)}</tbody></table></div>{!groups[active.group].length && <p>Nenhum item nesta categoria.</p>}
     </Modal>}
     {chart?.competencia === competencia && chart.key === 'fiscal' && !unavailable && <OperationsFiscalReports key={`${competencia}:${chart.group}`} api={api} rows={distribution.fiscal.find(g => g.key === chart.group).items} title={`${distribution.fiscal.find(g => g.key === chart.group).label} · ${distribution.fiscal.find(g => g.key === chart.group).items.length} empresas`} competencia={competencia} onClose={() => setChart(null)} />}
-    {chart?.competencia === competencia && chart.key !== 'fiscal' && !unavailable && (() => {
+    {chart?.competencia === competencia && chart.key === 'procuracao' && !unavailable && <OperationsProcurationTable api={api} rows={distribution.procuracao.find(g => g.key === chart.group).items} competencia={competencia} onChanged={refresh} onClose={() => setChart(null)} onRequest={company => { setChart(null); setProcuracao(company); }} />}
+    {chart?.competencia === competencia && !['fiscal','procuracao'].includes(chart.key) && !unavailable && (() => {
       const group = distribution[chart.key].find(g => g.key === chart.group);
       return <Modal titulo={`${group.label} · ${group.items.length} empresas`} aoFechar={() => setChart(null)} className="operacoes-dialogo">
         {chart.key === 'parcelas' && <p>Parcelamento não comprova irregularidade fiscal.</p>}
         <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas do indicador" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th><th>Detalhe e próxima ação</th></tr></thead><tbody>{group.items.map(({company}) => <tr key={company.companyId}><th scope="row">{nome(company)}</th><td>{chart.key === 'procuracao' ? <div><p>Validade documental: {String(company.serproStatus?.validUntil || '').includes('T') ? operationInstant(company.serproStatus?.validUntil) : operationDate(company.serproStatus?.validUntil)}. Elegibilidade operacional depende de revalidação.</p><Button size="sm" variant="secondary" onClick={() => { setChart(null); setProcuracao(company); }}>Pedir procuração</Button></div> : <InternalLink className="btn btn-secondary btn-sm" href={link(company,({parcelas:'parcelamento',certificado:'certificado'})[chart.key])}>{chart.key === 'certificado' ? 'Configurar certificado' : 'Abrir parcelamento'}</InternalLink>}</td></tr>)}</tbody></table></div>{!group.items.length && <p>Nenhum item neste grupo.</p>}
       </Modal>;
     })()}
-    {procuracao && <OperationsProcuracao api={api} company={procuracao} onClose={() => setProcuracao(null)} />}    {approvalOpen && <Modal titulo="Conferir e liberar apurações" tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<Button variant="secondary" disabled={approvalBusy} onClick={() => setApprovalOpen(false)}>Fechar</Button>}>
-      {!unavailable ? <OperationsApproval embedded key={competencia} api={api} rows={approvalRows ? rows.filter(row => approvalRows.some(selected => selected.company.companyId === row.company.companyId)) : rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
+    {procuracao && <OperationsProcuracao api={api} company={procuracao} onClose={() => setProcuracao(null)} />}    {approvalOpen && <Modal titulo={approvalStage === 'calculado' ? 'Calculado' : 'Confirmado'} tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<Button variant="secondary" disabled={approvalBusy} onClick={() => setApprovalOpen(false)}>Fechar</Button>}>
+      {!unavailable ? <OperationsApproval embedded stage={approvalStage} key={competencia} api={api} rows={approvalRows ? rows.filter(row => approvalRows.some(selected => selected.company.companyId === row.company.companyId)) : rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
     </Modal>}
     {active?.id && <Modal titulo={inssDetail ? nome(selected.company) : selected ? `${nome(selected.company)} · ${selected.titulo}` : quadros.find(([key]) => key === active.group)?.[1]} aoFechar={() => !busy && closeDetail()} ocupado={busy} tamanho="md" className="operacoes-dialogo" rodape={inssDetail ? <div className="operacoes-inss-rodape"><Button variant="secondary" disabled={busy} onClick={closeDetail}>Fechar</Button>{!busy && <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-md" href={link(selected.company, 'automacao')}>Configurar INSS manual</InternalLink><InternalLink className="btn btn-primary btn-md" href={link(selected.company, 'guides')}>Abrir Guias</InternalLink></div>}</div> : <Button variant="secondary" disabled={busy} onClick={closeDetail}>Fechar</Button>}>
       <div className="operacoes">

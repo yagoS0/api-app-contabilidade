@@ -1,3 +1,4 @@
+import { operationsDesignMock } from './operationsDesignMock';
 import { criarSolicitacoesMock } from './solicitacoesMock';
 const regrasConferenciaPorEmpresa = new Map();
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
@@ -11557,5 +11558,6 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     async resumeCompany() { await delay(80); return { ok: true }; },
     async deleteCompany() { await delay(80); return { ok: true }; },
     ...mockRelatorios,
+    ...operationsDesignMock(mockGuidesByCompany),
   }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null, numeroDeclaracaoRfb: getCircularRecord(id, comp)?.pgdasNumeroDeclaracao || null })),id=>mockEntriesByCompany.get(id) || []);
 }

@@ -22,7 +22,10 @@ function saveBlob(blob, type, name) {
 export function OperationsFiscalReports({ api, rows, title, competencia, onClose }) {
   const [data, setData] = useState({}), [selected, setSelected] = useState({}), [results, setResults] = useState({});
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [version, setVersion] = useState(0);
+  const [query,setQuery] = useState(''), [consultSelected,setConsultSelected] = useState({}), [consultPreview,setConsultPreview] = useState(null), [consultBusy,setConsultBusy] = useState(false);
   const [batch, setBatch] = useState(null), [message, setMessage] = useState('');
+  const consultationTrigger=useRef(null),previewHeading=useRef(null);
+  useEffect(()=>{if(consultPreview)previewHeading.current?.focus();},[consultPreview]);
   const generation = useRef(0), lock = useRef(false), polling = useRef(0), timer = useRef(null);
   const ids = rows.map(r => r.company.companyId).sort().join('|');
   const context = `${competencia}:${ids}`;
@@ -33,7 +36,7 @@ export function OperationsFiscalReports({ api, rows, title, competencia, onClose
   }
   useEffect(() => {
     const run = ++generation.current;
-    setData({}); setSelected({}); setResults({}); setLoading(true); setBatch(null); setMessage(''); setBusy(false);
+    setData({}); setConsultSelected({}); setConsultPreview(null); setSelected({}); setResults({}); setLoading(true); setBatch(null); setMessage(''); setBusy(false);
     (async () => {
       for (const id of ids.split('|').filter(Boolean)) {
         let item;
@@ -110,16 +113,39 @@ export function OperationsFiscalReports({ api, rows, title, competencia, onClose
     } catch (e) { if (active()) { setBatch(record); setMessage(`${e.message}. Resultado não confirmado; confira Tarefas ou retome a leitura do mesmo job.`); } }
     finally { if (active()) { lock.current = false; setBusy(false); } }
   }
-  return <Modal titulo={title} tamanho="lg" className="operacoes-dialogo" aoFechar={() => { cancel(); onClose(); }} rodape={<Button variant="secondary" onClick={() => { cancel(); onClose(); }}>Fechar</Button>}>
+  const visible = rows.filter(r => `${r.company.razao || r.company.razaoSocial || ''} ${r.company.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const consultEligible = rows.filter(r => ['ACCOUNTANT','FIRM_ADMIN'].includes(r.company.myRole));
+  const consultAllowed=useRef(new Set());consultAllowed.current=new Set(consultEligible.map(r=>r.company.companyId));
+  const consultChosen = consultEligible.filter(r=>consultSelected[r.company.companyId]);
+  async function consult() {
+    if(lock.current || !consultPreview?.length) return;
+    const run=generation.current, items=consultPreview;
+    lock.current=true;setBusy(true);setConsultBusy(true);setConsultPreview(null);
+    try { for(const {company} of items) {
+      if(run!==generation.current) return;
+      let result;
+      try { if(!consultAllowed.current.has(company.companyId))throw Error('Acesso mudou; atualize a seleção.');const out=await api.getSitfis(company.companyId);
+        result=out?.message || out?.mensagem || (out?.processando?'Consulta em processamento. Atualize somente a leitura salva.':out?.throttled?'Consulta em cache; respeite a próxima consulta permitida.':out?.ok===true?'Consulta recebida. Confira a situação e a data do relatório salvo.':'Resultado não confirmado; confira a empresa antes de repetir.');
+        const saved=await api.getStoredSitfis(company.companyId);
+        if(run!==generation.current)return;
+        if(saved?.ok!==false && Object.hasOwn(saved||{},'status'))setData(old=>({...old,[company.companyId]:{status:saved.status}}));
+      } catch(e) {result=`${e.message}. Resultado incerto; confira a empresa antes de repetir.`;}
+      if(run===generation.current)setResults(old=>({...old,[company.companyId]:result}));
+    }} finally {if(run===generation.current){lock.current=false;setBusy(false);setConsultBusy(false);}}
+  }
+  return <Modal titulo={title} tamanho="lg" className="operacoes-dialogo" ocupado={consultBusy} aoFechar={() => { cancel(); onClose(); }} rodape={<Button variant="secondary" disabled={consultBusy} onClick={() => { cancel(); onClose(); }}>Fechar</Button>}>
+    <label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
+    <div className="operacoes-acoes"><Button variant="secondary" disabled={busy||!api?.getSitfis} onClick={()=>setConsultSelected(old=>({...old,...Object.fromEntries(visible.filter(r=>consultEligible.includes(r)).map(r=>[r.company.companyId,true]))}))}>Selecionar exibidas para consulta</Button><Button ref={consultationTrigger} disabled={busy||!api?.getSitfis||!consultChosen.length} onClick={()=>setConsultPreview([...consultChosen])}>Consultar situação fiscal ({consultChosen.length})</Button></div>
+    {consultPreview&&<div className="operacoes-previa"><h3 ref={previewHeading} tabIndex={-1}>Conferir consulta SITFIS</h3><p>Consulta explícita com custo potencial. Cache de 4 horas e próxima consulta permitida são respeitados; relatório mantém a própria data. Não consulta guias nem confirma pagamento.</p><ul>{consultPreview.map(({company})=><li key={company.companyId}>{company.razao||company.razaoSocial||company.cnpj}</li>)}</ul><Button disabled={busy} onClick={consult}>Confirmar consultas selecionadas</Button> <Button variant="secondary" disabled={busy} onClick={()=>{setConsultPreview(null);consultationTrigger.current?.focus();}}>Cancelar</Button></div>}
     <p>Relatórios salvos por empresa, com suas datas próprias. Baixar não consulta nem renova a situação no Fisco.</p>
-    <div className="operacoes-acoes"><Button variant="secondary" disabled={busy || loading} onClick={() => setVersion(v => v + 1)}>Atualizar lista salva</Button><Button variant="secondary" disabled={busy || loading || !eligible.length} onClick={() => setSelected(Object.fromEntries(eligible.map(r => [r.company.companyId, true])))}>Selecionar PDFs disponíveis</Button><Button disabled={busy || loading || !chosen.length || !canZip || existing?.uncertain} onClick={downloadBatch}>{existing?.jobId ? 'Retomar download do mesmo ZIP' : `Baixar selecionados (${chosen.length})`}</Button>{busy && <Button variant="secondary" onClick={cancel}>Parar acompanhamento</Button>}</div>
+    <div className="operacoes-acoes"><Button variant="secondary" disabled={busy || loading} onClick={() => setVersion(v => v + 1)}>Atualizar lista salva</Button><Button variant="secondary" disabled={busy || loading || !eligible.length} onClick={() => setSelected(Object.fromEntries(eligible.map(r => [r.company.companyId, true])))}>Selecionar PDFs disponíveis</Button><Button disabled={busy || loading || !chosen.length || !canZip || existing?.uncertain} onClick={downloadBatch}>{existing?.jobId ? 'Retomar download do mesmo ZIP' : `Baixar selecionados (${chosen.length})`}</Button>{busy && !consultBusy && <Button variant="secondary" onClick={cancel}>Parar acompanhamento</Button>}</div>
     {existing?.uncertain && <p role="alert">Criação do ZIP com resultado incerto. Confira Tarefas; não repita o pedido.</p>}
     {loading && <p role="status">Lendo relatórios salvos…</p>}
     {batch && <p role="status">ZIP {batch.jobId || 'a confirmar'} · {batch.job?.comPdf ?? 'A verificar'} com PDF / {batch.requested} solicitadas · {batch.job?.status || 'Acompanhamento pendente'}</p>}
     {message && <p role="status">{message}</p>}
-    <div className="operacoes-tabela-scroll" role="region" aria-label="Relatórios fiscais salvos" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao">Selecionar</th><th>Empresa</th><th>PDF salvo</th><th>Resultado individual</th><th>Ações</th></tr></thead><tbody>{rows.map(({ company }) => {
+    <div className="operacoes-tabela-scroll" role="region" aria-label="Relatórios fiscais salvos" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao">Selecionar</th><th>Consulta</th><th>Empresa</th><th>Situação / PDF salvo</th><th>Resultado individual</th><th>Ações</th></tr></thead><tbody>{visible.map(({ company }) => {
       const id = company.companyId, name = company.razao || company.razaoSocial || company.cnpj, item = data[id];
-      return <tr key={id}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar PDF de ${name}`} disabled={busy || loading || !eligible.some(r => r.company.companyId === id)} checked={Boolean(selected[id])} onChange={e => setSelected(old => ({ ...old, [id]: e.target.checked }))} /></label></td><th scope="row">{name}</th><td>{item?.error ? <p role="alert">{item.error}</p> : !item ? 'Lendo…' : item.status?.relatorioPdfFileId ? `Salvo · ${operationInstant(item.status.ultimoRelatorioEm || item.status.checkedAt)}` : 'PDF salvo indisponível'}</td><td>{results[id] || 'Nenhum download individual solicitado'}</td><td><div className="operacoes-acoes"><Button variant="secondary" size="sm" disabled={busy || !item?.status?.relatorioPdfFileId || !api?.fetchSitfisPdfBlob} onClick={() => downloadOne(id)}>Baixar PDF de {name}</Button><InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(id, 'sitfis')}?competencia=${encodeURIComponent(competencia)}`}>Abrir situação fiscal da empresa</InternalLink></div></td></tr>;
+      return <tr key={id}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar PDF de ${name}`} disabled={busy || loading || !eligible.some(r => r.company.companyId === id)} checked={Boolean(selected[id])} onChange={e => setSelected(old => ({ ...old, [id]: e.target.checked }))} /></label></td><td><input type="checkbox" aria-label={`Consultar situação fiscal de ${name}`} disabled={busy||!consultEligible.some(r=>r.company.companyId===id)} checked={Boolean(consultSelected[id])} onChange={e=>{setConsultPreview(null);setConsultSelected(old=>({...old,[id]:e.target.checked}));}}/></td><th scope="row">{name}</th><td><p>{item?.status?.situacao || item?.status?.status || 'Situação a verificar'}</p>{item?.status?.proximaConsultaEm&&<small>Próxima consulta: {operationInstant(item.status.proximaConsultaEm)}</small>}{item?.error ? <p role="alert">{item.error}</p> : !item ? 'Lendo…' : item.status?.relatorioPdfFileId ? `Salvo · ${operationInstant(item.status.ultimoRelatorioEm || item.status.checkedAt)}` : 'PDF salvo indisponível'}</td><td>{results[id] || 'Nenhum download individual solicitado'}</td><td><div className="operacoes-acoes"><Button variant="secondary" size="sm" disabled={busy || !item?.status?.relatorioPdfFileId || !api?.fetchSitfisPdfBlob} onClick={() => downloadOne(id)}>Baixar PDF de {name}</Button><InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(id, 'sitfis')}?competencia=${encodeURIComponent(competencia)}`}>Abrir situação fiscal da empresa</InternalLink></div></td></tr>;
     })}</tbody></table></div>
     {!rows.length && <p>Nenhuma empresa neste grupo.</p>}
     {!canZip && <p role="alert">Download ZIP autenticado indisponível neste ambiente. Confira os PDFs individualmente na empresa.</p>}

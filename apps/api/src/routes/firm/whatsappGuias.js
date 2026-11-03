@@ -212,6 +212,7 @@ export function createIndividualGuideHandler({ log } = {}) { return async (req, 
           select: SELECT_GUIA_PARA_ENVIO,
         });
         if (!guide) return res.status(404).json({ ok: false, error: "guide_not_found" });
+        if (req.operationsGuard) await req.operationsGuard.beforeDispatch({ guide, canal: 'WHATSAPP' });
 
         const canal = await carregarCanal();
         const envios = (await enviosPorGuia([guide.id])).get(guide.id) || [];
@@ -254,6 +255,7 @@ export function createIndividualGuideHandler({ log } = {}) { return async (req, 
           canal,
           log,
           reenviar: reenviar && !apenasFalhos,
+          operationsGuard: req.operationsGuard || null,
         });
 
         // ⚠⚠ A FALHA PARCIAL PARA DE SUMIR. A resposta era o spread de `resultados[0]`: com dois

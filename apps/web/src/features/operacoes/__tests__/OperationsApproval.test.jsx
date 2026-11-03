@@ -200,3 +200,16 @@ test.each([false,true])('execução concluída preserva histórico e bloqueia co
  else expect(screen.queryByRole('alert')).not.toBeInTheDocument();
  expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
+
+
+test('Calculado confere seleção sem transmitir e sem usar ausência como zero',async()=>{
+ const api=fixture();api.executeCompanyOperation=jest.fn();
+ render(<OperationsApproval api={api} rows={rows} competencia="2026-09" stage="calculado" embedded/>);
+ await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());expect(screen.getByRole('columnheader',{name:'Receita calculada'})).toBeInTheDocument();fireEvent.click(screen.getByLabelText('Selecionar CDA'));fireEvent.click(screen.getByText('Liberar para transmissão'));expect(api.saveCompanyOperation).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar cálculos selecionados'));await waitFor(()=>expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1));expect(api.saveCompanyOperation.mock.calls[0][2].action).toBe('confirm');expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
+import { Modal } from '../../../components/ui/Modal';
+test.each([['calculado','PENDING','Liberar para transmissão','Conferir liberação para transmissão'],['confirmado','CONFIRMED','Transmitir selecionadas','Liberar apurações confirmadas']])('cancelar prévia %s devolve foco ao gatilho dentro do Modal real',async(stage,status,label,heading)=>{
+ const api=fixture({status});api.executeCompanyOperation=jest.fn();render(<Modal titulo="Operações" aoFechar={()=>{}}><OperationsApproval api={api} rows={rows} competencia="2026-09" stage={stage} embedded/></Modal>);
+ await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());fireEvent.click(screen.getByLabelText('Selecionar CDA'));const trigger=screen.getByRole('button',{name:label,exact:true});trigger.focus();fireEvent.click(trigger);expect(screen.getByRole('heading',{name:heading})).toHaveFocus();const cancel=screen.getByRole('button',{name:'Cancelar',exact:true});cancel.focus();fireEvent.click(cancel);expect(screen.getByRole('button',{name:label,exact:true})).toHaveFocus();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});

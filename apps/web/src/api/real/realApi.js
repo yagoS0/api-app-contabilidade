@@ -1320,6 +1320,25 @@ export function createRealApi() {
     async getPgdasHistorico(companyId, competencia) {
       return request(`/firm/companies/${companyId}/pgdas/${encodeURIComponent(competencia)}/historico`);
     },
+    getOperationsGuideEvidence(companyId, competencia, offset = 0) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/guide-evidence?offset=${offset}`);
+    },
+    previewOperationsGuideSend(companyId, competencia, body) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/guide-evidence/preview`, { method: 'POST', body: JSON.stringify(body) });
+    },
+    getOperationsTransmissionDocuments(companyId, competencia) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/transmission-documents`);
+    },
+    async downloadOperationsTransmissionDocuments(items, zip = false) {
+      const token = accessToken || readStoredToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const item = items[0];
+      const path = zip ? '/firm/operacoes/transmission-documents/zip' : `/firm/companies/${encodeURIComponent(item.companyId)}/operacoes/${encodeURIComponent(item.competencia)}/transmission-documents/${encodeURIComponent(item.releaseId)}/${encodeURIComponent(item.versionId)}/${encodeURIComponent(item.tipo || 'extrato')}`;
+      if (zip) headers['Content-Type'] = 'application/json';
+      const response = await fetch(`${getApiBaseUrl()}${path}`, { method: zip ? 'POST' : 'GET', headers, ...(zip ? { body: JSON.stringify({ items }) } : {}) });
+      if (!response.ok) throw Error((await response.json().catch(() => ({}))).message || 'Download indisponível.');
+      return response.blob();
+    },
     async fetchPgdasPdfBlob(companyId, competencia, tipo = "declaracao", versao = null) {
       const baseUrl = getApiBaseUrl();
       const headers = {};
