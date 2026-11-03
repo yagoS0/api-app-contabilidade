@@ -1,0 +1,50 @@
+{
+  "summary": "Adiciona Consultas dentro da empresa e corrige confirmação de resultados fiscais e contábeis, preservando pendências e contexto.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Sem nova regra operacional. R01/R02/R19/R20/R22: resultados devem representar evidência real. Receita sem segregação suficiente fica pendente sem apagar receita existente; provisão DAS válida permanece independente. R25/R26 preservadas: consulta oficial de pagamento não equivale a baixa, baixa de DAS exige provisão contábil real e mês fechado continua protegido. Sem migração nem reprocessamento de dados reais.",
+  "tests": [
+    "Backend: 26 regressões de extrato e 18 de retificação/divergências aprovadas.",
+    "Web: 63 testes em 8 suítes aprovados; correção adicional Presumido validada em suíte com 24 testes, incluindo 5 novos cenários.",
+    "Portal: 101 suítes/1596 testes aprovados; após atualização de main, 67 testes dos dois arquivos afetados pelo PR248 aprovados.",
+    "Governança: 85 testes aprovados; PostgreSQL local descartável: schema, migrações, DRE e fluxo de caixa aprovados.",
+    "Builds finais web e portal aprovados. Regressões completas API/web em execução, com CI obrigatório antes de integrar.",
+    "Visual final em navegador local com fixture sintética: desktop 1440px e celular 390px sem overflow nem erros de página; seleção, confirmação e resultado verificados. Sem chamadas fiscais ou financeiras reais.",
+    "Primeira regressão API interrompida por ausência de ALTAN_GOVERNANCE_TEST_DATABASE_URL em teste PostgreSQL; repetição iniciada com banco descartável loopback, sem remover testes."
+  ],
+  "rollback": "Reverter somente este incremento de código e republicar os serviços. Não apagar lançamentos, circulares, histórico ou documentos. Não há migração para reverter.",
+  "humanDecisions": [
+    "Usuário autorizou continuar investigação, corrigir os problemas incluindo menu de consultas e testar tudo antes de publicar.",
+    "Publicação depende dos checks obrigatórios e revisão final. Nenhuma autorização inferida para consultas pagas, transmissões fiscais ou baixas em dados reais."
+  ],
+  "reviews": [
+    {
+      "reviewer": "/root/diagnostico_consultas",
+      "scope": "Backend e UI/UX, contratos, feedback, contexto e navegação",
+      "verdict": "approved",
+      "basis": "Backend revisado após correção de valores em centavos; UI final com useManageCompaniesWorkspace SHA256 22E951F8717B1239CA4385E4352161C84FC090AA19A13D32DD39FF18798C133E. Aprovação por leitura e cobertura inspecionada, sem certificar consultas reais."
+    },
+    {
+      "reviewer": "/root/revisao_sistemica",
+      "scope": "Revisão sistêmica contábil, fiscal, backend e consumidores",
+      "verdict": "approved",
+      "basis": "P2 Presumido corrigido; demais invariantes sem achados bloqueadores. Execução independente final: 2 suítes/26 testes aprovados. Metadata revisada, sem objeções após precisão sobre provisão DAS."
+    }
+  ],
+  "controller": {
+    "status": "escalated",
+    "run": "2026-11-03T17-19-35-239Z-36757997",
+    "reason": "Planejador concluído; executor atingiu timeout. Principal continuou com executor e revisores nativos independentes, executando gates do catálogo diretamente. Logs preservados; nenhuma aprovação retroativa do controlador, mudança de gates ou bypass."
+  },
+  "evidenceDirectory": "../output/consultas-contabilidade-20261103"
+}

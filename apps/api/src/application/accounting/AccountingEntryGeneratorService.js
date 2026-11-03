@@ -249,6 +249,27 @@ function buildEventsFromCircular(circular) {
   return events;
 }
 
+// R02: cabeçalho extraído não comprova classificação das atividades. A ausência
+// de blocos no parser vira zero; não deve apagar receita anterior nem passar por
+// contabilização completa. O DAS tem fonte própria e pode continuar sendo gerado.
+function divergenciaSegregacaoReceita(circular) {
+  const bruto = parseDecimal(circular.receitaBruta);
+  const campos = Object.values(EVENT_DEFINITIONS)
+    .filter(definition => definition.tipo === "RECEITA")
+    .map(definition => AMOUNT_SOURCE_FIELD_MAP[definition.amountSource]);
+  const valores = campos.map(campo => circular[campo] == null ? 0 : parseDecimal(circular[campo]));
+  const outros = parseDecimal(circular.metadata?.parsedPgdas?.receitaOutros);
+  const invalido = valores.some(valor => valor == null || valor < 0);
+  const soma = invalido ? null : valores.reduce((total, valor) => total + valor, 0);
+  const zeroIncompativel = (bruto > 0 && soma === 0) || (bruto === 0 && soma > 0);
+  if (!invalido && !zeroIncompativel && !(outros > 0) && Math.abs(Math.round(bruto * 100) - Math.round(soma * 100)) <= 2) return null;
+  return {
+    eventType: "RECEITA",
+    reason: "receita_segregacao_incompleta",
+    message: "Receita do extrato sem segregação completa ou com valores divergentes. Confira as atividades e a classificação antes de gerar as receitas; lançamentos de receita existentes foram preservados.",
+  };
+}
+
 /**
  * Resolve a regra (AccountingEntryRule) explicitamente cadastrada pela empresa ou globalmente.
  * Se nenhuma regra existir, monta uma virtual a partir de EVENT_DEFINITIONS contendo
@@ -654,8 +675,11 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
     const generatedEntries = [];
     const skipped = [];
     const divergences = [];
+    const segregacaoPendente = exigirExtratoCompleto ? divergenciaSegregacaoReceita(circular) : null;
+    if (segregacaoPendente) divergences.push(segregacaoPendente);
 
     for (const event of events) {
+      if (segregacaoPendente && event.tipo === "RECEITA") continue;
       // eslint-disable-next-line no-await-in-loop
       const rule = await resolveRule(tx, { portalClientId: normalizedPortalClientId, eventType: event.eventType });
       if (!rule) {

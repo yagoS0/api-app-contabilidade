@@ -4,7 +4,7 @@ import { CircularMonthTags } from './CircularMonthTags';
 import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
 import { DetalheRecalculoGuia, RecalculoGuiaAviso } from "../../components/RecalculoGuiaAviso";
 import { informacaoRecalculo } from "../../components/RecalculoGuiaAviso.shared.js";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { EstornoBaixaModal } from "./EstornoBaixaModal";
 import { SmartHistoricoInput, LineEditor } from "../../entries/components/renderAccountingEntriesParts";
@@ -13,6 +13,7 @@ import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entr
 // Cliente próprio: a busca de pagamento é uma chamada pontual da própria aba (mesmo padrão
 // auto-contido de FechamentoContabilPanel/ExpectedGuidesPanel).
 import { createApiClient } from "../../../../api/client";
+import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 // A regra que separa "a vencer" de "vencida" — uma leitura para a cor da célula, o chip do popover
 // e os totais do rodapé. Ver `lib/estadoGuia.js`.
@@ -679,7 +680,8 @@ function PagamentoCell({ companyId, entry, onBaixa, onEdit, onDesfazerBaixa, par
             </button>
           )}
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
-          {isOpenLike && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
+          {isOpenLike && String(entry.id).startsWith("synthetic-das-") && <p role="status">DAS sem provisão. Reaproveite o extrato em Lançamentos e resolva as pendências antes da baixa.</p>}
+          {isOpenLike && onBaixa && !String(entry.id).startsWith("synthetic-das-") && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
           {/* "Desfazer baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL, a última quota. */}
           {/* ⚠ "DESFAZER BAIXA", não "cancelar" — e leva a guia inteira.
               Uma guia tem até TRÊS baixas (principal, juros e multa são lançamentos separados, em
@@ -918,13 +920,23 @@ export function CircularTab({
   // Busca o comprovante no SERPRO (custo por chamada → só sob clique). NÃO lança nada: marca a
   // guia como paga e guarda data/valores, que depois pré-preenchem o "Dar baixa".
   const [buscandoPagamento, setBuscandoPagamento] = useState(null);
+  const [pagamentoFeedback, setPagamentoFeedback] = useState(null);
+  const pagamentoScope = String(companyId) + ":" + year + ":" + competencia;
+  const pagamentoAtual = useRef(pagamentoScope);
+  pagamentoAtual.current = pagamentoScope;
+  const pagamentoLock = useRef(false);
+  useEffect(() => { pagamentoAtual.current = pagamentoScope; setPagamentoFeedback(null); return () => { pagamentoAtual.current = null; }; }, [pagamentoScope]);
   async function handleBuscarPagamento(entry) {
     const guideId = entry?.sourceGuide?.id;
-    if (!guideId || !circularApi?.buscarPagamentoGuia || buscandoPagamento) return;
+    if (!guideId || !circularApi?.buscarPagamentoGuia || pagamentoLock.current) return;
+    pagamentoLock.current = true;
+    setPagamentoFeedback(null);
     setBuscandoPagamento(guideId);
     try {
       const r = await circularApi.buscarPagamentoGuia(guideId);
-      if (r?.encontrado) {
+      if (pagamentoAtual.current !== pagamentoScope) return;
+      if (r?.ok === false || typeof r?.encontrado !== "boolean") throw new Error(r?.motivo || "Consulta de pagamento sem confirmação. Confira antes de repetir a consulta paga.");
+      if (r.encontrado) {
         const c = r.comprovante;
         // ⚠ O VALOR SAI PELO FORMATADOR DA TELA, não por `toFixed(2)`. Este era o único número
         // desta aba em formato americano: "R$ 193.03" no meio de um quadro em que todo o resto
@@ -933,19 +945,20 @@ export function CircularTab({
         // rodapé usam; e, como ele, um total ausente NÃO vira "R$ 0,00" — a frase omite o valor,
         // igual faz o irmão desta busca (`parcelaBusca.resumoDoResultado`).
         const total = fmtValor(c?.total);
-        window.alert(c?.dataArrecadacao
+        setPagamentoFeedback({ ok: true, message: c?.dataArrecadacao
           ? `Pagamento localizado em ${c.dataArrecadacao}${total ? ` — total R$ ${total}` : ""}.
 
-A baixa continua com você: use "Dar baixa" (já vem preenchida).`
-          : "Pagamento localizado no SERPRO. Use \"Dar baixa\" para lançar.");
+Confira a provisão contábil antes de usar "Dar baixa".`
+          : "Pagamento localizado no SERPRO. Confira a provisão antes de dar baixa." });
       } else {
-        window.alert(r?.motivo || "Pagamento ainda não localizado no SERPRO.");
+        setPagamentoFeedback({ ok: false, message: r.motivo || "Pagamento ainda não localizado no SERPRO." });
       }
       await onLoad?.();
     } catch (err) {
-      window.alert(err?.message || "Falha ao buscar o pagamento no SERPRO.");
+      if (pagamentoAtual.current === pagamentoScope) setPagamentoFeedback({ ok: false, message: err?.message || "Falha ao buscar o pagamento no SERPRO." });
     } finally {
-      setBuscandoPagamento(null);
+      pagamentoLock.current = false;
+      if (pagamentoAtual.current === pagamentoScope) setBuscandoPagamento(null);
     }
   }
   const [editEntry, setEditEntry] = useState(null);
@@ -1172,6 +1185,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
     /* Margem lateral pela token compartilhada (~5%): a matriz é 12 meses × N tributos e é a tela
        que mais ganha com largura — cada coluna visível é uma rolagem horizontal a menos. */
     <div style={{ padding: "var(--space-3) var(--content-gutter)", width: "100%", background: "#1A1B26", minHeight: "100%", boxSizing: "border-box" }}>
+      <Feedback message={pagamentoFeedback?.ok ? pagamentoFeedback.message : ""} error={pagamentoFeedback && !pagamentoFeedback.ok ? pagamentoFeedback.message : ""} />
       {/* Cabeçalho */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 700, color: "#F8F8F2" }}>Circular</h2>
