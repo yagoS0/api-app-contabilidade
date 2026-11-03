@@ -17,6 +17,8 @@ import {
   somarValorDasProntas,
   textoDoDesfecho,
   textoDoReconhecimento,
+  loteDaRetentativaRecusada,
+  observacaoDaLinha,
 } from "../emissaoDoLote";
 // ⚠⚠ A AUTORIDADE, importada de verdade — o mesmo arranjo de `codigoServicoDaNota.test.js`. É isto
 // que transforma "espelho" de intenção em fato: a regra do servidor é rodada nos MESMOS casos, e
@@ -34,6 +36,43 @@ const linha = (numeroLinha, desfecho, extra = {}) => ({
   rpsSerie: null,
   rpsNumero: null,
   ...extra,
+});
+
+describe("snapshot autoritativo da recusa de retentativa", () => {
+  const lote = { id: "lote-1", status: "concluido", linhas: [linha(2, "recusada_receita", { mensagem: "Recusa anterior" })] };
+  const retentativa = { quantas: 0, retentaveis: [], bloqueadas: [{ numeroLinha: 2, motivo: "Conferência necessária" }] };
+  const erro = { status: 422, code: "nada_a_retentar", corpo: { lote, retentativa } };
+
+  test("plano do servidor bloqueia mesmo quando projeção da linha não expõe a guarda interna", () => {
+    const atual = loteDaRetentativaRecusada(erro, lote.id);
+    expect(conviteParaRetentar(lote)).not.toBeNull();
+    expect(conviteParaRetentar(atual)).toBeNull();
+    expect(observacaoDaLinha(atual.linhas[0], atual)).toBe("Recusa anterior · Conferência necessária");
+    expect(atual.linhas).toBe(lote.linhas);
+    expect(lote).not.toHaveProperty("retentativaRecusada");
+  });
+
+  test.each([
+    { ...erro, status: 500 },
+    { ...erro, code: "outro_erro" },
+    { ...erro, corpo: null },
+    { ...erro, corpo: { lote: { ...lote, id: "outro" }, retentativa } },
+    { ...erro, corpo: { lote: { ...lote, linhas: [] }, retentativa } },
+    { ...erro, corpo: { lote, retentativa: { ...retentativa, quantas: 1 } } },
+    { ...erro, corpo: { lote, retentativa: { ...retentativa, bloqueadas: [] } } },
+    { ...erro, corpo: { lote, retentativa: { ...retentativa, bloqueadas: [{ numeroLinha: 99, motivo: "Outro" }] } } },
+  ])("não incorpora corpo ausente, incompleto ou de outra identidade", invalido => {
+    expect(loteDaRetentativaRecusada(invalido, lote.id)).toBeNull();
+  });
+
+  test("mantém emitidas, indeterminadas e números reservados sem promover desfecho", () => {
+    const misto = { ...lote, linhas: [linha(2, "emitida"), linha(3, "indeterminada", { rpsNumero: "99" })] };
+    const plano = { ...retentativa, bloqueadas: misto.linhas.map(l => ({ numeroLinha: l.numeroLinha, motivo: "Não reenviar" })) };
+    const atual = loteDaRetentativaRecusada({ ...erro, corpo: { lote: misto, retentativa: plano } }, lote.id);
+    expect(resumoDaEmissao(atual)).toMatchObject({ emitidas: 1, indeterminadas: 1 });
+    expect(atual.linhas[1].rpsNumero).toBe("99");
+    expect(conviteParaRetentar(atual)).toBeNull();
+  });
 });
 
 describe("textoDoDesfecho", () => {
