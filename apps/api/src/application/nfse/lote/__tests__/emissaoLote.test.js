@@ -19,6 +19,8 @@ import {
   STATUS_LOTE,
 } from "../emissaoLote.js";
 import { ESTADO } from "../classificarLinhaLote.js";
+import { regimeDaCompetencia } from '../../regimeDaCompetencia.js';
+import { lerCompetenciaDaPlanilha } from '../celulasLote.js';
 
 // ─── UM PRISMA DE MENTIRA, EM MEMÓRIA ────────────────────────────────────────────────────────
 //
@@ -59,7 +61,9 @@ function prismaFalso() {
         lotes.set(id, lote);
         for (const l of data.linhas?.create || []) {
           const lid = uid();
-          linhas.set(lid, { id: lid, loteId: id, desfecho: DESFECHO_LINHA.NAO_TENTADA, ...l });
+          // Prisma persiste `dados` como JSON: Date volta como texto ISO.
+          linhas.set(lid, { id: lid, loteId: id, desfecho: DESFECHO_LINHA.NAO_TENTADA, ...l,
+            dados: JSON.parse(JSON.stringify(l.dados)) });
         }
         return { ...lote };
       },
@@ -158,6 +162,28 @@ async function montar(prisma, quantidade) {
   const { lote } = await criarOuReconhecerLote({ prisma, companyId: COMPANY, linhasProntas: prontas });
   return lote;
 }
+
+test.each(['31/12/2025', '01/01/2026'])('lote resolve regime após persistência JSON: %s', celula => {
+  return (async () => {
+    const prisma = prismaFalso();
+    const { competencia } = lerCompetenciaDaPlanilha(celula);
+    const { lote } = await criarOuReconhecerLote({ prisma, companyId: COMPANY,
+      linhasProntas: [linhaPronta(2, { competencia })] });
+    const emitir = jest.fn(async ({ data }) => {
+      expect(data.competencia).toBe(competencia.toISOString());
+      const resolvido = regimeDaCompetencia({ competencia: data.competencia, historico: [
+        { regime: 'SIMPLES', vigenciaInicio: '2025-01-01', vigenciaFim: '2025-12-31' },
+        { regime: 'LUCRO_PRESUMIDO', vigenciaInicio: '2026-01-01', vigenciaFim: null },
+      ] });
+      expect(resolvido).toMatchObject({ ok: true, competenciaInicio: competencia.toISOString().slice(0, 10),
+        regime: celula === '31/12/2025' ? 'SIMPLES' : 'LUCRO_PRESUMIDO' });
+      return emitiuOk(2);
+    });
+    await processarLoteEmissao({ prisma, loteId: lote.id, companyId: COMPANY, emitir });
+    expect(emitir).toHaveBeenCalledTimes(1);
+    expect([...prisma._linhas.values()][0].desfecho).toBe(DESFECHO_LINHA.EMITIDA);
+  })();
+});
 
 describe("só entra o que está PRONTA", () => {
   it("⚠⚠ `conferir` NÃO entra, mesmo trazendo `dados`", () => {
