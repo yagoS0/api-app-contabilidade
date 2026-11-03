@@ -184,7 +184,7 @@ export function distribuicoesCadastrais(rows, now = Date.now()) {
   ];
   const result = { parcelas: chart('Com parcelamento', 'Sem parcelamento'), fiscal: chart('Com pendência', 'Sem pendência'), certificado: chart('Sem certificado válido', 'Com certificado válido'), procuracao: chart('Sem procuração vigente', 'Com procuração vigente') };
   for (const [key, groups] of Object.entries(result)) {
-    for (const group of groups) group.color = (['parcelas', 'fiscal'].includes(key) && group.key === 'negative') ? 'var(--state-danger)' : (['certificado', 'procuracao'].includes(key) && group.key === 'positive') ? 'var(--state-ok)' : 'var(--border)';
+    for (const group of groups) group.color = (key === 'fiscal' && group.key === 'negative') ? 'var(--state-danger)' : (['certificado', 'procuracao'].includes(key) && group.key === 'positive') ? 'var(--state-ok)' : 'var(--border)';
   }
   const add = (key, state, row) => result[key].find(g => g.key === state).items.push(row);
   for (const row of rows) {

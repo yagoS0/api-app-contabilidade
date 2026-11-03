@@ -1,5 +1,7 @@
 import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "../application/guides/GuiaParcelaEnvioGuard.js";
 import { log } from "../config.js";
+import { conferirAutomacaoCicloFiscal } from '../application/fiscal/AutomacaoCicloFiscalService.js';
+import { comAutomacaoCicloFiscal, comAutomacaoEmpresa, conferirContextoCicloFiscal } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { prisma } from "../infrastructure/db/prisma.js";
 import { reservarSemEntregaExterna } from '../application/guides/EntregaExternaGuiaService.js';
 import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
@@ -61,7 +63,9 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-async function processOneGuide({ guide, emailService }) {
+async function processOneGuide({ guide, emailService, operationsGuard = null }) {
+  if (operationsGuard) await operationsGuard.beforeDispatch({ guide, canal: 'EMAIL' });
+  await conferirContextoCicloFiscal();
   try { await conferirParcelasParaEnvio([guide]); } catch (err) {
     return { guideId: guide.id, status: "SKIPPED", code: err.code, reason: err.message, willRetry: false };
   }
@@ -94,7 +98,11 @@ async function processOneGuide({ guide, emailService }) {
 
   const attempts = Number(guide.emailAttempts || 0) + 1;
   let source;
-  try { source = await reservarSemEntregaExterna(prisma, [guide], tx => tx.guide.update({
+  let operationsStarted = false;
+  let operationsReceipt = null;
+  if (operationsGuard) await operationsGuard.beforeDispatch({ guide, canal: 'EMAIL', destino: destinatario });
+  await conferirContextoCicloFiscal();
+  const reserveGuide = tx => tx.guide.update({
     where: { id: guide.id },
     data: {
       emailStatus: "SENDING",
@@ -102,7 +110,12 @@ async function processOneGuide({ guide, emailService }) {
       emailLastError: null,
       emailNextRetryAt: null,
     },
-  })); } catch (e) {
+  });
+  try {
+    source = operationsGuard
+      ? await operationsGuard.reserveEmail({ guide, canal: 'EMAIL', destino: destinatario }, reserveGuide)
+      : await reservarSemEntregaExterna(prisma, [guide], reserveGuide);
+  } catch (e) {
     if (e.code === 'GUIA_ENTREGA_EXTERNA' || e.code === 'GUIA_ALTERADA') return { guideId: guide.id, status: 'SKIPPED', code: e.code, reason: e.message };
     throw e;
   }
@@ -144,12 +157,25 @@ async function processOneGuide({ guide, emailService }) {
     try {
       await validarDestinatariosAtuais(source.portalClientId, to);
       await conferirParcelasParaEnvio([source]);
-      await emailService.send({
+      await conferirContextoCicloFiscal(prisma, { requireCompany: true, portalClientId: source.portalClientId });
+      if (operationsGuard) await operationsGuard.beforeDispatch({ guide: source, canal: 'EMAIL', destino: to, pdfBytes: fileBuffer });
+      const receipt = await emailService.send({
         to,
         subject,
         html,
         attachments: [{ path: tmpPath, filename: fileName }],
+        ...(operationsGuard ? { beforeDispatch: async () => {
+          await validarDestinatariosAtuais(source.portalClientId, to);
+          await conferirParcelasParaEnvio([source]);
+          await conferirContextoCicloFiscal(prisma, { requireCompany: true, portalClientId: source.portalClientId });
+          await operationsGuard.beginDispatch({ guide: source, canal: 'EMAIL', destino: to, pdfBytes: fileBuffer });
+          operationsStarted = true;
+        } } : {}),
       });
+      if (operationsGuard) {
+        if (!operationsStarted) throw Object.assign(new Error('O transporte não confirmou a guarda da prévia.'), { code: 'OPERATIONS_EMAIL_INDETERMINADO' });
+        operationsReceipt = receipt;
+      }
     } finally {
       if (fssync.existsSync(tmpPath)) {
         await fs.unlink(tmpPath).catch(() => {});
@@ -168,22 +194,25 @@ async function processOneGuide({ guide, emailService }) {
         emailNextRetryAt: null,
       },
     });
+    if (operationsGuard) await operationsGuard.completeDispatch({ guideId: source.id, receipt: operationsReceipt });
     return { guideId: source.id, status: "SENT", to };
   } catch (err) {
-    const canRetry = attempts < MAX_ATTEMPTS;
+    const uncertain = operationsGuard && operationsStarted;
+    const message = uncertain ? 'O envio pode ter sido aceito. Concilie o histórico antes de qualquer nova tentativa.' : err?.message || 'unknown_error';
+    const canRetry = !operationsGuard && !err?.code?.startsWith('CICLO_FISCAL_') && !err?.code?.startsWith('AUTOMACAO_EMPRESA_') && attempts < MAX_ATTEMPTS;
     await prisma.guide.update({
       where: { id: source.id },
       data: {
         emailStatus: "ERROR",
-        emailLastError: err?.message || "unknown_error",
+        emailLastError: message,
         emailNextRetryAt: canRetry ? calcNextRetryAt(attempts) : null,
       },
     });
     return {
       guideId: source.id,
       status: "ERROR",
-      reason: err?.message || "unknown_error",
-      code: err?.code || "GUIDE_EMAIL_SEND_ERROR",
+      reason: message,
+      code: uncertain ? 'OPERATIONS_EMAIL_INDETERMINADO' : err?.code || "GUIDE_EMAIL_SEND_ERROR",
       willRetry: canRetry,
       attempts,
     };
@@ -191,6 +220,7 @@ async function processOneGuide({ guide, emailService }) {
 }
 
 export async function runGuideEmailWorkerOnce(options = {}) {
+  const policy = await conferirContextoCicloFiscal();
   const ignoradas = Array.isArray(options.ignorarGuideIds) ? options.ignorarGuideIds.map(String) : [];
   const batchSize = Math.min(
     MAX_BATCH_SIZE,
@@ -210,6 +240,7 @@ export async function runGuideEmailWorkerOnce(options = {}) {
       include: { parcelamento: SELECT_PARCELA_ENVIO.parcelamento, parcela: SELECT_PARCELA_ENVIO.parcela },
       where: {
         status: "PROCESSED",
+        ...(policy?.resumedAt ? { createdAt: { gt: new Date(policy.resumedAt) } } : {}),
         ...whereGuiaPendenteDeEnvio(now),
         ...(visitadas.size ? { id: { notIn: [...visitadas] } } : {}),
       },
@@ -232,7 +263,11 @@ export async function runGuideEmailWorkerOnce(options = {}) {
     for (const guide of guides) {
       // processa em série para evitar burst no provedor
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processOneGuide({ guide, emailService }));
+      try {
+        results.push(await comAutomacaoEmpresa(guide.portalClientId, () => processOneGuide({ guide, emailService }), prisma, { scheduledAt: guide.createdAt }));
+      } catch (err) {
+        results.push({ guideId: guide.id, status: 'ERROR', code: err.code, reason: err.message, willRetry: false });
+      }
     }
 
     return {
@@ -247,7 +282,7 @@ export async function runGuideEmailWorkerOnce(options = {}) {
   }
 }
 
-export async function runGuideEmailWorkerSelected({ guideIds }) {
+export async function runGuideEmailWorkerSelected({ guideIds, operationsGuard = null }) {
   const normalizedIds = Array.isArray(guideIds)
     ? [...new Set(guideIds.map((id) => String(id || "").trim()).filter(Boolean))]
     : [];
@@ -286,7 +321,11 @@ export async function runGuideEmailWorkerSelected({ guideIds }) {
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processOneGuide({ guide, emailService }));
+      try {
+        results.push(await comAutomacaoEmpresa(guide.portalClientId, () => processOneGuide({ guide, emailService, operationsGuard })));
+      } catch (err) {
+        results.push({ guideId: guide.id, status: 'ERROR', code: err.code, reason: err.message, willRetry: false });
+      }
     }
     return {
       skipped: false,
@@ -306,7 +345,8 @@ export async function runGuideEmailWorkerLoop() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
-      const result = await runGuideEmailWorkerOnce();
+      const policy = await conferirAutomacaoCicloFiscal();
+      const result = await comAutomacaoCicloFiscal(policy, () => runGuideEmailWorkerOnce());
       log.info({ result }, "Ciclo do guideEmailWorker concluído");
     } catch (err) {
       log.error({ err: err?.message || err }, "Erro no ciclo do guideEmailWorker");

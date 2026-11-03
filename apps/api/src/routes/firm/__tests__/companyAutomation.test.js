@@ -1,3 +1,9 @@
+jest.mock('../../../application/guides/CicloAcompanhamentoGuiasService.js', () => ({ lerAcompanhamentoGuias: jest.fn() }));
+import { lerAcompanhamentoGuias } from '../../../application/guides/CicloAcompanhamentoGuiasService.js';
+jest.mock('../../../application/guides/CicloEnvioGuiasService.js', () => ({ lerCicloEnvioGuias: jest.fn() }));
+import { lerCicloEnvioGuias } from '../../../application/guides/CicloEnvioGuiasService.js';
+jest.mock('../../../application/notas/apuracao/v2/CicloSimplesService.js', () => ({ lerCicloSimples: jest.fn(), revisarCicloSimples: jest.fn() }));
+import { lerCicloSimples, revisarCicloSimples } from '../../../application/notas/apuracao/v2/CicloSimplesService.js';
 jest.mock('../../../infrastructure/db/prisma.js', () => ({ prisma: { companyFirmAccess: { findUnique: jest.fn() } } }));
 jest.mock('../../../application/fiscal/serpro/CompanyAutomationService.js', () => ({ lerAutomacaoEmpresa: jest.fn(), salvarAutomacaoEmpresa: jest.fn() }));
 jest.mock('../../../application/operacoes/OperationsRoutines.js', () => ({ listarRotinasOperacoes: jest.fn() }));
@@ -38,4 +44,46 @@ test.each(['P2034','P2002'])('conflito transacional %s retorna 409 sem sucesso',
  salvarAutomacaoEmpresa.mockRejectedValue(Object.assign(new Error('conflito'),{code}));
  const result=await request(mount()).put('/companies/a/automacao').send({lembretes:{enabled:true}});
  expect(result.status).toBe(409);expect(result.body).toMatchObject({ok:false,error:'AUTOMATION_CHANGED'});
+});
+
+test('ciclo lê sem executar e revisão usa identidade da rota e ator autenticado', async () => {
+ lerCicloSimples.mockResolvedValue({ status: 'NAO_INICIADO', revision: 0 });
+ revisarCicloSimples.mockResolvedValue({ status: 'NAO_INICIADO', revision: 2 });
+ const app = mount();
+ const read = await request(app).get('/companies/a/operacoes/2026-10/ciclo-simples');
+ expect(read.status).toBe(200); expect(read.headers['cache-control']).toBe('no-store');
+ expect(lerCicloSimples).toHaveBeenCalledWith({ portalClientId: 'a', competencia: '2026-10' }, { db: prisma });
+ expect(revisarCicloSimples).not.toHaveBeenCalled();
+ const response = await request(app).post('/companies/a/operacoes/2026-10/ciclo-simples/revisao').send({ expectedRevision: 1, motivo: 'Conferido', userId: 'outro', portalClientId: 'b', isAdmin: true });
+ expect(response.status).toBe(200);
+ expect(revisarCicloSimples).toHaveBeenCalledWith({ portalClientId: 'a', competencia: '2026-10', expectedRevision: 1, motivo: 'Conferido', userId: 'user' }, { db: prisma });
+});
+test('ciclo não concede revisão a usuário sem vínculo atual', async () => {
+ prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
+ expect((await request(mount()).post('/companies/a/operacoes/2026-10/ciclo-simples/revisao').send({ expectedRevision: 1, motivo: 'Conferido' })).status).toBe(403);
+ expect(revisarCicloSimples).not.toHaveBeenCalled();
+});
+
+test('envio automático tem apenas leitura protegida por empresa, sem executar transporte', async () => {
+ lerCicloEnvioGuias.mockResolvedValue({ status: 'DISABLED', items: [], warnings: [] });
+ const app = mount();
+ const response = await request(app).get('/companies/a/operacoes/2026-10/envio-guias');
+ expect(response.status).toBe(200); expect(response.headers['cache-control']).toBe('no-store');
+ expect(lerCicloEnvioGuias).toHaveBeenCalledWith({ portalClientId: 'a', competencia: '2026-10' }, { db: prisma });
+ expect((await request(app).post('/companies/a/operacoes/2026-10/envio-guias').send({ enabled: true })).status).toBe(404);
+ expect(salvarAutomacaoEmpresa).not.toHaveBeenCalled();
+ prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
+ expect((await request(app).get('/companies/b/operacoes/2026-10/envio-guias')).status).toBe(403);
+ expect(lerCicloEnvioGuias).toHaveBeenCalledTimes(1);
+});
+
+test('acompanhamento GET respeita empresa e acesso e não possui comando de execução', async () => {
+ lerAcompanhamentoGuias.mockResolvedValue({portalClientId:'a',competencia:'2026-10',items:[]});
+ const read=await request(mount()).get('/companies/a/operacoes/2026-10/acompanhamento-guias');
+ expect(read.status).toBe(200);expect(read.headers['cache-control']).toBe('no-store');
+ expect(lerAcompanhamentoGuias).toHaveBeenCalledWith({portalClientId:'a',competencia:'2026-10'},{db:prisma});
+ expect((await request(mount()).post('/companies/a/operacoes/2026-10/acompanhamento-guias')).status).toBe(404);
+ prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
+ expect((await request(mount()).get('/companies/b/operacoes/2026-10/acompanhamento-guias')).status).toBe(403);
+ expect(lerAcompanhamentoGuias).toHaveBeenCalledTimes(1);
 });

@@ -13,3 +13,9 @@ test('instantes usam Brasília e datas civis não mudam', () => {
   expect(operationDate('2026-10-30T00:00:00Z')).toBe('30/10/2026');
   expect(operationInstant('2026-02-30T02:00:00Z')).toBe('A verificar');
 });
+
+import {calculationColumns,approvalEvidenceError} from '../operationsDetails';
+test('execução histórica concluída não aparece como erro nem habilita nova liberação',()=>{
+ const operation={companyId:'a',competencia:'2026-10',status:'EXECUTED',execution:{status:'DONE',message:'Concluída'},details:{snapshot:{value:{portalClientId:'a',competencia:'2026-10',estado:'transmitida',receitaInterna:100,receitaExterna:0}},auditoria:{value:{competencia:'2026-10',perguntas:[]}}}};
+ expect(calculationColumns(operation).errors).toEqual([]);expect(approvalEvidenceError(operation)).toMatch(/Execução já concluída/);expect(calculationColumns({...operation,details:{...operation.details,auditoria:{error:'Leitura recusada'}}}).errors.join()).toMatch(/Leitura recusada/);
+});

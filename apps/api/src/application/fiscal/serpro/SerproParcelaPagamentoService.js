@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../automacaoCicloFiscalContext.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproParcelamentoService } from "./SerproParcelamentoService.js";
@@ -6,10 +7,21 @@ import { parcelaPagamentoConfirmado } from "../../accounting/parcelamento/penden
 import { atualizarGuiaComEvidencia } from "../../guides/atualizarGuiaComEvidencia.js";
 import { comprovanteParaRegistro } from "../../guides/lib/comprovantePagamento.js";
 import { lerComposicaoDoDocumento } from "../../accounting/parcelamento/composicaoDocumentoParcela.js";
-import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
+import { executarConsultaAutomatica, consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 import { diagnosticoConsultaPagamento } from "./diagnosticoConsultaPagamento.js";
 
-export async function confirmarPagamentoParcela({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {}, scheduledAt = null }) {
+export async function confirmarPagamentoParcela(input) {
+  if (!input.scheduledAt) return confirmarPagamentoParcelaInterna(input);
+  await input.assertActive?.();
+  const p = await prisma.parcela.findFirst({ where: { id: input.parcelaId, portalClientId: input.portalClientId }, include: { guia: true } });
+  if (!p) return { ok: false, skipped: 'parcela_nao_encontrada' };
+  if (parcelaPagamentoConfirmado(p) || p.guia?.clienteConfirmouEm) return { ok: true, pago: true, skipped: 'already_paid' };
+  const recusa = elegibilidadeVencimentoAutomatico(p.guia?.vencimento || (p.origem !== 'CONTRATO' ? p.vencimento : null));
+  if (recusa) return { ok: true, skipped: recusa, parcelaId: p.id };
+  return executarConsultaAutomatica({ parcelaId: p.id, guideId: p.guiaId, companyId: input.portalClientId, scheduledAt: input.scheduledAt }, () => confirmarPagamentoParcelaInterna(input));
+}
+
+async function confirmarPagamentoParcelaInterna({ portalClientId, parcelaId, force = false, logger = null, assertActive = () => {}, scheduledAt = null }) {
   await assertActive();
   const p = await prisma.parcela.findFirst({ where: { id: parcelaId, portalClientId }, include: { guia: { include: { tributosParcela: true } }, parcelamento: true } });
   if (!p) return { ok: false, skipped: "parcela_nao_encontrada" };
@@ -96,7 +108,7 @@ export async function confirmarPagamentosParcelasEmLote({ portalClientIds, logge
       if (consultas >= limite) break;
       await assertActive();
       try {
-        const r = await confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt });
+        const r = await comAutomacaoEmpresa(p.portalClientId, () => confirmarPagamentoParcela({ portalClientId: p.portalClientId, parcelaId: p.id, logger, assertActive, scheduledAt }));
         if (!r.skipped) consultas++;
         const aviso = null; // Avisos são exclusivos da agenda diária de WhatsApp.
         results.push({ companyId: p.portalClientId, razao: p.parcelamento?.portalClient?.razao || null, competencia: p.anoMesParcela,

@@ -48,7 +48,7 @@ test('evidências em lote usam carteira autorizada e snapshot transacional, sem 
  const projection=jest.spyOn(consultas,'listarEvidenciasOperacoes').mockResolvedValue({items:[{companyId:'a',competencia:'2026-10',revision:'r'}],total:1,competencia:'2026-10'});
  db.$transaction=jest.fn(async callback=>callback(db));
  try {
-  const r=await request(app()).get('/firm/operacoes/evidencias?competencia=2026-10&companyId=outra');expect(r.status).toBe(200);expect(r.headers['cache-control']).toBe('no-store');expect(projection).toHaveBeenCalledWith(db,['a'],'2026-10');expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function),{isolationLevel:'RepeatableRead',timeout:20000});
+  const r=await request(app()).get('/firm/operacoes/evidencias?competencia=2026-10&companyId=outra');expect(r.status).toBe(200);expect(r.headers['cache-control']).toBe('no-store');expect(projection).toHaveBeenCalledWith(db,['a'],'2026-10',{rootDb:db});expect(projection.mock.calls[0][3].rootDb).toBe(db);expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function),{isolationLevel:'RepeatableRead',timeout:20000});
   await request(app(null)).get('/firm/operacoes/evidencias?competencia=2026-10').expect(401);expect(projection).toHaveBeenCalledTimes(1);
   projection.mockRejectedValueOnce(Error('segredo'));const failed=await request(app()).get('/firm/operacoes/evidencias?competencia=2026-10');expect(failed.status).toBe(503);expect(failed.body.total).toBeUndefined();expect(failed.body.message).not.toContain('segredo');
  } finally {projection.mockRestore();delete db.$transaction;}

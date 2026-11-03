@@ -4,7 +4,7 @@ import { useAccountingEntries } from "../../features/accounting/hooks/useManageA
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
 import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
 
-export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab }) {
+export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab, navigation }) {
   const accountingEntriesState = useAccountingEntries();
   const chartOfAccountsState = useChartOfAccounts();
   const entriesRequest = useRef(0);
@@ -28,6 +28,27 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   const [circularYear, setCircularYear] = useState(
     () => parseCompetencia(competenciaPadrao())?.ano || new Date().getFullYear(),
   );
+
+  // Consume a committed Router navigation, never the click that may still be blocked
+  // by a draft guard. React retries this component before committing its children:
+  // the first fiscal consumer therefore cannot read the previous period.
+  const [consumedNavigation, setConsumedNavigation] = useState(null);
+  let incomingPeriod = null;
+  const params = new URLSearchParams(navigation?.search || '');
+  const values = params.getAll('competencia');
+  const expectedPath = selectedCompanyId ? '/companies/' + encodeURIComponent(selectedCompanyId) + '/cadastro-fiscal' : null;
+  if (page === 'companyDetail' && companyDetailTab === 'cadastroFiscal' &&
+      navigation?.pathname === expectedPath && values.length === 1 &&
+      /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(values[0])) incomingPeriod = values[0];
+  const navigationKey = incomingPeriod ? JSON.stringify([navigation.key, navigation.pathname, navigation.search, selectedCompanyId]) : null;
+  if (navigationKey !== consumedNavigation) {
+    setConsumedNavigation(navigationKey);
+    if (incomingPeriod) {
+      if (accountingEntriesState.filters.competencia !== incomingPeriod) accountingEntriesState.setFilter('competencia', incomingPeriod);
+      const year = Number(incomingPeriod.slice(0, 4));
+      if (circularYear !== year) setCircularYear(year);
+    }
+  }
 
   // ⚠ COMPETÊNCIA GLOBAL — uma só para a empresa inteira.
   //

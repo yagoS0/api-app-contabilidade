@@ -1,3 +1,4 @@
+import { operationsDesignMock } from './operationsDesignMock';
 import { criarSolicitacoesMock } from './solicitacoesMock';
 const regrasConferenciaPorEmpresa = new Map();
 import { avisosMock, revisaoMock, corrigirMock, conferirMock, retomarMock, estadoFechamentoMock, salvarFechamentoMock } from "./pagamentoClienteCorrecaoMock";
@@ -3916,8 +3917,52 @@ export function createMockApi({ delay = defaultDelay } = {}) {
   };
   let accessToken = "";
   const atendimentoMovel = criarAtendimentoMovelMock({ conversas: mockConversasWhatsapp, usuario: () => accessToken });
+  const operationPreviews = new Map(), operationBatches = new Map(), operationReceipts = new Map(), operations = new Map();
 
   return withComposicaoParcelamentoMock(withFluxoCarteiraMock({
+    async getCompanyOperation(companyId, competencia) {
+      const k = `${companyId}:${competencia}`;
+      if (!operations.has(k)) operations.set(k, { companyId, competencia, status: 'PENDING', revision: crypto.randomUUID(), pending: [], blocked: null, calculation: null, execution: null });
+      return { ok: true, ...structuredClone(operations.get(k)) };
+    },
+    async saveCompanyOperation(companyId, competencia, input) {
+      const current = await this.getCompanyOperation(companyId, competencia);
+      if (input.expectedRevision !== current.revision) throw Error('Os dados mudaram. Atualize a conferência.');
+      if (['confirm', 'release'].includes(input.action) && !current.calculation) throw Error('Cálculo salvo indisponível nesta demonstração.');
+      const value = { ...current, revision: crypto.randomUUID(), status: ({ confirm: 'CONFIRMED', review: 'IN_REVIEW', release: 'RELEASED' })[input.action] || current.status };
+      operations.set(`${companyId}:${competencia}`, value);
+      return structuredClone(value);
+    },
+    async previewOperationsBatch(competencia, batchId = null) {
+      const old = batchId ? operationBatches.get(batchId) : null;
+      if (batchId && (!old || old.competencia !== competencia)) throw Error('Liberação não encontrada.');
+      const companies = old ? old.items.filter(i => i.state === 'WAITING').map(i => ({ companyId: i.companyId, razao: i.name })) : mockCompanies;
+      const items = [], blocked = [];
+      for (const c of companies) {
+        const op = await this.getCompanyOperation(c.companyId, competencia);
+        const row = { companyId: c.companyId, name: c.razao || c.razaoSocial || c.companyId };
+        if (op.status === 'CONFIRMED' && !op.blocked && op.calculation) items.push(row);
+        else blocked.push({ ...row, reason: 'Apuração não confirmada nesta demonstração.' });
+      }
+      const preview = { id: crypto.randomUUID(), competencia, batchId, items, blocked };
+      operationPreviews.set(preview.id, preview);
+      return { ok: true, preview: structuredClone(preview) };
+    },
+    async acceptOperationsBatch(input) {
+      const prior = operationReceipts.get(input.requestId), payload = JSON.stringify(input);
+      if (prior) { if (prior.payload !== payload) throw Error('Solicitação utilizada para outra liberação.'); return { ok: true, batch: structuredClone(prior.batch) }; }
+      const p = operationPreviews.get(input.previewId);
+      if (!p || p.competencia !== input.confirmCompetencia || !p.items.length) throw Error('Atualize a prévia.');
+      const batch = { id: crypto.randomUUID(), competencia: p.competencia, taskId: null, canResume: false,
+        items: p.items.map(i => ({ ...i, state: 'ATTENTION', message: 'Demonstração: transmissão fiscal não executada.' })) };
+      operationBatches.set(batch.id, batch); operationReceipts.set(input.requestId, { payload, batch });
+      return { ok: true, batch: structuredClone(batch) };
+    },
+    async getOperationsBatch(id) {
+      if (!operationBatches.has(id)) throw Error('Liberação não encontrada.');
+      return { ok: true, batch: structuredClone(operationBatches.get(id)) };
+    },
+    async listOperationsBatches(competencia) { return { ok: true, items: structuredClone([...operationBatches.values()].filter(b => b.competencia === competencia)) }; },
     ...criarGuruConferenciaMock(),
     ...criarCompanyAutomationMock(mockCompanies),
     ...criarManualInssMock(mockCompanies, mockGuidesByCompany),
@@ -5459,6 +5504,14 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     async getRotinas() {
       await delay();
       return mockCarregarRotinas(mockCompanies);
+    },
+    async getPausaCicloFiscal() {
+      const { mockLerPausaCicloFiscal } = await import('./rotinasMock');
+      return mockLerPausaCicloFiscal();
+    },
+    async savePausaCicloFiscal(input) {
+      const { mockSalvarPausaCicloFiscal } = await import('./rotinasMock');
+      return mockSalvarPausaCicloFiscal(input);
     },
     async getOperationEvidence() {
       throw new Error('Conferência de revisões indisponível na demonstração. Nenhuma aprovação simulada.');
@@ -11505,5 +11558,6 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     async resumeCompany() { await delay(80); return { ok: true }; },
     async deleteCompany() { await delay(80); return { ok: true }; },
     ...mockRelatorios,
+    ...operationsDesignMock(mockGuidesByCompany),
   }, (id, comp) => ({ entries: (mockEntriesByCompany.get(id) || []).filter(e => e.competencia === comp), fechadoEm: getCircularRecord(id, comp)?.fechadoContabilEm || null, numeroDeclaracaoRfb: getCircularRecord(id, comp)?.pgdasNumeroDeclaracao || null })),id=>mockEntriesByCompany.get(id) || []);
 }

@@ -1,6 +1,6 @@
 import { conferirParcelasParaEnvio, bloqueioEnvioParcela, SELECT_PARCELA_ENVIO } from "./GuiaParcelaEnvioGuard.js";
 import { reservarSemEntregaExterna } from './EntregaExternaGuiaService.js';
-import { enviosPorGuia } from './EnvioGuiaService.js';
+import { registrarEnvio, marcarEnviando, marcarEnviado, marcarFalhou, marcarIndeterminado, enviosPorGuia } from './EnvioGuiaService.js';
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -13,6 +13,11 @@ import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails, validarDest
 import { whereGuiaPendenteDeEnvio } from "./guideContract.js";
 import { conferirGuiasVencimento } from "./GuideDueBatchService.js";
 import { loteAlterado, periodoVencimento, assinaturaGuias } from "./loteVencimento.js";
+
+async function conferirLedgerEmail(db, ids) {
+  const blocked = await db.envioGuia.findFirst({ where: { guideId: { in: ids }, canal: 'EMAIL', status: { in: ['enviando', 'indeterminado', 'enviado', 'entregue', 'lido'] } } });
+  if (blocked) throw Object.assign(new Error('Existe envio confirmado ou sem desfecho para estas guias. Confira os destinatários e a tentativa antes de reenviar.'), { code: 'EMAIL_TENTATIVA_EXISTENTE', status: 409 });
+}
 
 function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
@@ -118,15 +123,15 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
   const toSend = maxFilesPerRun ? pendingGuides.slice(0, maxFilesPerRun) : pendingGuides;
   const toSendIds = toSend.map((g) => g.id);
 
-  await reservarSemEntregaExterna(prisma, toSend, tx => tx.guide.updateMany({
-    where: { id: { in: toSendIds } },
+  await reservarSemEntregaExterna(prisma, toSend, async tx => { await conferirLedgerEmail(tx, toSendIds); const r = await tx.guide.updateMany({
+    where: { id: { in: toSendIds }, ...whereGuiaPendenteDeEnvio() },
     data: {
       emailStatus: "SENDING",
       emailLastError: null,
       emailNextRetryAt: null,
       emailAttempts: { increment: 1 },
     },
-  }));
+  }); if (r.count !== toSendIds.length) throw loteAlterado(); });
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-email-"));
   const attachments = [];
@@ -320,18 +325,19 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesV
   const guideIds = guides.map((g) => g.id);
   const reservaEm = new Date();
   const reservar = (db) => db.guide.updateMany({
-    where: { id: { in: guideIds }, ...(mesVencimento ? { AND: [whereGuiaPendenteDeEnvio(),
+    where: { id: { in: guideIds }, AND: [whereGuiaPendenteDeEnvio(),
       { OR: [{ paymentStatus: null }, { paymentStatus: { not: "PAID" } }] },
-      { OR: guides.map((g) => ({ id: g.id, updatedAt: g.updatedAt })) }] } : {}) },
+      { OR: guides.map((g) => ({ id: g.id, updatedAt: g.updatedAt })) }] },
     data: { emailStatus: "SENDING", emailLastError: null, emailNextRetryAt: null, emailAttempts: { increment: 1 }, ...(mesVencimento ? { updatedAt: reservaEm } : {}) },
   });
   if (mesVencimento) {
     if (guides.length !== selectedGuideIds.length) throw loteAlterado();
     await reservarSemEntregaExterna(prisma, guides, async (tx) => {
+      await conferirLedgerEmail(tx, guideIds);
       const r = await reservar(tx);
       if (r.count !== guideIds.length) throw loteAlterado();
     });
-  } else await reservarSemEntregaExterna(prisma, guides, reservar);
+  } else await reservarSemEntregaExterna(prisma, guides, async tx => { await conferirLedgerEmail(tx, guideIds); const r = await reservar(tx); if (r.count !== guideIds.length) throw loteAlterado(); });
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-batch-email-"));
   const attachments = [];
@@ -413,5 +419,67 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesV
     } catch {
       // noop
     }
+  }
+}
+
+
+// Internal automatic entry point. Exact documents and destinations are immutable intent data;
+// no HTTP request can supply the callback. Manual entry points retain their explicit retry policy.
+export async function enviarGuiasExatasDoCiclo({ portalClientId, guides, destinos, beforeDispatch, releaseActorId = null }, deps = {}) {
+  const db = deps.db || prisma, email = deps.email || new EmailService();
+  const pdf = deps.pdf || getGuidePdfBuffer, validateTo = deps.validateTo || validarDestinatariosAtuais;
+  if (!guides?.length || !destinos?.length || typeof beforeDispatch !== 'function' || guides.some(g => g.portalClientId !== portalClientId)) throw loteAlterado();
+  const ids = guides.map(g => g.id), reservations = [];
+  await beforeDispatch({ stage: 'prepare' });
+  await reservarSemEntregaExterna(db, guides, async tx => {
+    const locked = await tx.guide.updateMany({ where: { id: { in: ids }, portalClientId, status: 'PROCESSED',
+      AND: [whereGuiaPendenteDeEnvio(), { OR: [{ paymentStatus: null }, { paymentStatus: { not: 'PAID' } }] }] },
+      data: { emailStatus: 'SENDING', emailAttempts: { increment: 1 }, emailNextRetryAt: null, liberadaCliente: true, liberadaEm: new Date(), liberadaPor: releaseActorId } });
+    if (locked.count !== ids.length) throw loteAlterado();
+    for (const guide of guides) for (const destino of destinos) {
+      // Any earlier attempt requires explicit review, including a failed one.
+      if (await tx.envioGuia.findFirst({ where: { guideId: guide.id, canal: 'EMAIL', destino } })) throw loteAlterado();
+      const { envio } = await registrarEnvio({ guideId: guide.id, canal: 'EMAIL', destino, tx });
+      const reservation = await marcarEnviando(envio.id, tx);
+      if (!reservation.reservado) throw loteAlterado();
+      reservations.push({ envioId: envio.id, tentativaId: reservation.tentativaId, guideId: guide.id, destino });
+    }
+  });
+  let dispatched = false;
+  try {
+    const used = new Set(), attachments = [];
+    for (const guide of guides) {
+      const buffer = await pdf(guide);
+      if (!buffer?.length) throw Object.assign(new Error('PDF da guia indisponível.'), { code: 'GUIA_SEM_PDF' });
+      attachments.push({ filename: guidePdfFilename(guide, used), content: buffer });
+    }
+    const to = destinos.join(', ');
+    const result = await email.send({ to, subject: 'Guias para pagamento',
+      html: '<p>Seguem as guias disponíveis em anexo. Confira cada documento e seu vencimento.</p>', attachments,
+      beforeDispatch: async () => {
+        await validateTo(portalClientId, to);
+        await conferirParcelasParaEnvio(guides, { client: db });
+        await beforeDispatch({ stage: 'dispatch' });
+        dispatched = true;
+      } });
+    const address = value => String(typeof value === 'object' ? value?.address || '' : value || '').trim().toLowerCase();
+    const accepted = new Set((result?.accepted || []).map(address)), rejected = new Set((result?.rejected || []).map(address));
+    const outcomes = destinos.map(destination => ({ destination, status: result?.id || accepted.has(address(destination)) ? 'SENT' : rejected.has(address(destination)) ? 'REVIEW' : 'UNCERTAIN' }));
+    for (const r of reservations) {
+      const status = outcomes.find(o => o.destination === r.destino).status;
+      if (status === 'SENT') await marcarEnviado({ ...r, providerMessageId: null }, db);
+      else if (status === 'REVIEW') await marcarFalhou({ ...r, codigo: 'EMAIL_DESTINO_RECUSADO', mensagemUsuario: 'Provedor recusou este destinatário. Confira antes de reenviar.' }, db);
+      else await marcarIndeterminado({ ...r, mensagemUsuario: 'Provedor não confirmou este destinatário. Confira antes de repetir.' }, db);
+    }
+    const complete = outcomes.every(o => o.status === 'SENT');
+    await db.guide.updateMany({ where: { id: { in: ids }, portalClientId, emailStatus: 'SENDING' }, data: { emailStatus: complete ? 'SENT' : 'ERROR', emailSentAt: complete ? new Date() : null, emailLastError: complete ? null : 'Aceite parcial ou incerto; confira os destinatários.' } });
+    return { status: complete ? 'sent' : 'partial', outcomes, reservations, providerReference: result?.id || result?.messageId || null };
+  } catch (error) {
+    for (const r of reservations) {
+      if (dispatched) await marcarIndeterminado({ ...r, mensagemUsuario: 'Confira o envio antes de tentar novamente.' }, db);
+      else await marcarFalhou({ ...r, codigo: error.code || 'ENVIO_INTERROMPIDO', mensagemUsuario: 'Envio interrompido antes do transporte. Confira a configuração.' }, db);
+    }
+    await db.guide.updateMany({ where: { id: { in: ids }, portalClientId, emailStatus: 'SENDING' }, data: { emailStatus: 'ERROR', emailLastError: dispatched ? 'Resultado incerto; conferir antes de repetir.' : 'Envio interrompido; conferir configuração.' } });
+    throw Object.assign(error, { dispatched });
   }
 }

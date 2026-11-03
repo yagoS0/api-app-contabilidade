@@ -259,7 +259,7 @@ async function applyEvent(tx, { portalClientId, ev }) {
  * @param {string} opts.portalClientId
  * @param {"prod"|"hom"} [opts.env="prod"]
  */
-export async function syncDfeForCompany({ portalClientId, env = ambienteDfeConfigurado() }) {
+export async function syncDfeForCompany({ portalClientId, env = ambienteDfeConfigurado(), somenteColeta = false }) {
   if (env !== ambienteDfeConfigurado()) throw new DfeSyncError('DFE_AMBIENTE_DIVERGENTE', 'Ambiente diferente da configuração do serviço');
   const portal = await prisma.portalClient.findUnique({
     where: { id: portalClientId },
@@ -314,6 +314,7 @@ export async function syncDfeForCompany({ portalClientId, env = ambienteDfeConfi
   let totalDocs = 0;
   let iterations = 0;
   let lastMaxNSU = 0n;
+  let complete = false;
 
   // Mesma razão do lado do ADN: "olhei" precisa ser gravado separado de "recebi", senão empresa
   // quieta e captura quebrada ficam idênticas no diagnóstico. Best-effort.
@@ -397,7 +398,7 @@ export async function syncDfeForCompany({ portalClientId, env = ambienteDfeConfi
       });
 
       // Enfileira manifestações (fora da tx — operação independente, best-effort)
-      if (chavesPraManifestar.length > 0) {
+      if (!somenteColeta && chavesPraManifestar.length > 0) {
         try {
           const { enqueueManifestacao } = await import("./NfeManifestacaoService.js");
           for (const chave of chavesPraManifestar) {
@@ -411,13 +412,19 @@ export async function syncDfeForCompany({ portalClientId, env = ambienteDfeConfi
       }
 
       ultNSU = newCursor;
-      if (ret.cStat === "137") break;            // nada novo
+      if (ret.cStat === "137") { complete = true; break; }
+      if (ultNSU >= lastMaxNSU && lastMaxNSU > 0n) { complete = true; break; }
       if (ret.docs.length === 0) break;          // safety
       if (ultNSU >= lastMaxNSU && ret.docs.length === 0) break;
     }
 
     return {
       ok: true,
+      complete: complete && byType.error === 0 && byType.unknown === 0 && byType.nfe_summary === 0,
+      partial: !complete || byType.error > 0 || byType.unknown > 0 || byType.nfe_summary > 0,
+      // Esgotar a distribuição não prova que todas as NF-e emitidas foram fornecidas.
+      revenueComplete: false,
+      ...(somenteColeta ? { reason: 'DFE_RECEITAS_EMITIDAS_NAO_COMPROVADAS', message: 'Distribuição NF-e coletada; ela não comprova a totalidade das receitas emitidas. Confira a base antes de calcular.' } : {}),
       env,
       uf,
       cnpj: portal.cnpj,

@@ -1,3 +1,5 @@
+import { runSimplesEnvioGuiasWorkerLoop } from './workers/simplesEnvioGuiasWorker.js';
+import { runSimplesColetaCalculoWorkerLoop } from "./workers/simplesColetaCalculoWorker.js";
 import { encerrarPoolEmissaoLocks } from './infrastructure/db/prismaEmissaoLocks.js';
 import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
 // src/server.js
@@ -252,3 +254,12 @@ if (CONFERENCIA_ADN_WORKER_ENABLED) {
 // SOZINHO (loop de 30s, drenava a fila global) — causa do incidente de apurações zeradas
 // "enviadas sozinhas". A transmissão em lote agora é 100% sob clique: POST
 // /firm/apuracao/batch/:jobId/run-now (síncrono, escopado por jobId). Nada apura/transmite sozinho.
+
+// Opt-in explicito: publicar nao habilita coleta nem calculo.
+if (process.env.SIMPLES_COLETA_CALCULO_WORKER_ENABLED === "1") {
+  runSimplesColetaCalculoWorkerLoop().catch(err => log.error({ error: err.message }, "Ciclo do Simples interrompido"));
+}
+
+if (process.env.SIMPLES_ENVIO_GUIAS_WORKER_ENABLED === "1") {
+  runSimplesEnvioGuiasWorkerLoop().catch(err => log.error({ error: err.message }, "Envio automático de guias interrompido"));
+}

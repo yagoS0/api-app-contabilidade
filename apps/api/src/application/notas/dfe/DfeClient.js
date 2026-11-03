@@ -17,6 +17,7 @@
 
 import https from "node:https";
 import axios from "axios";
+import { conferirContribuinteCicloFiscal } from '../../fiscal/automacaoCicloFiscalContext.js';
 import { extractTlsMaterialFromPfx } from "../pfxToTls.js";
 
 const ENDPOINTS = {
@@ -111,6 +112,7 @@ export async function fetchDistNSU({ cnpj, ultNSU, pfxBuffer, password, env = "p
   const agent = buildHttpsAgent({ pfxBuffer, password });
 
   try {
+    await conferirContribuinteCicloFiscal(cleanCnpj);
     const res = await axios.post(endpoint, envelope, {
       httpsAgent: agent,
       timeout: timeoutMs,
@@ -130,6 +132,7 @@ export async function fetchDistNSU({ cnpj, ultNSU, pfxBuffer, password, env = "p
 
     return { status: res.status, xml: String(res.data || "") };
   } catch (err) {
+    if (/^(CICLO_FISCAL_|AUTOMACAO_EMPRESA_)/.test(err?.code || '')) throw err;
     // erro de rede / TLS / timeout
     const code =
       err?.code === "ECONNABORTED" ? "TIMEOUT"

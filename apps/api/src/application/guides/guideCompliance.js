@@ -50,10 +50,10 @@ function normalizeRegimeFromLegacy(legacy) {
   return r != null ? String(r).trim() : null;
 }
 
-function getRequirements({ hasProlabore, regimeTributario, hasParcDasAtivo }) {
+function getRequirements({ hasProlabore, temFolha, regimeTributario, hasParcDasAtivo }) {
   const presumido = isRegimePresumido(regimeTributario);
   return {
-    inssRequired: Boolean(hasProlabore),
+    inssRequired: Boolean(hasProlabore || temFolha),
     // ⚠ "Mês sem faturamento" NÃO zera mais esta exigência.
     //
     // Antes ele fazia `dasRequired: false`, e a tag do DAS SUMIA da tela. A intenção era boa (não
@@ -197,6 +197,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
     const hasParcDasAtivo = Boolean(acompanhamentoByPortal.get(row.portalId)?.length) || parcGuiaByPortal.has(row.portalId);
     const req = getRequirements({
       hasProlabore: Boolean(row.hasProlabore),
+      temFolha: Boolean(row.temFolha),
       regimeTributario: regime,
       hasParcDasAtivo,
     });

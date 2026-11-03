@@ -1,9 +1,13 @@
+import { canGuideRecalculate } from './lib/recalculoDaGuia.js';
+import { lerRegistroRecalculo } from './RegistroRecalculoGuia.js';
 import { travarGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
+import { conferirAutomacaoCicloFiscal } from '../fiscal/AutomacaoCicloFiscalService.js';
+import { conferirContextoCicloFiscal, comAutomacaoAgendada, comAutomacaoEmpresa } from '../fiscal/automacaoCicloFiscalContext.js';
 import { bloqueioEnvioParcela, conferirFormaIndicacaoParaEnvio } from './GuiaParcelaEnvioGuard.js';
 import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { faseAvisoGuia, calendarioAvisosGuia } from './calendarioAvisosGuia.js';
+import { faseAvisoGuia, calendarioAvisosGuia, hojeSaoPaulo } from './calendarioAvisosGuia.js';
 import { templateOperacional } from '../whatsapp/TemplateOperacionalWhatsapp.js';
 import { conferirEntregaGuiaWhatsapp } from './EntregaGuiaWhatsappService.js';
 
@@ -13,7 +17,7 @@ export async function transportePadrao() {
   const contatos = await import("../whatsapp/ContatoWhatsappService.js");
   return {
     destinatarios: contatos.destinatariosDeEnvio,
-    async whatsapp({ companyId, contato, texto, acoes, botaoId, key, conferir, fase, variaveis }) {
+    async whatsapp({ companyId, contato, texto, acoes, botaoId, key, conferir, fase, variaveis, politica, vencimentoNominal }) {
       const { INTEGRACAO_WHATSAPP } = await import("../../config.js");
       if (!INTEGRACAO_WHATSAPP) throw erro("WHATSAPP_DESLIGADO", "WhatsApp desativado; aviso pendente para o contador.");
       const { garantirConversa, janelaDaConversa } = await import("../whatsapp/ConversaWhatsappService.js");
@@ -21,12 +25,12 @@ export async function transportePadrao() {
       const { enviarMensagemRastreada } = await import("../whatsapp/SaidaWhatsappService.js");
       const conversa = await garantirConversa({ telefone: contato.telefoneE164, portalClientId: companyId });
       const aberta = (await janelaDaConversa(conversa.id)).situacao === 'ABERTA';
-      const chaveTemplate = fase === 'ANTES' ? 'guia_pagamento_antes_v1' : fase === 'NO_VENCIMENTO' ? 'guia_pagamento_no_vencimento_v1' : acoes.length ? 'guia_pagamento_depois_atualizacao_v2' : 'guia_pagamento_depois_v1';
-      const template = aberta ? null : await templateOperacional(chaveTemplate, prisma);
+      const chaveTemplate = fase === 'ANTES' ? 'guia_pagamento_antes_v1' : fase === 'NO_VENCIMENTO' ? (politica && vencimentoNominal !== hojeSaoPaulo() ? 'guia_pagamento_antes_v1' : 'guia_pagamento_no_vencimento_v1') : acoes.length ? 'guia_pagamento_depois_atualizacao_v2' : 'guia_pagamento_depois_v1';
+      const template = aberta ? null : await templateOperacional(chaveTemplate, prisma, { estrito: Boolean(politica) });
       const checar = async () => {
         await conferir();
         if (aberta && (await janelaDaConversa(conversa.id)).situacao !== 'ABERTA') throw erro('WHATSAPP_JANELA_FECHADA', 'A janela fechou antes do envio.');
-        if (!aberta) await templateOperacional(chaveTemplate, prisma);
+        if (!aberta) await templateOperacional(chaveTemplate, prisma, { estrito: Boolean(politica) });
       };
       await checar();
       const cloud = await whatsappPorCanal(conversa);
@@ -39,9 +43,14 @@ export async function transportePadrao() {
 }
 
 /** Retorno negativo concluído é aviso de ausência de confirmação, nunca ordem para pagar novamente. */
-export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId = null, scheduledAt, assertActive = () => {}, agora = new Date() }, deps = {}) {
+export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId = null, scheduledAt, assertActive = () => {}, agora = new Date(), politica = null }, deps = {}) {
   if (!scheduledAt) return { status: "IGNORADO", motivo: "CONSULTA_MANUAL" };
   const db = deps.db || prisma;
+  const policy = await conferirAutomacaoCicloFiscal({ db, scheduledAt });
+  const conferirPausa = async () => {
+    await conferirAutomacaoCicloFiscal({ db, version: policy.version, scheduledAt });
+    await conferirContextoCicloFiscal(db);
+  };
   const feriados = deps.feriados ?? await db.feriado.findMany({});
   const carregar = async () => {
     const vinculosDaGuia = { parcela: { include: { parcelamento: true } }, parcelamento: true };
@@ -65,12 +74,13 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     if (!p && !g) throw erro("DOCUMENTO_NAO_ENCONTRADO", "Documento não encontrado.");
     if (p?.origemBaixa || p?.baixadaEm || p?.pagamentoStatus === "CONFIRMADO" || g?.baixada || g?.paymentStatus === "PAID" || g?.clienteConfirmouEm || g?.paymentConfirmedAt) throw erro("PAGAMENTO_JA_CONFIRMADO", "Pagamento já confirmado; aviso cancelado.");
 
+    if (politica && lerRegistroRecalculo(g)) throw erro('GUIA_RECALCULADA', 'A guia já foi recalculada; confira o histórico.');
     if (!g?.liberadaCliente) throw erro("GUIA_NAO_LIBERADA", "Obtenha e libere a guia no portal antes de avisar o cliente.");
     if (g.status !== 'PROCESSED') throw erro('GUIA_NAO_PROCESSADA', 'A guia precisa de revisão antes de avisar o cliente.');
     const companyId = p?.portalClientId || g.portalClientId;
     const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { razao: true, municipio: true } });
-    if (!calendarioAvisosGuia(g.vencimento, feriados, company?.municipio)) throw erro('VENCIMENTO_INVALIDO', 'Confira o vencimento da guia antes de avisar o cliente.');
-    const fase = faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio);
+    if (!calendarioAvisosGuia(g.vencimento, feriados, company?.municipio, politica)) throw erro('VENCIMENTO_INVALIDO', 'Confira o vencimento da guia antes de avisar o cliente.');
+    const fase = faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio, politica);
     if (!fase) throw erro('FORA_DO_DIA_DO_AVISO', 'Hoje não é o dia útil anterior, o vencimento ajustado ou o dia útil posterior.');
     return { p: p ? { ...p, parcelamento: contrato } : null, g, companyId, company, fase };
   };
@@ -83,7 +93,8 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const { p, g, companyId, company, fase } = doc;
   const referencia = p?.anoMesParcela || g?.competencia || p?.competencia;
   if (!companyId || !referencia) return { status: "PENDENTE", motivo: "IDENTIFICACAO_INCOMPLETA" };
-  const acoes = fase === 'DEPOIS' ? [{ acao: 'recalcular', label: 'Atualizar guia' }] : [];
+  return comAutomacaoAgendada({ ...policy, scheduledAt }, () => comAutomacaoEmpresa(companyId, async () => {
+  const acoes = fase === 'DEPOIS' && (!politica || canGuideRecalculate(g)) ? [{ acao: 'recalcular', label: 'Atualizar guia' }] : [];
   // O vínculo posterior pode mudar parcela/contrato; a guia e sua competência preservam a identidade.
   const base = createHash("sha256").update(JSON.stringify([companyId, g.id, g.competencia || referencia, fase, new Date(g.vencimento).toISOString().slice(0, 10)])).digest("hex");
   const revisao = versaoPagamentoGuia(g);
@@ -92,9 +103,11 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   const targets = destinos.telefones.map(contato => ({ canal: "WHATSAPP", destino: contato.telefoneE164, contato }));
   if (!targets.length) return { status: "PENDENTE", motivo: "SEM_DESTINATARIO_WHATSAPP", mensagem: "Cadastre um destinatário WhatsApp com autorização de envio para confirmar o pagamento.", companyId, guideId: g.id, parcelaId: p?.id || null };
   const tipo = p ? `parcela${p.numeroParcela ? ` ${p.numeroParcela}` : ""} do parcelamento${p.parcelamento?.numeroParcelamento ? ` ${p.parcelamento.numeroParcelamento}` : ""}` : g.tipo;
-  const vencimento = calendarioAvisosGuia(g.vencimento, feriados, company?.municipio).vencimento.split('-').reverse().join('/');
+  const calendario = calendarioAvisosGuia(g.vencimento, feriados, company?.municipio, politica);
+  const vencimentoNominal = calendario.vencimentoNominal || calendario.vencimento;
+  const vencimento = vencimentoNominal.split('-').reverse().join('/');
   const variaveis = [company?.razao || 'Empresa', tipo, referencia, vencimento].map(String);
-  const texto = fase === 'NO_VENCIMENTO'
+  const texto = fase === 'NO_VENCIMENTO' && (!politica || vencimentoNominal === hojeSaoPaulo(agora))
     ? `${variaveis[0]}\nA guia de ${tipo}, referência ${referencia}, vence hoje (${vencimento}). Se você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.`
     : `${variaveis[0]}\nPode confirmar se a guia de ${tipo}, referência ${referencia}, com vencimento em ${vencimento}, já foi paga?\nSe você já pagou, toque em Confirmar pagamento abaixo. Não é necessário pagar novamente.${fase === 'DEPOIS' ? `\nSe ainda não pagou, ${acoes.length ? 'toque em Atualizar guia. Quando possível, faremos a atualização automática, com os acréscimos aplicáveis; nos demais casos, o contador receberá o pedido' : 'solicite a atualização desta guia ao contador'}.` : ''}`;
   const resultados = [];
@@ -109,8 +122,9 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     }
     // Revisão diferente ou legado não autorizam repetir uma saída de resultado incerto.
     const key = `aviso_pagamento:${base}:${createHash("sha256").update(`${target.canal}:${target.destino}`).digest("hex")}`;
-    const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, revisao, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
+    const value = { status: "RESERVADO", companyId, guideId: g?.id || null, parcelaId: p?.id || null, referencia, fase, revisao, politica, scheduledAt, canal: target.canal, criadoEm: new Date().toISOString() };
     try { await db.$transaction(async tx => {
+      await conferirPausa();
       if (g) await travarGuiaArrecadatoria(tx, g.id, companyId);
       await tx.appSetting.create({ data: { key, value } });
     }); }
@@ -125,13 +139,15 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     }
     let iniciou = false;
     const conferir = async () => {
+      await conferirPausa();
       await assertActive(); const atual = await carregar();
-      if ((atual.p?.id || null) !== (p?.id || null) || versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
+      if (atual.companyId !== companyId || (atual.p?.id || null) !== (p?.id || null) || versaoPagamentoGuia(atual.g) !== versaoPagamentoGuia(g) || (atual.g.hash || null) !== (g.hash || null) || String(atual.g.valor) !== String(g.valor)
         || String(atual.g.vencimento) !== String(g.vencimento) || atual.fase !== fase) throw erro('GUIA_ALTERADA', 'A guia mudou durante a preparação do aviso.');
       const cadastro = await transporte.destinatarios(companyId);
       const contatoAtual = cadastro.telefones.find(c => c.id === target.contato.id && c.telefoneE164 === target.destino);
       if (!contatoAtual || (contatoAtual.vinculoNumeroId || null) !== (target.contato.vinculoNumeroId || null)) throw erro("DESTINATARIO_ALTERADO", "Configuração de envio mudou; aviso pendente.");
       await conferirEntregaGuiaWhatsapp(db, atual.g, target.destino, contatoAtual.vinculoNumeroId);
+      await conferirPausa();
     };
     try {
       await conferir();
@@ -146,7 +162,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
         await db.appSetting.create({ data: { key: id, value: token } });
         botoesAcoes.push({ ...acao, id });
       }
-      await transporte.whatsapp({ companyId, contato: target.contato, texto, acoes: botoesAcoes, botaoId, key, fase, variaveis, conferir: checarTransporte });
+      await transporte.whatsapp({ companyId, contato: target.contato, texto, acoes: botoesAcoes, botaoId, key, fase, variaveis, politica, vencimentoNominal, conferir: checarTransporte });
       await db.appSetting.update({ where: { key }, data: { value: { ...value, status: "ENVIADO", concluidoEm: new Date().toISOString() } } });
       resultados.push({ status: "ENVIADO", canal: target.canal });
     } catch (e) {
@@ -158,4 +174,5 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     }
   }
   return { status: resultados.every(r => r.status === "JA_ENVIADO") ? "JA_ENVIADO" : resultados.every(r => ["ENVIADO", "JA_ENVIADO"].includes(r.status)) ? "ENVIADO" : "PENDENTE", companyId, razao: company?.razao, competencia: g.competencia, tipo: g.tipo, mensagem: resultados.filter(r => r.status === 'PENDENTE').map(r => r.mensagem).filter(Boolean).join(' ') || undefined, guideId: g?.id || null, parcelaId: p?.id || null, resultados };
+  }, db), db);
 }

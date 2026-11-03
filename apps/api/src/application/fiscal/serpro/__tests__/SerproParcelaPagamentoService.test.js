@@ -1,6 +1,6 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: {
   parcela: { findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
-  portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn() }, $transaction: jest.fn(), appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
+  portalClient: { findUnique: jest.fn() }, guide: { findUnique: jest.fn(), updateMany: jest.fn() }, $transaction: jest.fn(), appSetting: { findUnique: jest.fn(), upsert: jest.fn(), create: jest.fn(), update: jest.fn() },
 } }));
 jest.mock("../SerproRuntimeSettings.js", () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { document: "11111111000191" } })) }));
 jest.mock("../SerproParcelamentoService.js", () => ({ SerproParcelamentoService: jest.fn() }));
@@ -11,12 +11,21 @@ import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "..
 const raw = { status: 200, dados: { numeroParcelamento: 123, paDasGerado: 202609, numeroParcela: 3,
   dataPagamento: 20260920, valorPagoArrecadacao: 100, pagamentoDebitos: [{ discriminacoesDebito: [{ principal: 100, juros: 0, multa: 0, total: 100 }] }] } };
 const consultar = jest.fn();
+let ledger;
 const item = extra => ({ id: "p", portalClientId: "empresa", anoMesParcela: "202609", numeroParcela: 3, valorPrevisto: 100,
   parcelamento: { tipo: "PARCSN", numeroParcelamento: "123" }, ...extra });
 beforeEach(() => {
   jest.clearAllMocks();
-  const ledger = new Map();
-  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => ledger.get(where.key));
+  ledger = new Map();
+  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => ledger.get(where.key) || null);
+  prisma.appSetting.create.mockImplementation(async ({ data }) => {
+    if (ledger.has(data.key)) throw Object.assign(new Error("Reserva duplicada"), { code: "P2002" });
+    ledger.set(data.key, data); return data;
+  });
+  prisma.appSetting.update.mockImplementation(async ({ where, data }) => {
+    if (!ledger.has(where.key)) throw Object.assign(new Error("Reserva inexistente"), { code: "P2025" });
+    const row = { ...ledger.get(where.key), ...data }; ledger.set(where.key, row); return row;
+  });
   prisma.appSetting.upsert.mockImplementation(async ({ create }) => { ledger.set(create.key, create); return create; });
   jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z"));
   prisma.parcela.findFirst.mockResolvedValue(item({}));
@@ -34,14 +43,25 @@ test("negativa de parcela não é consultada novamente no automático após vín
   prisma.parcela.findFirst.mockResolvedValue({ ...p, id: "p-vinculada", parcelamento: { tipo: "PARCSN", numeroParcelamento: "456" } });
   expect(await confirmarPagamentoParcela({ portalClientId: "empresa", parcelaId: "p-vinculada", scheduledAt: "2026-09-25T15:00:00Z" })).toMatchObject({ skipped: "conferencia_manual" });
   expect(consultar).toHaveBeenCalledTimes(1);
+  const guia = ledger.get("pagamento_auto_tentativa:guia:g-estavel").value;
+  const parcela = ledger.get("pagamento_auto_tentativa:parcela:p").value;
+  expect(guia).toMatchObject({ status: "REVISAO", resultado: "NAO_LOCALIZADO", companyId: "empresa", guideId: "g-estavel", parcelaId: "p" });
+  expect(guia.claim).toMatch(/^[a-f0-9-]{36}$/i); expect(parcela.claim).toBe(guia.claim);
+  expect(prisma.appSetting.create).toHaveBeenCalledTimes(2);
 });
 test("500 negativas encerradas não escondem a próxima parcela elegível", async () => {
   const rows = Array.from({ length: 501 }, (_, i) => ({ id: `p${i}`, portalClientId: "empresa" }));
   prisma.parcela.findMany.mockImplementation(async ({ where, take }) => rows.filter(p => !where.id?.notIn?.includes(p.id)).slice(0, take));
   prisma.parcela.findFirst.mockImplementation(async ({ where }) => item({ id: where.id, origem: "GUIA", vencimento: "2026-09-20" }));
-  prisma.appSetting.findUnique.mockImplementation(async ({ where }) => where.key.endsWith(":p500") ? null : { value: { status: "CONFERENCIA_MANUAL" } });
+  // Semear apenas negativas reais: configuração e reservas novas não são negativas legadas.
+  for (let i = 0; i < 500; i++) {
+    const key = `pagamento_auto_negativo:parcela:p${i}`;
+    ledger.set(key, { key, value: { status: "CONFERENCIA_MANUAL" } });
+  }
   const r = await confirmarPagamentosParcelasEmLote({ portalClientIds: ["empresa"], scheduledAt: "2026-09-24T15:00:00Z" });
   expect(r.total).toBe(501); expect(r.consultas).toBe(1); expect(consultar).toHaveBeenCalledTimes(1);
+  expect(ledger.get("pagamento_auto_tentativa:parcela:p500").value).toMatchObject({ status: "PAGA", resultado: "PAGA", parcelaId: "p500", companyId: "empresa" });
+  expect(prisma.appSetting.create).toHaveBeenCalledTimes(1);
 });
 afterEach(() => jest.useRealTimers());
 test("confirma sem guia e sem abertura contábil, sem criar nenhum lançamento", async () => {

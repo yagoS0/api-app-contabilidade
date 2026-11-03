@@ -54,3 +54,14 @@ test.each(['erro','expirado'])('ZIP %s permite novo pedido explícito, sem retry
  await waitFor(()=>expect(api.fetchSitfisDownloadBlob).toHaveBeenCalledWith('novo'));
  expect(api.createSitfisDownload).toHaveBeenCalledTimes(2);expect(api.getSitfis).not.toHaveBeenCalled();
 });
+
+
+test('consulta SITFIS independe de PDF e exige prévia sem forçar cache',async()=>{
+ const api={getStoredSitfis:jest.fn(async()=>({ok:true,status:null})),getSitfis:jest.fn(async()=>({ok:true,throttled:true,message:'Cache preservado'}))};
+ render(<OperationsFiscalReports api={api} rows={[{company:{companyId:'a',razao:'Alfa',myRole:'ACCOUNTANT'}}]} competencia="2026-10" title="SITFIS" onClose={()=>{}}/>);
+ await screen.findByText('PDF salvo indisponível');expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));fireEvent.click(screen.getByText('Consultar situação fiscal (1)'));expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar consultas selecionadas'));await screen.findByText('Cache preservado');expect(api.getSitfis).toHaveBeenCalledWith('a');
+});
+
+test('cancelar prévia SITFIS devolve foco sem consultar',async()=>{
+ const api={getStoredSitfis:jest.fn(async()=>({ok:true,status:null})),getSitfis:jest.fn()};render(<OperationsFiscalReports api={api} rows={[{company:{companyId:'a',razao:'Alfa',myRole:'ACCOUNTANT'}}]} competencia="2026-10" title="SITFIS" onClose={()=>{}}/>);await screen.findByText('PDF salvo indisponível');fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));const trigger=screen.getByText('Consultar situação fiscal (1)');trigger.focus();fireEvent.click(trigger);expect(screen.getByRole('heading',{name:'Conferir consulta SITFIS'})).toHaveFocus();const cancel=screen.getByText('Cancelar');cancel.focus();fireEvent.click(cancel);expect(trigger).toHaveFocus();expect(api.getSitfis).not.toHaveBeenCalled();
+});

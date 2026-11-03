@@ -179,3 +179,13 @@ test('correção por código desconhecido é conservadora',()=>{
  } catch(error) { if(error !== rollback) throw error; }
  finally { await db.$disconnect(); }
 },40000);
+
+test('projeção agregada não promove snapshot automático sem raiz/prova a cálculo confirmável', async () => {
+  const snapshots = [{ portalClientId: 'a', competencia: '2026-10', estado: 'calculada', dasSimuladoSerpro: 10,
+    idempotencyKey: 'fech:auto:incompleto', simulacaoSerpro: { _portalCalculo: { origemCalculo: 'AUTOMATICO_SIMPLES' } } }];
+  const db = evidenceDb(['a'], { apuracaoSnapshot: snapshots });
+  const result = await listarEvidenciasOperacoes(db, ['a'], '2026-10');
+  expect(result.items[0].blocked).toMatch(/prova/);
+  expect(result.items[0].calculation).toBeNull();
+  expect(result.items[0].status).toBe('PENDING');
+});

@@ -5,12 +5,18 @@ beforeEach(() => jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:0
 afterEach(() => jest.useRealTimers());
 function setup(patch = {}) {
   const records = new Map();
+  // Configuração preexistente fica separada das reservas criadas pelo aviso.
+  // Não simular a guarda: o serviço real valida esta política em cada leitura.
+  const automationPolicy = { key: 'automacao_ciclo_fiscal', value: {
+    paused: false, version: 1, reason: 'Cenário autorizado de teste', actor: { id: 'contador-fixture' },
+    changedAt: '2026-09-01T11:00:00Z', resumedAt: null,
+  } };
   const guide = { status: "PROCESSED", hash: "pdf-atual", valor: 100, id: "g", portalClientId: "c", competencia: "2026-09", tipo: "INSS", paymentStatus: "OPEN", liberadaCliente: true, vencimento: "2026-09-23", ...patch };
   // Recibo imutável da entrega anterior: a leitura nunca o reconstrói da guia atual.
   const entrega = { arquivoSha256: guide.hash, snapshot: { revisaoDocumento: revisaoDocumentoGuia(guide), guideId:guide.id,portalClientId:guide.portalClientId,telefone:'5511000000000',competencia:guide.competencia,tipo:guide.tipo,valor:guide.valor,vencimento:guide.vencimento} };
-  const db = { envioGuiaTentativa: { findMany: jest.fn(async ({where}) => where.envioGuia.destino === entrega.snapshot.telefone ? [entrega] : []) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async () => ({ razao: "Empresa sintética" })) },
+  const db = { envioGuiaTentativa: { findMany: jest.fn(async ({where}) => where.envioGuia.destino === entrega.snapshot.telefone ? [entrega] : []) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findUnique: jest.fn(async () => ({ ...guide })) }, portalClient: { findUnique: jest.fn(async ({ where }) => ({ id: where.id, razao: "Empresa sintética" })) },
     appSetting: { create: jest.fn(async ({ data }) => { if (records.has(data.key)) throw Object.assign(Error("duplicado"), { code: "P2002" }); records.set(data.key, data); return data; }),
-      findUnique: jest.fn(async ({ where }) => records.get(where.key)), update: jest.fn(async ({ where, data }) => { records.set(where.key, { key: where.key, ...data }); return data; }) } };
+      findUnique: jest.fn(async ({ where }) => where.key === automationPolicy.key ? automationPolicy : where.key === 'company_automation_policy:c' ? null : records.get(where.key)), update: jest.fn(async ({ where, data }) => { records.set(where.key, { key: where.key, ...data }); return data; }) } };
   db.guide.findFirst = jest.fn(async () => ({ ...guide }));
   db.guide.updateMany = jest.fn(async () => ({ count: 1 }));
   db.$transaction = fn => fn(db);
@@ -254,4 +260,39 @@ test('D0 não repete transporte incerto', async () => {
   await f.run(); await f.run();
   expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
   expect([...f.records.values()].find(r => r.value.fase === 'NO_VENCIMENTO').value.status).toBe('INDETERMINADO');
+});
+
+test('pausa empresarial na preparação do WhatsApp impede saída e preserva reserva sem retry', async () => {
+ const f=setup();let companyPolicy=null;
+ const read=f.db.appSetting.findUnique.getMockImplementation();
+ f.db.appSetting.findUnique.mockImplementation(async args=>args.where.key==='company_automation_policy:c'?companyPolicy:read(args));
+ const network=jest.fn();
+ f.transporte.whatsapp.mockImplementation(async({conferir})=>{
+  companyPolicy={value:{paused:true,version:1,reason:'Conferir empresa',updatedBy:'contador-fixture',updatedAt:'2026-09-24T15:00:00Z',resumedAt:null}};
+  await conferir();network();
+ });
+ const result=await f.run();
+ expect(result).toMatchObject({status:'PENDENTE',resultados:[{status:'PENDENTE',motivo:'AUTOMACAO_EMPRESA_PAUSADA',canal:'WHATSAPP'}]});
+ expect(network).not.toHaveBeenCalled();expect(f.transporte.email).not.toHaveBeenCalled();
+ expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+ const reservation=[...f.records.values()].find(r=>r.key.startsWith('aviso_pagamento:'));
+ expect(reservation.value).toMatchObject({status:'PENDENTE',motivo:'AUTOMACAO_EMPRESA_PAUSADA',companyId:'c',guideId:'g'});
+ expect([...f.records.values()].some(r=>r.value.status==='ENVIADO')).toBe(false);
+ const preserved=structuredClone([...f.records]);
+ await expect(f.run()).rejects.toMatchObject({code:'AUTOMACAO_EMPRESA_PAUSADA'});
+ expect([...f.records]).toEqual(preserved);expect(f.transporte.whatsapp).toHaveBeenCalledTimes(1);
+ // Retomada posterior também não recupera o horário antigo.
+ companyPolicy={value:{...companyPolicy.value,paused:false,version:2,resumedAt:'2026-09-24T15:01:00Z'}};
+ await expect(f.run()).rejects.toMatchObject({code:'AUTOMACAO_EMPRESA_HORARIO_ANTERIOR'});
+ expect([...f.records]).toEqual(preserved);expect(network).not.toHaveBeenCalled();
+});
+test('D0 antecipado do novo contrato informa data nominal sem afirmar vence hoje', async()=>{
+ const f=setup({vencimento:'2026-09-26'});jest.setSystemTime(new Date('2026-09-25T15:00:00Z'));
+ await f.run({politica:'D2_D0_D2_V1'});
+ const msg=f.transporte.whatsapp.mock.calls[0][0];expect(msg.fase).toBe('NO_VENCIMENTO');expect(msg.variaveis[3]).toBe('26/09/2026');expect(msg.texto).not.toContain('vence hoje');expect(msg.acoes).toEqual([]);
+});
+test.each([false,true])('D+2 novo oferece atualização somente com capacidade real: %s', async elegivel=>{
+ const f=setup({vencimento:'2026-09-22',tipo:elegivel?'SIMPLES':'ISS',source:elegivel?'SERPRO':'MANUAL'});
+ await f.run({politica:'D2_D0_D2_V1'});
+ const msg=f.transporte.whatsapp.mock.calls[0][0];expect(msg.fase).toBe('DEPOIS');expect(msg.acoes).toHaveLength(elegivel?1:0);expect(msg.texto).toContain('Não é necessário pagar novamente');
 });

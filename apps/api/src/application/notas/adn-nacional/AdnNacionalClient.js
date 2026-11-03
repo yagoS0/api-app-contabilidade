@@ -26,6 +26,7 @@ import { normalizarDocumento, cnpjCompativel } from "@contabilidade/shared/docum
 
 import https from "node:https";
 import axios from "axios";
+import { conferirTransporteCicloFiscal as conferirContextoCicloFiscal, conferirContribuinteCicloFiscal } from '../../fiscal/automacaoCicloFiscalContext.js';
 import { extractTlsMaterialFromPfx } from "../pfxToTls.js";
 
 // ADN Contribuinte (gov.br/nfse) — base com /contribuintes incluído.
@@ -98,6 +99,7 @@ function buildHttpsAgent({ pfxBuffer, password }) {
  * @returns {Promise<{status, items, errors, raw}>}
  */
 export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "prod", timeoutMs = 20000, autoDiscover = false }) {
+  await conferirContextoCicloFiscal();
   const cleanCnpj = normalizarDocumento(cnpj);
   if (!cnpjCompativel(cleanCnpj)) {
     throw new AdnNacionalClientError("INVALID_CNPJ", `CNPJ inválido: ${cnpj}`);
@@ -139,6 +141,8 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
       let attempt = 0;
       // eslint-disable-next-line no-constant-condition
       while (true) {
+        await conferirContextoCicloFiscal();
+        await conferirContribuinteCicloFiscal(cleanCnpj);
         try {
           // Q42: lote=true → retorna até 50 docs por chamada (corrige a varredura 1-em-1).
           res = await client.get(path, ADN_LOTE ? { params: { lote: true } } : undefined);

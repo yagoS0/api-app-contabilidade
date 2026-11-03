@@ -16,7 +16,7 @@ export function elegivelLimparAviso(row) {
   const run = row?.lastRun;
   return Boolean(run?.status === 'FAILED' && run.finishedAt && Number.isFinite(Date.parse(run.finishedAt)) && !row.interrupted && !temResultadoIncerto(run));
 }
-export function estadoExecucaoRotina(row, visto = false) {
+function estadoExecucaoSemPausa(row, visto) {
   if (!row.enabled) return 'Desativada';
   if (row.interrupted) return 'Execução interrompida';
   if (!row.alive) return 'Sem sinal do executor';
@@ -24,4 +24,15 @@ export function estadoExecucaoRotina(row, visto = false) {
   if (row.lastRun?.status === 'FAILED') return visto && elegivelLimparAviso(row) ? 'Falha já vista' : 'Consultar falha';
   if (row.overdue) return 'Horário não executado';
   return 'Aguardando horário';
+}
+
+export function estadoExecucaoRotina(row, visto = false) {
+  const estado = estadoExecucaoSemPausa(row, visto);
+  if (!row.automationPolicyUnavailable && !row.automationPaused) return estado;
+  const pausa = row.automationPolicyUnavailable ? 'Pausa indisponível · novas execuções bloqueadas' : 'Pausa geral ativa';
+  if (estado === 'Em execução') {
+    if (temResultadoIncerto(row.lastRun)) return `${pausa} · Resultado a conferir`;
+    return row.automationPolicyUnavailable ? `${pausa} · Em execução` : 'Pausa ativa · retorno em andamento';
+  }
+  return estado === 'Aguardando horário' ? pausa : `${pausa} · ${estado}`;
 }

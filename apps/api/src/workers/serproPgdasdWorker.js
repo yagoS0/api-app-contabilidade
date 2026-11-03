@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { prepararAcompanhamentoParcelamentosEmpresa } from "../application/fiscal/serpro/ParcelamentoDescobertaService.js";
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log, INTEGRACAO_SERPRO_PARCELAMENTO } from "../config.js";
@@ -109,6 +110,7 @@ async function executarPgdasd(options = {}) {
       if (![["das", idsDas], ["extrato", idsExtrato], ["presumido", idsPresumido], ["parcelamento", idsParcelamento]]
         .some(([key, ids]) => janelaAberta(key) && ids.has(company.id))) continue;
       try {
+        await comAutomacaoEmpresa(company.id, async () => {
         let documentos = null;
         let consultaNegativa = false;
         if (company.regimeTributario === "SIMPLES") {
@@ -129,7 +131,7 @@ async function executarPgdasd(options = {}) {
           if (!faltaDas && !faltaExtrato && !temParcelamento) {
             results.push({ companyId: company.id, competencia, status: consultaNegativa ? "aguardando_conferencia" : "documentos_ja_recuperados" });
             if (!consultaNegativa && janelaAberta("extrato") && idsExtrato.has(company.id)) extratoResults.push({ companyId: company.id, competencia, status: "extrato_ja_sincronizado" });
-            continue;
+            return;
           }
         }
         // eslint-disable-next-line no-await-in-loop
@@ -144,7 +146,7 @@ async function executarPgdasd(options = {}) {
             status: "skipped_procuration_inactive",
             procurationStatus: procuration.status,
           });
-          continue;
+          return;
         }
 
         // O acompanhamento fiscal independe da abertura contábil do acordo.
@@ -203,14 +205,14 @@ async function executarPgdasd(options = {}) {
               }
             }
           }
-          continue; // DAS e extrato abaixo são exclusivos do Simples.
+          return; // DAS e extrato abaixo são exclusivos do Simples.
         }
 
-        if (company.regimeTributario !== "SIMPLES") continue;
-        if (consultaNegativa) continue;
+        if (company.regimeTributario !== "SIMPLES") return;
+        if (consultaNegativa) return;
         if (!procuracaoPermitePgdas(procuration)) {
           results.push({ companyId: company.id, competencia, status: "skipped_procuration_inactive", procurationStatus: "SEM_PODER_PGDASD" });
-          continue;
+          return;
         }
 
         // Stage 1: Captura inicial (apenas no/após fetchDay e se ainda não houver guia para a competência)
@@ -283,6 +285,7 @@ async function executarPgdasd(options = {}) {
         // mesmo já paga no prazo → confusão contábil (mesmo problema que já corrigimos no INSS).
         // Toda busca automática do DAS passa a ser SÓ a captura mensal do Cron (Stage 1/3/4);
         // recálculo de guia específica é ação manual (botão "Recalcular").
+        });
       } catch (err) {
         results.push({
           companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,

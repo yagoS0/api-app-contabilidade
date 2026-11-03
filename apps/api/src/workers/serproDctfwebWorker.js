@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
@@ -84,6 +85,7 @@ async function executarDctfweb(options = {}) {
       options.assertActive?.();
       if (!janelaInss || !idsInss.has(company.id)) continue;
       try {
+        await comAutomacaoEmpresa(company.id, async () => {
         // eslint-disable-next-line no-await-in-loop
         const procuration = await procurationService.checkCompanyProcuration({ portalClientId: company.id });
         if (procuration.status !== "ATIVA") {
@@ -93,7 +95,7 @@ async function executarDctfweb(options = {}) {
             status: "skipped_procuration_inactive",
             procurationStatus: procuration.status,
           });
-          continue;
+          return;
         }
 
         // Stage 1 — Captura inicial
@@ -147,6 +149,7 @@ async function executarDctfweb(options = {}) {
         // competências já vencidas trazia o valor do SERPRO COM juros/multa e sobrescrevia a guia,
         // mesmo já paga no prazo → confusão contábil. Agora competências passadas só são recalculadas
         // sob pedido explícito (botão "Recalcular INSS" na aba Guias → /serpro/inss/sync).
+        });
       } catch (err) {
         results.push({
           companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,

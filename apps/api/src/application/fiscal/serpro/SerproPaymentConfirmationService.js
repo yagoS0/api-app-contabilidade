@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../automacaoCicloFiscalContext.js';
 import { exigirGuiaArrecadatoria } from '../../guides/lib/documentoNaoArrecadatorio.js';
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
@@ -14,7 +15,7 @@ import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { INTEGRACAO_SERPRO_PAGTOWEB, INTEGRACAO_SERPRO_PARCELAMENTO } from "../../../config.js";
 import { confirmarPagamentoParcela, confirmarPagamentosParcelasEmLote } from "./SerproParcelaPagamentoService.js";
-import { consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
+import { executarConsultaAutomatica, consultaAutomaticaEncerrada, registrarNegativaAutomatica, elegibilidadeVencimentoAutomatico } from "./ConsultaPagamentoAutomaticaService.js";
 import { diagnosticoConsultaPagamento } from "./diagnosticoConsultaPagamento.js";
 
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
@@ -42,7 +43,19 @@ function maskCnpj(cnpj) {
  * - não pago → marca OPEN (mantém em aberto).
  * Idempotente: guia já PAID → skip. Guia sem numeroDocumento → skip.
  */
-export async function confirmarPagamentoGuia({ guideId, userId = null, logger = null, assertActive = () => {}, scheduledAt = null }) {
+export async function confirmarPagamentoGuia(input) {
+  if (!input.scheduledAt) return confirmarPagamentoGuiaInterna(input);
+  await input.assertActive?.();
+  const g = await prisma.guide.findUnique({ where: { id: String(input.guideId) } });
+  if (!g) return { ok: false, skipped: 'guide_not_found' };
+  if (g.baixada || g.clienteConfirmouEm || g.paymentStatus === 'PAID') return { ok: true, skipped: 'already_paid', pago: true };
+  const recusa = elegibilidadeVencimentoAutomatico(g.vencimento);
+  if (recusa) return { ok: true, skipped: recusa, guideId: g.id };
+  const p = g.parcelamentoId ? await prisma.parcela.findFirst({ where: { guiaId: g.id, portalClientId: g.portalClientId }, select: { id: true } }) : null;
+  return executarConsultaAutomatica({ guideId: g.id, parcelaId: p?.id, companyId: g.portalClientId, scheduledAt: input.scheduledAt }, () => confirmarPagamentoGuiaInterna(input));
+}
+
+async function confirmarPagamentoGuiaInterna({ guideId, userId = null, logger = null, assertActive = () => {}, scheduledAt = null }) {
   await assertActive();
   const guide = await prisma.guide.findUnique({
     where: { id: String(guideId) },
@@ -244,7 +257,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     }
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt });
+      const r = await comAutomacaoEmpresa(g.portalClientId, () => confirmarPagamentoGuia({ guideId: g.id, userId, logger, assertActive, scheduledAt }));
       const aviso = null; // Avisos são exclusivos da agenda diária de WhatsApp.
       results.push({ ...contexto, guideId: g.id, status: r.skipped || (r.pago ? "paid" : "open"), ...(aviso ? { aviso } : {}) });
     } catch (err) {

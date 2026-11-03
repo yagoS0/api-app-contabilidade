@@ -219,7 +219,7 @@ async function setBackoff({ clientId, errorMsg, minutes }) {
  * @param {string} opts.portalClientId
  * @param {"prod"|"hom"} [opts.env="prod"]
  */
-export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
+export async function syncAdnNotasForCompany({ portalClientId, env = "prod", somenteColeta = false }) {
   // Cursor compartilhado pela empresa: protege rota individual, lote e worker.
   const lease = await acquireGuideLease(`adn-sync:${portalClientId}`);
   if (!lease) return { ok: false, reason: "ADN_SYNC_IN_PROGRESS", message: "Já existe uma consulta de NFS-e em andamento para esta empresa. Aguarde sua conclusão." };
@@ -248,6 +248,8 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
   const byStatus = { upserted: 0, pendencia_criada: 0, skipped: 0 };
   let totalDocs = 0;
   let iterations = 0;
+  let complete = false;
+  let sourceErrors = false;
 
   // ⚠ MARCA A TENTATIVA ANTES DE CONSULTAR — "olhei" é diferente de "recebi".
   // `adnLastSyncAt` só é gravado quando vem documento (dentro de `persistCursor`). Com o cursor
@@ -282,12 +284,18 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
       });
       const status = r.status;
       const items = r.items || [];
+      if (Array.isArray(r.errors) && r.errors.length) sourceErrors = true;
 
       if (status === "REJEICAO") {
         throw new AdnNotasSyncError("ADN_REJEICAO", "O ADN Nacional rejeitou a consulta. Confira o CNPJ e a autorização do certificado A1 desta empresa antes de uma nova tentativa.");
       }
-      if (status === "NENHUM_DOCUMENTO_LOCALIZADO" || items.length === 0) {
+      if (status === "NENHUM_DOCUMENTO_LOCALIZADO") {
+        complete = true;
         break;
+      }
+      if (status !== 'DOCUMENTOS_LOCALIZADOS' || items.length === 0) {
+        if (somenteColeta) throw new AdnNotasSyncError('ADN_RESPOSTA_INCONCLUSIVA', 'A resposta não comprovou o término da captura. Confira a fonte antes de calcular.');
+        if (items.length === 0) break;
       }
 
       let maxNsuThisIter = cursor;
@@ -350,7 +358,7 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
 
       // Q42: sem maxNSU no ADN, o fim é o lote INCOMPLETO (< 50). Enquanto vier lote cheio,
       // continua puxando os próximos 50. Isso substitui a varredura 1-em-1.
-      if (items.length < LOTE_MAX) break;
+      if (items.length < LOTE_MAX) { complete = true; break; }
       if (iterations === MAX_ITERATIONS) throw new AdnNotasSyncError("ADN_LIMITE_PAGINACAO", "O limite de páginas desta consulta foi atingido. Os documentos confirmados foram preservados, mas a captura ainda pode ter mais páginas. Retome a busca após o prazo indicado.");
     }
 
@@ -379,6 +387,8 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
 
     return {
       ok: true, cnpj: companyCnpj, certVia: cert.via,
+      complete: complete && !sourceErrors && !['skipped', 'rejeitada_outro_cnpj', 'evento_sem_chave', 'evento_nota_ausente'].some(k => byStatus[k] > 0),
+      partial: !complete || sourceErrors || ['skipped', 'rejeitada_outro_cnpj', 'evento_sem_chave', 'evento_nota_ausente'].some(k => byStatus[k] > 0),
       iterations, totalDocs, byStatus,
       newCursor: cursor.toString(),
     };

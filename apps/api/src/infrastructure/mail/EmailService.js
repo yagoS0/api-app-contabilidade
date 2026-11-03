@@ -135,14 +135,14 @@ function buildMimeMessage({ from, to, subject, html, attachments }) {
   body += 'Content-Type: text/html; charset="UTF-8"\r\n\r\n';
   body += `${html}\r\n`;
   for (const a of attachments || []) {
-    const fileContent = fs.readFileSync(a.path);
+    const fileContent = Buffer.isBuffer(a.content) ? a.content : fs.readFileSync(a.path);
     const base64Data = fileContent.toString("base64");
     // RFC 2045: o base64 PRECISA ser dobrado em linhas de até 76 chars. Sem isso vira uma linha
     // única gigante que estoura o limite de 998 octetos/linha do SMTP (RFC 5321) — relays quebram
     // a linha e corrompem o anexo → PDF que não abre ("folha branca"). O nodemailer (via SMTP)
     // dobra sozinho; aqui (MIME manual da via Gmail API) precisamos dobrar explicitamente.
     const base64Folded = base64Data.match(/.{1,76}/g)?.join("\r\n") || base64Data;
-    const filename = a.filename || path.basename(a.path);
+    const filename = a.filename || (a.path ? path.basename(a.path) : "guia.pdf");
     body += `--${boundary}\r\n`;
     body += `Content-Type: application/pdf; name="${filename}"\r\n`;
     body += "Content-Transfer-Encoding: base64\r\n";
@@ -154,22 +154,26 @@ function buildMimeMessage({ from, to, subject, html, attachments }) {
 }
 
 export class EmailService {
-  async send({ to, subject, html, attachments, sensitive = false }) {
+  async send({ to, subject, html, attachments, sensitive = false, beforeDispatch }) {
     if (USE_GMAIL_API) {
-      return this.sendViaGmailApi({ to, subject, html, attachments, sensitive });
+      return this.sendViaGmailApi({ to, subject, html, attachments, sensitive, beforeDispatch });
     }
-    return this.sendViaSmtp({ to, subject, html, attachments, sensitive });
+    return this.sendViaSmtp({ to, subject, html, attachments, sensitive, beforeDispatch });
   }
 
-  async sendViaGmailApi({ to, subject, html, attachments, sensitive = false }) {
+  async sendViaGmailApi({ to, subject, html, attachments, sensitive = false, beforeDispatch }) {
     const gmail = await getGmailService();
     const mime = buildMimeMessage({ from: FROM, to, subject, html, attachments });
     const raw = Buffer.from(mime).toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
-    await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+    // Internal callback: configuration/document reservations must still be current
+    // after authentication and MIME preparation, immediately before transport.
+    if (beforeDispatch !== undefined) await beforeDispatch();
+    const result = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
     log.info(sensitive ? { purpose: "authentication" } : { to, from: FROM }, "E-mail enviado (Gmail API)");
+    return { id: result?.data?.id || null };
   }
 
-  async sendViaSmtp({ to, subject, html, attachments, sensitive = false }) {
+  async sendViaSmtp({ to, subject, html, attachments, sensitive = false, beforeDispatch }) {
     const port = Number(SMTP_PORT || 587);
     const transporter = nodemailer.createTransport({
       requireTLS: sensitive,
@@ -184,13 +188,15 @@ export class EmailService {
       subject,
       html,
       attachments: (attachments || []).map((a) => ({
-        filename: a.filename || path.basename(a.path),
-        path: a.path,
+        filename: a.filename || (a.path ? path.basename(a.path) : "guia.pdf"),
+        ...(Buffer.isBuffer(a.content) ? { content: a.content } : { path: a.path }),
         contentType: "application/pdf",
       })),
     };
-    await transporter.sendMail(mail);
+    if (beforeDispatch !== undefined) await beforeDispatch();
+    const result = await transporter.sendMail(mail);
     log.info(sensitive ? { purpose: "authentication" } : { to, from: FROM }, "E-mail enviado (SMTP)");
+    return result;
   }
 }
 

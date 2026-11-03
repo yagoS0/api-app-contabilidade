@@ -48,3 +48,14 @@ test.each([true, false])('revogação da seleção no callback bloqueia transpor
  await expect(f.run()).rejects.toMatchObject({code:'ROTINA_EMPRESA_DESABILITADA'});
  expect(f.cloud.enviarBotoes).not.toHaveBeenCalled();expect(f.cloud.enviarTemplate).not.toHaveBeenCalled();
 });
+
+test('D0 antecipado novo usa template neutro e contrato comprovado, sem vence hoje', async()=>{
+ jest.useFakeTimers().setSystemTime(new Date('2026-09-25T15:00:00Z'));
+ try {
+ const f=cenario(false);Object.assign(f.args,{politica:'D2_D0_D2_V1',fase:'NO_VENCIMENTO',vencimentoNominal:'2026-09-26',acoes:[]});
+ prisma.templateWhatsapp.findUnique.mockImplementation(async({where})=>({nomeMeta:where.chave,statusAprovacao:'APROVADO',idioma:'pt_BR',categoria:'UTILITY',temDocumento:false,conferidoNaMetaEm:new Date()}));
+ prisma.appSetting={findUnique:jest.fn(async()=>{const chave='guia_pagamento_antes_v1',c=TEMPLATES_GUIAS_WHATSAPP[chave];return {value:{nomeMeta:chave,template:{name:chave,status:'APPROVED',category:'UTILITY',language:'pt_BR',components:[{type:'BODY',text:c.corpo},{type:'BUTTONS',buttons:c.botoes.map(text=>({type:'QUICK_REPLY',text}))}]}}};})};
+ await f.run();expect(f.cloud.enviarTemplate).toHaveBeenCalledWith(expect.objectContaining({template:'guia_pagamento_antes_v1',botoesResposta:['confirmar']}));
+ expect(f.cloud.enviarBotoes).not.toHaveBeenCalled();
+ } finally {jest.useRealTimers();}
+});

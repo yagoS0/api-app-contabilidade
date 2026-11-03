@@ -47,7 +47,7 @@ test("horário meia-noite e frequência diária são conservados ao salvar", asy
 });
 
 test("executor sem sinal não aparece como consulta bem-sucedida", async () => {
-  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }],
+  const api = { getPausaCicloFiscal: jest.fn(async () => ({ ok: true, policy: { paused: false, version: 1, reason: 'Conferido', actor: { id: 'usuario-teste' }, changedAt: '2026-09-01T10:00:00Z', resumedAt: null } })), getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }],
     agenda: {}, empresas: [], executions: [{ routine: "pagamento", enabled: true, alive: false,
       lastRun: null, nextAt: "2026-09-25T11:00:00Z" }] })) };
   render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);
@@ -56,7 +56,7 @@ test("executor sem sinal não aparece como consulta bem-sucedida", async () => {
 });
 
 test("falha mostra ação do contador e não promete retry antigo", async () => {
-  const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }], agenda: {}, empresas: [],
+  const api = { getPausaCicloFiscal: jest.fn(async () => ({ ok: true, policy: { paused: false, version: 1, reason: 'Conferido', actor: { id: 'usuario-teste' }, changedAt: '2026-09-01T10:00:00Z', resumedAt: null } })), getRotinas: jest.fn(async () => ({ rotinas: [{ key: "pagamento", label: "Pagamento" }], agenda: {}, empresas: [],
     executions: [{ routine: "pagamento", enabled: true, alive: true, retryExhausted: true,
       lastRun: { status: "FAILED", attempts: 3, retryAt: "2026-09-25T11:15:00Z" }, nextAt: "2026-10-20T11:00:00Z" }] })) };
   render(<MemoryRouter><RotinasPage api={api} /></MemoryRouter>);

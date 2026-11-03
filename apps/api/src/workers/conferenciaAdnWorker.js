@@ -1,3 +1,4 @@
+import { comAutomacaoEmpresa } from '../application/fiscal/automacaoCicloFiscalContext.js';
 // Confere as NFS-e da competência que acabou contra o ADN nacional, no PRIMEIRO DIA do mês
 // seguinte — antes do fechamento, que é o único momento em que dá pra corrigir de graça.
 //
@@ -85,7 +86,7 @@ async function executarConferencia({ competencia: competenciaForcada, forcar = f
     if (jaConferidas.has(portalClientId)) { resumo.pulados += 1; continue; }
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await conferirCompetencia({ portalClientId, competencia });
+      const r = await comAutomacaoEmpresa(portalClientId, () => conferirCompetencia({ portalClientId, competencia }));
       resumo.results.push({ companyId: portalClientId, status: r.status, reason: r.reason || r.resultado?.motivo || null });
       if (r.status === "ok") resumo.ok += 1;
       else if (r.status === "divergente") resumo.divergentes += 1;

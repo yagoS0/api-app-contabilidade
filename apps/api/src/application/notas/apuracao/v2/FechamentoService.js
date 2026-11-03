@@ -11,7 +11,9 @@ import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/s
 import { criarVinculoCalculo, validarCalculoConfirmado, insumosFormulario, exigirRegimeSuportado, exigirEstadoLivre, erroCalculoObsoleto, hashCalculo } from "./CalculoConfirmado.js";
 import { acquireGuideLease } from '../../../guides/GuideLockService.js';
 import { contextoOrigemCalculo, recuperarCalculo } from './RecuperacaoCalculo.js';
-import { executarComRetomada } from './PeriodosRecusadosService.js';
+import { executarComRetomada, prepararRetomada } from './PeriodosRecusadosService.js';
+import { conferirContextoCicloFiscal, conferirTentativaAutomaticaAntesSimulacao } from '../../../fiscal/automacaoCicloFiscalContext.js';
+import { preparacaoAutomaticaAtual, prepararSimplesConsistente, conferirProvaAutomatica } from './PreparacaoAutomaticaSimples.js';
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { derivarFolha12m } from "./FolhaDerivadaService.js";
@@ -139,8 +141,8 @@ export async function faturamentoEmitPorEmpresa({ portalIds, competencia }) {
 }
 
 /** Receita do mês segregada por tipoReceita + mercado (interno/externo). */
-async function receitaPorTipoMercado({ portalClientId, competencia }) {
-  const notas = await prisma.portalInvoice.findMany({
+async function receitaPorTipoMercado({ portalClientId, competencia, db = prisma }) {
+  const notas = await db.portalInvoice.findMany({
     where: { clientId: portalClientId, papel: "EMIT", statusEfetivo: "autorizada", competencia: rangeMes(competencia) },
     select: { total: true, itens: { select: { valor: true, tipoReceita: true, flagExportacao: true } } },
   });
@@ -170,13 +172,13 @@ async function receitaPorTipoMercado({ portalClientId, competencia }) {
 // classificadas nem memória). Reusa CnaeAnexo (cnae→tipoReceitaSugerido) + carregarAtividades
 // (tipoReceita+mercado→idAtividade/anexo). Emite a linha mesmo com faturamento 0, só pra TRAZER o
 // ANEXO — o contador ajusta os valores. Best-effort: sem CNAE/mapeamento → retorna [].
-async function montarAtividadesDoCnae({ cnaePrincipal, faturamentoInterno = 0, faturamentoExterno = 0, dataReferencia = new Date() }) {
+async function montarAtividadesDoCnae({ cnaePrincipal, faturamentoInterno = 0, faturamentoExterno = 0, dataReferencia = new Date(), db = prisma, strict = false }) {
   const cnae = String(cnaePrincipal || "").replace(/\D+/g, "");
   if (cnae.length < 7) return [];
-  const anexoRow = await prisma.cnaeAnexo.findUnique({ where: { cnae: cnae.slice(0, 7) } }).catch(() => null);
+  const anexoRow = await db.cnaeAnexo.findUnique({ where: { cnae: cnae.slice(0, 7) } }).catch(error => { if (strict) throw error; return null; });
   const tipo = anexoRow?.tipoReceitaSugerido;
   if (!tipo) return [];
-  const { map } = await carregarAtividades(dataReferencia);
+  const { map } = await carregarAtividades(dataReferencia, db);
   const atvInterno = map.get(`${tipo}|INTERNO`);
   const atvExterno = map.get(`${tipo}|EXTERNO`);
   const out = [];
@@ -273,14 +275,14 @@ export function aplicarFaturamentoNaForma({ forma, faturamentoInterno = 0, fatur
  * "INTERNO por padrão": é justamente a empresa exportadora que perderia a informação, e o erro
  * chegaria à declaração. As 12 memórias medidas hoje já trazem `mercado`; isto é rede.
  */
-async function completarMercadoPeloCatalogo(forma) {
+async function completarMercadoPeloCatalogo(forma, db = prisma, strict = false) {
   const linhas = Array.isArray(forma) ? forma : [];
   const faltando = linhas.filter((a) => a && !a.mercado).map((a) => Number(a.idAtividade)).filter(Number.isFinite);
   if (!faltando.length) return linhas;
-  const doCatalogo = await prisma.atividadePgdasd.findMany({
+  const doCatalogo = await db.atividadePgdasd.findMany({
     where: { idAtividade: { in: [...new Set(faltando)] } },
     select: { idAtividade: true, mercado: true, anexoImplicito: true, sujeitoFatorR: true, tipoReceita: true, descricao: true },
-  }).catch(() => []);
+  }).catch(error => { if (strict) throw error; return []; });
   const porId = new Map(doCatalogo.map((a) => [String(a.idAtividade), a]));
   return linhas.map((a) => {
     if (!a || a.mercado) return a;
@@ -315,15 +317,15 @@ async function completarMercadoPeloCatalogo(forma) {
 // "entregue" a partir de nada além de um clique.
 export const TIPO_ENTREGA_PGDAS = "PGDAS_D";
 
-export async function lerEntregaExternaPgdas({ portalClientId, competencia }) {
-  return prisma.entregaObrigacaoArquivo.findUnique({
+export async function lerEntregaExternaPgdas({ portalClientId, competencia, db = prisma, strict = false }) {
+  return db.entregaObrigacaoArquivo.findUnique({
     where: {
       portalClientId_tipo_competencia: {
         portalClientId, tipo: TIPO_ENTREGA_PGDAS, competencia,
       },
     },
     select: { transmitidaEm: true, transmitidaPorId: true, observacao: true },
-  }).catch(() => null);
+  }).catch(error => { if (strict) throw error; return null; });
 }
 
 /**
@@ -379,20 +381,20 @@ export async function registrarEntregaExternaPgdas({
 /**
  * Dados pro modal de fechamento. Pré-preenche atividades/folha da memória de config.
  */
-export async function getDadosFechamento({ portalClientId, competencia }) {
-  const portal = await prisma.portalClient.findUnique({
+export async function getDadosFechamento({ portalClientId, competencia, db = prisma, preparacaoAutomatica = false }) {
+  const portal = await db.portalClient.findUnique({
     where: { id: portalClientId },
     select: { cnpj: true, razao: true, companyId: true, empresaZerada: true },
   });
   if (!portal) throw new FechamentoError("PORTAL_NOT_FOUND", "Empresa não encontrada");
 
-  const cadastro = await prisma.cadastroFiscal.findUnique({ where: { portalClientId } });
+  const cadastro = await db.cadastroFiscal.findUnique({ where: { portalClientId } });
   // Q44: CNAE efetivo — do CadastroFiscal, senão do cadastro da empresa (Company legada, vindo do CNPJ).
   let companyCnae = null;
   if (!cadastro?.cnaePrincipal && portal.companyId) {
-    companyCnae = await prisma.company.findUnique({
+    companyCnae = await db.company.findUnique({
       where: { id: portal.companyId }, select: { cnaePrincipal: true },
-    }).catch(() => null);
+    }).catch(error => { if (preparacaoAutomatica) throw error; return null; });
   }
   const cnaePrincipalEfetivo = cadastro?.cnaePrincipal || companyCnae?.cnaePrincipal || null;
   // Afirmação de "mês sem faturamento" feita no fechamento contábil — entra aqui só como dica.
@@ -400,7 +402,7 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
   // ⚠ `pgdasNumeroDeclaracao` e `serproLastSyncAt` viajam junto porque são a PROVA de entrega que
   // não é nossa: o número vem do índice da RFB (`CONSDECLARACAO13`, via `syncPgdasByCompetencia`).
   // É ele que distingue "a declaração existe na Receita" de "o contador diz que entregou".
-  const circularDoMes = await prisma.companyMonthlyCircular.findUnique({
+  const circularDoMes = await db.companyMonthlyCircular.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
     select: {
       semFaturamento: true, semFaturamentoEm: true, semFaturamentoConferencia: true,
@@ -408,10 +410,10 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
       receitaBruta: true, dasTotal: true,
       serproSyncStatus: true, serproLastSyncAt: true,
     },
-  }).catch(() => null);
-  const entregaExterna = await lerEntregaExternaPgdas({ portalClientId, competencia });
+  }).catch(error => { if (preparacaoAutomatica) throw error; return null; });
+  const entregaExterna = await lerEntregaExternaPgdas({ portalClientId, competencia, db, strict: preparacaoAutomatica });
   const { receitaPorTipoMercado: rtm, receitaPorTipo, semClassificacao } =
-    await receitaPorTipoMercado({ portalClientId, competencia });
+    await receitaPorTipoMercado({ portalClientId, competencia, db });
 
   const faturamentoInterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|INTERNO")).reduce((s, [, v]) => s + v, 0));
   const faturamentoExterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|EXTERNO")).reduce((s, [, v]) => s + v, 0));
@@ -421,19 +423,19 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
   // ⚠ DA MEMÓRIA VEM A **FORMA**; O VALOR VEM DAQUI. `lerConfigMemory` já devolve a lista sem os
   // campos de valor, e `aplicarFaturamentoNaForma` põe o faturamento DESTA competência na atividade
   // lembrada, no mercado lembrado — ou deixa vazio quando não dá para saber (2+ atividades).
-  const memory = await lerConfigMemory({ portalClientId });
+  const memory = await lerConfigMemory({ portalClientId, db });
   let atividades;
   let origemAtividades;
   let prefillValor = { total: 0, indefinido: false, motivo: null, mercadoAplicado: null, origem: "nenhum" };
   if (memory?.atividadesEscolhidas && Array.isArray(memory.atividadesEscolhidas) && memory.atividadesEscolhidas.length) {
-    const forma = await completarMercadoPeloCatalogo(memory.atividadesEscolhidas);
+    const forma = await completarMercadoPeloCatalogo(memory.atividadesEscolhidas, db, preparacaoAutomatica);
     const aplicado = aplicarFaturamentoNaForma({ forma, faturamentoInterno, faturamentoExterno });
     atividades = aplicado.atividades;
     prefillValor = { ...aplicado.prefill, origem: "faturamento_da_competencia" };
     origemAtividades = `memoria(${memory.atualizadoEm ? new Date(memory.atualizadoEm).toISOString().slice(0,10) : "?"})`;
   } else {
     const dataRef = rangeMes(competencia).gte;
-    const { atividades: def, semMapeamento } = await montarAtividadesDefault({ receitaPorTipoMercado: rtm, dataReferencia: dataRef });
+    const { atividades: def, semMapeamento } = await montarAtividadesDefault({ receitaPorTipoMercado: rtm, dataReferencia: dataRef, db });
     atividades = def;
     origemAtividades = "notas";
     // ⚠ ESTE CAMINHO NÃO PASSA PELO APLICADOR, e é decisão. O valor de cada linha aqui já é o da
@@ -455,7 +457,7 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
   if ((!Array.isArray(atividades) || atividades.length === 0) && cnaePrincipalEfetivo) {
     const doCnae = await montarAtividadesDoCnae({
       cnaePrincipal: cnaePrincipalEfetivo, faturamentoInterno, faturamentoExterno,
-      dataReferencia: rangeMes(competencia).gte,
+      dataReferencia: rangeMes(competencia).gte, db, strict: preparacaoAutomatica,
     });
     if (doCnae.length) {
       atividades = doCnae;
@@ -469,18 +471,22 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     }
   }
 
-  const rbt = await getRbt12({ portalClientId, competencia });
-  const disparidades = await detectarDisparidades({ portalClientId, atividadesEscolhidas: atividades, receitaPorTipo });
-
-  const snapshot = await prisma.apuracaoSnapshot.findUnique({
+  const snapshot = await db.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
+  const rbt = await getRbt12({ portalClientId, competencia, db, persistir: !preparacaoAutomatica && !String(snapshot?.idempotencyKey || '').startsWith('fech:auto:') });
+  const disparidades = await detectarDisparidades({ portalClientId, atividadesEscolhidas: atividades, receitaPorTipo, db });
+
 
   let contextoAtual = null;
-  if (snapshot) {
-    try { contextoAtual = await contextoOrigemCalculo({ portalClientId, competencia }); } catch { /* Falha de leitura mantém o cálculo somente para consulta. */ }
+  if (snapshot && !preparacaoAutomatica) {
+    try { contextoAtual = await contextoOrigemCalculo({ portalClientId, competencia }, db); } catch { /* Falha de leitura mantém o cálculo somente para consulta. */ }
   }
-  const recuperacao = recuperarCalculo(snapshot, { portalClientId, competencia, cnpj: portal.cnpj, regimeApuracao: cadastro?.regimeApuracao || "COMPETENCIA", contextoOrigem: contextoAtual });
+  let preparacaoAtual = null;
+  if (snapshot && !preparacaoAutomatica && String(snapshot.idempotencyKey || '').startsWith('fech:auto:')) {
+    try { preparacaoAtual = await conferirProvaAutomatica(snapshot, { portalClientId, competencia }, { db }); } catch { /* Mantém apenas consulta; sem prova não libera. */ }
+  }
+  const recuperacao = recuperarCalculo(snapshot, { portalClientId, competencia, cnpj: portal.cnpj, regimeApuracao: cadastro?.regimeApuracao || "COMPETENCIA", contextoOrigem: contextoAtual, preparacaoAtual });
   return {
     ...recuperacao,
     portalClientId, competencia,
@@ -540,7 +546,8 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     // CONFERÊNCIA da folha: soma dos lançamentos contábeis de folha/pró-labore dos 12 meses.
     // Não substitui `folhaMensal12` (que o contador digita) — vai ao lado, para comparar.
     // O Fator R decide Anexo III ou V, e hoje esse número não tem nenhuma segunda fonte.
-    folhaDerivada: await derivarFolha12m({ portalClientId, competencia }),
+    folhaDerivada: preparacaoAutomatica ? null : await derivarFolha12m({ portalClientId, competencia, client: db }),
+    ...(preparacaoAutomatica ? { rbtPreparado: rbt } : {}),
     rbt12: rbt.rbt12,
     rbt12Origem: rbt.origem,
     disparidades,
@@ -550,7 +557,7 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
 }
 
 /** Resolve credenciais SERPRO (contratante = escritório) + contribuinte. */
-async function resolverCnpjs(portalClientId) {
+export async function resolverCnpjs(portalClientId, db = prisma) {
   const creds = await getResolvedSerproCredentials().catch((err) => {
     throw new FechamentoError("OFFICE_CERT_NOT_CONFIGURED", `Cert escritório não configurado: ${err?.message || err}`);
   });
@@ -558,7 +565,7 @@ async function resolverCnpjs(portalClientId) {
     throw new FechamentoError("OFFICE_CERT_NOT_CONFIGURED", "Cert do escritório não configurado (Configurações da Firma → SERPRO).");
   }
   const contratanteCnpj = onlyDigits(creds.certificate.document);
-  const portal = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
+  const portal = await db.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
   const contribuinteCnpj = onlyDigits(portal?.cnpj);
   if (contribuinteCnpj.length !== 14) throw new FechamentoError("INVALID_CNPJ", "CNPJ da empresa inválido");
   return { contratanteCnpj, contribuinteCnpj };
@@ -704,13 +711,18 @@ export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
 export async function calcularFechamento(params) {
+  // A origem automática vem do contexto interno, nunca de um campo HTTP.
+  // Revalida também a identidade empresarial antes de reservar o cálculo.
+  const automatico = Boolean(await conferirContextoCicloFiscal(undefined, { requireCompany: true, portalClientId: params.portalClientId }));
   const lease = await acquireGuideLease(`apuracao-calculo:${params.portalClientId}:${params.competencia}`);
   if (!lease) throw new FechamentoError('CALCULO_EM_ANDAMENTO', 'Já existe um cálculo em andamento para esta empresa e competência. Acompanhe a tarefa antes de tentar novamente.');
-  try { return await calcularFechamentoReservado(params, lease); }
+  try { return await calcularFechamentoReservado(params, lease, { automatico }); }
   finally { await lease.release(); }
 }
 
-async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }, lease) {
+async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false, expectedAutomaticContextHash }, lease, { automatico = false } = {}) {
+  const preparo = automatico ? preparacaoAutomaticaAtual() : null;
+  if (automatico && (!preparo || preparo.prova.portalClientId !== portalClientId || preparo.prova.competencia !== competencia || hashCalculo(preparo.formulario) !== hashCalculo({ atividades, folhaMensal12, regimeApuracao, semMovimento }))) throw erroCalculoObsoleto();
   exigirRegimeSuportado(regimeApuracao);
   const regimeCadastrado = await prisma.cadastroFiscal.findUnique({ where: { portalClientId }, select: { regimeApuracao: true } });
   exigirRegimeSuportado(regimeCadastrado?.regimeApuracao);
@@ -773,9 +785,11 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   }
   const semAtividades = declaracaoZerada;
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
-  const rbt = await getRbt12({ portalClientId, competencia });
+  if (preparo && (preparo.identidade.contribuinteCnpj !== contribuinteCnpj || preparo.identidade.contratanteCnpj !== contratanteCnpj)) throw erroCalculoObsoleto();
+  const rbt = preparo ? preparo.rbt : await getRbt12({ portalClientId, competencia });
 
-  const contextoOrigem = await contextoOrigemCalculo({ portalClientId, competencia });
+  const contextoOrigem = preparo ? preparo.contexto : await contextoOrigemCalculo({ portalClientId, competencia });
+  if (automatico && expectedAutomaticContextHash && hashCalculo(contextoOrigem) !== expectedAutomaticContextHash) throw erroCalculoObsoleto();
   const recuperacao = recuperarCalculo(anterior, { portalClientId, competencia, cnpj: contribuinteCnpj, regimeApuracao: regimeCadastrado?.regimeApuracao || 'COMPETENCIA', contextoOrigem });
   const salvo = recuperacao.calculoRecuperavel;
   if (salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao }))) {
@@ -783,7 +797,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   }
 
   const sim = new PgdasSimulacaoService();
-  const folhasSalario = await folhasSalarioSeAplicavel(atividades, folhaMensal12);
+  const folhasSalario = preparo ? preparo.folhasSalario : await folhasSalarioSeAplicavel(atividades, folhaMensal12);
 
   // ─── PARTIR DA LISTA QUE A RFB JÁ ACEITOU ─────────────────────────────────────────────────
   //
@@ -798,27 +812,37 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   //
   // Palpite BOM, não verdade: se a empresa transmitir uma declaração retroativa, o conjunto muda e
   // a lista envelhece — a RFB rejeita, o laço reconverge e regrava. Pior caso volta a ser o de hoje.
-  const aceitos = await lerPeriodosAceitos({ portalClientId, competencia }).catch(() => null);
+  const aceitos = preparo ? preparo.periodosAceitos : await lerPeriodosAceitos({ portalClientId, competencia }).catch(() => null);
   const podar = (lista, aceitosPa) => (
     Array.isArray(aceitosPa)
       ? (lista || []).filter((r) => aceitosPa.includes(String(r.pa)))
       : (lista || [])
   );
-  const receitasIniciais = podar(rbt.detalhePorMes, aceitos?.receitas);
+  const receitasIniciais = preparo ? preparo.receitasBrutasAnteriores : podar(rbt.detalhePorMes, aceitos?.receitas);
   const folhasIniciais = podar(folhasSalario, aceitos?.folhas);
 
-  const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await executarComRetomada(
-    (p) => { lease.assertActive(); return sim.simular(p); },
-    {
-      contratanteCnpj, contribuinteCnpj, competencia,
-      regimeApuracao: regimeApuracao || "COMPETENCIA",
-      atividades: atividades || [],
-      receitasBrutasAnteriores: receitasIniciais,
-      folhasSalario: folhasIniciais,
-      permitirSemMovimento: semMovimento && semAtividades,
+  const executar = async p => {
+    lease.assertActive();
+    await conferirContextoCicloFiscal(undefined, { requireCompany: true, portalClientId });
+    if (automatico) await conferirTentativaAutomaticaAntesSimulacao(prisma, { portalClientId });
+    return sim.simular(p);
+  };
+  const params = { contratanteCnpj, contribuinteCnpj, competencia,
+    regimeApuracao: regimeApuracao || "COMPETENCIA", atividades: atividades || [],
+    receitasBrutasAnteriores: receitasIniciais, folhasSalario: folhasIniciais, permitirSemMovimento: semMovimento && semAtividades };
+  const executarAutomatico = () => executarComAjusteDePeriodos(executar, preparo.parametrosPreparados, {
+    maxTentativas: 1,
+    onPeriodoRemovido: async recusa => {
+      // Só depois de uma recusa explícita. Reutiliza o registrador existente;
+      // seus params relidos jamais retornam ao transporte desta tentativa.
+      const registro = await prepararRetomada(preparo.parametrosOriginais, { portalClientId, competencia });
+      await registro.onPeriodoRemovido(recusa);
     },
-    { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos },
-  ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
+  });
+  const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await (preparo
+    ? executarAutomatico()
+    : executarComRetomada(executar, params, { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos, tentativaUnica: false })
+  ).catch(err => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
 
   // HTTP 200 não comprova um cálculo utilizável. Zero explícito é válido.
   if (typeof resultado?.dasValor !== "number" || !Number.isFinite(resultado.dasValor) || resultado.dasValor < 0) {
@@ -848,12 +872,14 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   // montar o modal e que a `detectarDisparidades` já consome. Não é conta nova nem segunda
   // definição de faturamento: é a mesma população (`EMIT` autorizada da competência), rateada item
   // a item pelo `tipoReceita`. Custa uma leitura local; nenhuma chamada externa.
-  const { receitaPorTipo: receitaPorTipoDoMes } = await receitaPorTipoMercado({ portalClientId, competencia });
+  if (preparo && (await prepararSimplesConsistente({ portalClientId, competencia })).hash !== preparo.hash) throw erroCalculoObsoleto();
+  const receitaPorTipoDoMes = preparo ? preparo.dados.receitaPorTipo : (await receitaPorTipoMercado({ portalClientId, competencia })).receitaPorTipo;
 
   // Persiste snapshot (configurando→calculada)
   const vinculo = criarVinculoCalculo({ portalClientId, competencia,
     formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }),
-    receitasBrutasAnteriores: receitasAceitas, folhasSalario: folhasAceitas, contribuinteCnpj, contratanteCnpj, contextoOrigem });
+    receitasBrutasAnteriores: receitasAceitas, folhasSalario: folhasAceitas, contribuinteCnpj, contratanteCnpj, contextoOrigem,
+    ...(preparo ? { preparacaoAutomatica: { versao: 1, attemptId: preparo.attemptId, revision: preparo.revision, hash: preparo.hash, prova: preparo.prova } } : {}) });
   const idempotencyKey = vinculo.calculoId;
   const data = {
     rbt12: round2(resultado.rbt12 ?? rbt.rbt12),
@@ -909,7 +935,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
 
   // Memória da última config (anexo/atividades/folha/regime) já no Calcular — antes só o Salvar
   // gravava, e quando o cálculo falhava a escolha se perdia. Best-effort.
-  await salvarConfigMemory({
+  if (!automatico) await salvarConfigMemory({
     portalClientId,
     atividadesEscolhidas: atividades,
     folhaMensal12: folhaMensal12 || null,
@@ -929,6 +955,7 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
   if (!existing) throw new FechamentoError("NAO_CALCULADA", "Calcule a apuração antes de salvar.");
 
   exigirEstadoLivre(existing);
+  await conferirProvaAutomatica(existing, { portalClientId, competencia });
   const vinculo = validarCalculoConfirmado(existing, { portalClientId, competencia, calculoId, formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }) });
   if (!vinculo.contextoOrigem || hashCalculo(vinculo.contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
   if (!['calculada', 'fechada'].includes(existing.estado)) throw erroCalculoObsoleto();
@@ -956,8 +983,8 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
 
   if (fechamento.count !== 1) throw erroCalculoObsoleto();
   const snapshot = { ...existing, estado: 'fechada' };
-  // memória pra próxima competência
-  await salvarConfigMemory({
+  // A memória usada como prova automática não é regravada pelo próprio aceite.
+  if (vinculo.origemCalculo !== 'AUTOMATICO_SIMPLES') await salvarConfigMemory({
     portalClientId,
     atividadesEscolhidas: atividades ?? existing.atividadesEscolhidas,
     folhaMensal12: folhaMensal12 ?? existing.folhaMensal12,
@@ -1067,6 +1094,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
 }
 
 async function transmitirSnapshotConfirmado({ portalClientId, competencia, userId, retificar = false, snapshot, vinculo, iniciarEnvio, antesDeTransmitir, somenteDocumentosFaltantes }) {
+  await conferirProvaAutomatica(snapshot, { portalClientId, competencia });
   // Q55: retificar permite reprocessar uma competência já "transmitida".
   const estadosOk = retificar ? ["fechada", "calculada", "transmitida"] : ["fechada", "calculada"];
   if (!estadosOk.includes(snapshot.estado)) {

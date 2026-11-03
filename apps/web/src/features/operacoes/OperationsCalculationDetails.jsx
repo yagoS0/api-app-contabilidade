@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '../../components/ui/Button';
+import { InternalLink } from '../../components/ui/InternalLink';
+import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { operationMoney as money, operationInstant, readCalculationDetails } from './operationsDetails';
 
 export function CalculationEvidence({ details }) {
@@ -41,6 +44,69 @@ export function OperationsCalculationDetails({ api, companyId, competencia }) {
     return () => { active = false; };
   }, [api, companyId, competencia]);
   return <CalculationEvidence details={data} />;
+}
+
+export function OperationsTransmissionTable({ api, rows, visibleRows, competencia }) {
+  const [data, setData] = useState({}), [selected, setSelected] = useState({}), [versions, setVersions] = useState({});
+  const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [preview, setPreview] = useState(null);
+  const generation = useRef(0), lock = useRef(false);
+  const ids = rows.map(r => r.company.companyId).sort().join('|');
+  useEffect(() => {
+    const run = ++generation.current;
+    setData({}); setSelected({}); setVersions({}); setPreview(null); setMessage(''); setBusy(false); lock.current = false;
+    (async () => {
+      for (const companyId of ids.split('|').filter(Boolean)) {
+        let value;
+        try {
+          if (!api?.getOperationsTransmissionDocuments) throw Error('Leitura vinculada indisponível nesta conexão.');
+          value = await api.getOperationsTransmissionDocuments(companyId, competencia);
+          if (value?.ok !== true || value.companyId !== companyId || value.competencia !== competencia || !Array.isArray(value.items)
+            || value.items.some(i => i.companyId !== companyId || i.competencia !== competencia || !i.releaseId || !i.versionId || !i.calculoId || !i.proofHash || !i.documentos)) throw Error('Identidade ou revisão documental incompatível.');
+        } catch (e) { value = { error: e.message }; }
+        if (generation.current !== run) return;
+        setData(old => ({ ...old, [companyId]: { api, competencia, value } }));
+      }
+    })();
+    return () => { generation.current++; };
+  }, [api, ids, competencia]);
+  const sourceFor = id => data[id]?.api === api && data[id]?.competencia === competencia ? data[id].value : null;
+  const versionKey = item => `${item.releaseId}:${item.versionId}`;
+  const current = id => sourceFor(id)?.items?.find(i => versionKey(i) === versions[id]) || sourceFor(id)?.items?.[0];
+  const selection = id => {
+    const item = current(id);
+    return item?.documentos.extrato ? { companyId: id, competencia, releaseId: item.releaseId, versionId: item.versionId, tipo: 'extrato' } : null;
+  };
+  const chosen = rows.filter(r => selected[r.company.companyId]).map(r => selection(r.company.companyId)).filter(Boolean);
+  const visibleIds = new Set(visibleRows.map(r => r.company.companyId));
+  const hidden = chosen.filter(i => !visibleIds.has(i.companyId)).length;
+  const eligible = visibleRows.filter(r => selection(r.company.companyId));
+  async function download(items, zip) {
+    if (lock.current || !api?.downloadOperationsTransmissionDocuments) return;
+    const run = generation.current;
+    lock.current = true; setBusy(true); setMessage('');
+    try {
+      const blob = await api.downloadOperationsTransmissionDocuments(items, zip);
+      if (generation.current !== run) return;
+      if (!(blob instanceof Blob) || !blob.size || !(zip ? ['application/zip', 'application/x-zip-compressed'] : ['application/pdf']).includes(blob.type)) throw Error('Arquivo inválido.');
+      const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+      anchor.href = url; anchor.download = zip ? `extratos-${competencia}.zip` : `pgdas-${items[0].tipo}-${competencia}.pdf`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMessage(zip ? 'ZIP entregue ao navegador. Confira resultado.json: arquivos indisponíveis ou recusados tornam o lote parcial.' : 'PDF entregue ao navegador.');
+    } catch (e) { if (generation.current === run) setMessage(`Download não confirmado: ${e.message}`); }
+    finally { if (generation.current === run) { lock.current = false; setBusy(false); setPreview(null); } }
+  }
+  return <section aria-label="Declarações transmitidas e documentos vinculados">
+    <p>Valores do histórico vinculado à revisão transmitida. Reabrir a apuração não altera estes valores. Baixar não consulta o Fisco.</p>
+    <div className="operacoes-acoes"><Button variant="secondary" disabled={busy || !eligible.length} onClick={() => setSelected(old => ({ ...old, ...Object.fromEntries(eligible.map(r => [r.company.companyId, true])) }))}>Selecionar elegíveis desta página ({eligible.length})</Button><Button disabled={busy || !chosen.length || chosen.length > 30 || !api?.downloadOperationsTransmissionDocuments} onClick={() => setPreview(chosen.map(i => ({ ...i })))}>Baixar extratos selecionados ({chosen.length})</Button><Button variant="secondary" disabled={busy || !chosen.length} onClick={() => { setSelected({}); setPreview(null); }}>Limpar seleção</Button></div>
+    <p>{chosen.length} empresas selecionadas · {hidden} fora da página ou busca atual. Limite de 30 PDFs, 8 MiB por arquivo e 32 MiB por ZIP.</p>
+    {message && <p role="status">{message}</p>}
+    {preview && <div className="operacoes-previa"><h3>Conferir documentos selecionados</h3><ul>{preview.map(i => <li key={i.companyId}>{rows.find(r => r.company.companyId === i.companyId)?.company.razao || i.companyId} · {i.competencia} · versão {i.versionId}</li>)}</ul><p>Somente arquivos armazenados. Acesso e vínculo serão revalidados por item; resultado parcial será identificado no ZIP. Nenhuma consulta paga, transmissão ou envio.</p><div className="operacoes-acoes"><Button disabled={busy} onClick={() => download(preview, true)}>Confirmar download</Button><Button variant="secondary" disabled={busy} onClick={() => setPreview(null)}>Cancelar</Button></div></div>}
+    <div className="operacoes-tabela-scroll" role="region" aria-label="Transmissões vinculadas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label="Selecionar extratos elegíveis desta página" disabled={busy || !eligible.length} checked={eligible.length > 0 && eligible.every(r => selected[r.company.companyId])} onChange={e => { setPreview(null); setSelected(old => ({ ...old, ...Object.fromEntries(eligible.map(r => [r.company.companyId, e.target.checked])) })); }} /></label></th><th>Empresa / declaração</th><th>Receita transmitida</th><th>Tributos</th><th>Recibo</th><th>Extrato</th><th>Ações</th></tr></thead><tbody>{visibleRows.map(({ company, operation }) => {
+      const id = company.companyId, source = sourceFor(id), item = current(id), name = company.razao || company.razaoSocial || company.cnpj;
+      const href = `${companyTabPath(id, 'cadastroFiscal')}?competencia=${encodeURIComponent(competencia)}`;
+      return <tr key={id}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar extrato de ${name}`} disabled={busy || !selection(id)} checked={Boolean(selected[id])} onChange={e => { setPreview(null); setSelected(old => ({ ...old, [id]: e.target.checked })); }} /></label></td><th scope="row">{name}{operation?.blocked && <p role="alert">{operation.blocked}</p>}{operation?.execution?.message && <p>{operation.execution.message}</p>}{source?.unavailable?.length > 0 && <p>{source.unavailable.length} execução(ões) sem vínculo documental comprovado.</p>}{source?.error ? <p role="alert">{source.error}</p> : !source ? <p role="status">Lendo documentos salvos…</p> : !item ? <p>Vínculo indisponível. Confira o histórico na apuração.</p> : <><p>Declaração {item.numeroDeclaracao} · histórico vinculado</p><small>Cálculo: {item.calculoId}</small>{source.items.length > 1 && <label>Versão<select aria-label={`Versão de ${name}`} disabled={busy} value={versionKey(item)} onChange={e => { setPreview(null); setSelected(old => ({ ...old, [id]: false })); setVersions(old => ({ ...old, [id]: e.target.value })); }}>{source.items.map(i => <option key={versionKey(i)} value={versionKey(i)}>{i.numeroDeclaracao} · {i.calculoId} · {i.versionId.slice(0, 12)}</option>)}</select></label>}</>}{source?.limitado && <p>Histórico limitado; não representa todas as versões.</p>}</th><td>{money(item?.receitaBruta)}</td><td>DAS: {money(item?.dasTotal)}</td><td><Button size="sm" variant="secondary" disabled={busy || !item?.documentos.recibo || !api?.downloadOperationsTransmissionDocuments} onClick={() => download([{ ...selection(id), tipo: 'recibo' }], false)}>Baixar recibo</Button></td><td><Button size="sm" variant="secondary" disabled={busy || !selection(id) || !api?.downloadOperationsTransmissionDocuments} onClick={() => download([selection(id)], false)}>Baixar extrato</Button></td><td><div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={href}>Retificar</InternalLink><InternalLink className="btn btn-secondary btn-sm" href={href}>Abrir empresa</InternalLink></div><small>Retificar abre a apuração; não executa reabertura.</small></td></tr>;
+    })}</tbody></table></div>
+  </section>;
 }
 
 // Read-only summary: these are distinct saved sources, never proof of reconciliation.

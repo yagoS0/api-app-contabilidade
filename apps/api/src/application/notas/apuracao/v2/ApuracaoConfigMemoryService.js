@@ -126,9 +126,9 @@ export async function salvarConfigMemory({
  *
  * @returns {Promise<{atividadesEscolhidas, folhaMensal12, regimeApuracao, flags, atualizadoEm}|null>}
  */
-export async function lerConfigMemory({ portalClientId }) {
+export async function lerConfigMemory({ portalClientId, db = prisma }) {
   if (!portalClientId) return null;
-  const row = await prisma.apuracaoConfigMemory.findUnique({ where: { portalClientId } });
+  const row = await db.apuracaoConfigMemory.findUnique({ where: { portalClientId } });
   if (!row) return null;
   return { ...row, atividadesEscolhidas: normalizarFormaAtividades(row.atividadesEscolhidas) };
 }

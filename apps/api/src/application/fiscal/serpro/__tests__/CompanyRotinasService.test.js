@@ -1,4 +1,5 @@
 jest.mock("../../../../infrastructure/db/prisma.js", () => ({ prisma: {
+  appSetting: { findMany: jest.fn() },
   portalClient: { findMany: jest.fn() }, company: { findMany: jest.fn() },
   companyRotina: { findMany: jest.fn(), createMany: jest.fn(), upsert: jest.fn() },
 } }));
@@ -8,6 +9,7 @@ import { listCompanyRotinas, seedRotinasFromLegacy, saveCompanyRotinas, idsComRo
 
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.appSetting.findMany.mockResolvedValue([]);
   prisma.portalClient.findMany.mockResolvedValue([{ id: "p", companyId: "c", razao: "Empresa", status: "ATIVA" }]);
   prisma.company.findMany.mockResolvedValue([{ id: "c", regimeTributario: "SIMPLES" }]);
   prisma.companyRotina.findMany.mockResolvedValue([]);
@@ -57,4 +59,20 @@ test('seleção de lembretes é independente e não entra no lote fiscal', async
   expect(company.rotinas.avisos_guias_whatsapp).toBeUndefined();
   await saveCompanyRotinas([{ companyId: 'p', rotinas: { avisos_guias_whatsapp: false } }]);
   expect(prisma.companyRotina.upsert).not.toHaveBeenCalled();
+});
+
+test('projeção do ciclo usa configuração única sem acrescentar rotina obrigatória ou escrever', async () => {
+ prisma.appSetting.findMany.mockResolvedValue([{ key: 'ciclo_simples_config:p', value: { enabled: true, fontes: ['NFSE'] } }]);
+ const [company] = await listCompanyRotinas();
+ expect(company.cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: true, configurationValid: true });
+ expect(company.rotinas.simples_coleta_calculo).toBeUndefined();
+ expect(prisma.companyRotina.upsert).not.toHaveBeenCalled();
+});
+
+test('lista preserva seleção histórica fora do regime atual sem declarar aplicabilidade ou gravar', async () => {
+ prisma.company.findMany.mockResolvedValue([{ id: 'c', regimeTributario: 'LUCRO_PRESUMIDO' }]);
+ prisma.appSetting.findMany.mockResolvedValue([{ key: 'ciclo_simples_config:p', value: { enabled: true, fontes: ['NFSE'] } }]);
+ expect((await listCompanyRotinas())[0].cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: false, configurationValid: true });
+ expect(prisma.companyRotina.upsert).not.toHaveBeenCalled();
+ expect(prisma.companyRotina.createMany).not.toHaveBeenCalled();
 });

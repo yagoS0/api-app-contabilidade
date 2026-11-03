@@ -1,4 +1,5 @@
 import axios from "axios";
+import { conferirTransporteCicloFiscal as conferirContextoCicloFiscal, conferirContribuinteCicloFiscal } from '../automacaoCicloFiscalContext.js';
 import { mapSerproError } from "./SerproErrorMapper.js";
 import { SerproAuthService } from "./SerproAuthService.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
@@ -20,6 +21,8 @@ export class SerproHttpClient {
   }
 
   async request({ method = "POST", path = "", data, headers = {}, params, raw = false, validateStatus }) {
+    await conferirContextoCicloFiscal();
+    await conferirContribuinteCicloFiscal(data?.contribuinte?.numero);
     const salva = await lerResposta(data, path);
     if (salva !== null) return raw ? { status: 200, data: salva, headers: {} } : salva;
     // GUARDA DE CUSTO — antes de qualquer coisa, inclusive antes de autenticar. Este é o único
@@ -35,6 +38,7 @@ export class SerproHttpClient {
       ]);
     } catch (error) {
       await concluirChamada(autorizacao, { abortadaAuth: true, erroCodigo: error?.code || "SERPRO_AUTH_ERROR", erroMensagem: "Autenticação ou certificado indisponível antes do envio da operação." });
+      if (error?.code?.startsWith('CICLO_FISCAL_') || error?.code?.startsWith('AUTOMACAO_EMPRESA_')) throw error;
       throw mapSerproError(error);
     }
     // Não está no catch HTTP: bloqueio antes da rede não é resultado fiscal incerto.

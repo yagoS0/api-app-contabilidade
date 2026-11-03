@@ -50,7 +50,16 @@ test("duas tentativas concorrentes idênticas reservam somente uma operação", 
   expect(resultados.map(r=>r.status).sort()).toEqual(["fulfilled","rejected"]);
   expect(client.rows.filter(r=>r.status === "reservada")).toHaveLength(1);
   expect(resultados.find(r=>r.status === "rejected").reason.code).toBe("SERPRO_CHAMADA_EM_ANDAMENTO");
-  expect(client.$queryRaw).toHaveBeenCalledTimes(4);
+  expect(client.$queryRaw).toHaveBeenCalledTimes(6);
+  const locks = client.$queryRaw.mock.calls.map(([sql, ...args]) => ({ sql: sql.join('?'), args }));
+  expect(locks).toEqual([
+    { sql: 'SELECT 1 AS locked FROM pg_advisory_xact_lock(73517001)', args: [] },
+    { sql: 'SELECT 1 AS locked FROM pg_advisory_xact_lock(73517002)', args: [] },
+    { sql: 'SELECT pg_advisory_xact_lock(hashtext(?))::text', args: ['company_automation:empresa'] },
+    { sql: 'SELECT 1 AS locked FROM pg_advisory_xact_lock(73517001)', args: [] },
+    { sql: 'SELECT 1 AS locked FROM pg_advisory_xact_lock(73517002)', args: [] },
+    { sql: 'SELECT pg_advisory_xact_lock(hashtext(?))::text', args: ['company_automation:empresa'] },
+  ]);
 });
 test("chamadas diferentes concorrentes respeitam a última vaga do teto", async () => {
   const client = banco();

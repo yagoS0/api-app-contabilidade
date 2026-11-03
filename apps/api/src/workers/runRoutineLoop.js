@@ -1,4 +1,5 @@
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
+import { conferirContextoCicloFiscal } from '../application/fiscal/automacaoCicloFiscalContext.js';
 import { log } from "../config.js";
 import { recordWorkerHeartbeat, runScheduledRoutine } from "./scheduledRoutineService.js";
 
@@ -30,6 +31,7 @@ export async function runRoutineTick({ routines, run, independent = false }) {
       await runScheduledRoutine(routine, settings.rotinas?.[routine], (options) => {
         const task = queue.then(async () => {
           options.assertActive();
+          await conferirContextoCicloFiscal();
           const current = await getSerproRuntimeSettings();
           if ((!independent && !current.enabled)
             || current.rotinas?.[routine]?.enabled !== true

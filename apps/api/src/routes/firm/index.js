@@ -157,6 +157,8 @@ import {
   updateGuideRuntimeSettings,
 } from "../../application/guides/GuideRuntimeSettings.js";
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
+import { createOperationsGuideEvidence } from "../../application/operacoes/OperationsGuideEvidence.js";
+import { lerAutomacaoCicloFiscal, alterarAutomacaoCicloFiscal } from '../../application/fiscal/AutomacaoCicloFiscalService.js';
 import { runSerproPgdasdWorkerOnce } from "../../workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerOnce } from "../../workers/serproDctfwebWorker.js";
 import { sendCompanyGuidesEmail, sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
@@ -2475,6 +2477,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // CompanyRotina. O GET semeia a partir da regra implícita que os workers usavam
   // (Simples→DAS+extrato+parcelamento, LP→presumido, INSS→todas), então a primeira
   // abertura da tela já reflete o que o sistema faz hoje.
+  router.get('/rotinas/pausa-geral', requireAccountType('FIRM'), async (req, res) => {
+    if (!['admin', 'contador'].includes(String(req.auth?.user?.role || '').toLowerCase())) return res.status(403).json({ error: 'forbidden_admin_or_contador_only' });
+    try { return res.json({ ok: true, policy: await lerAutomacaoCicloFiscal() }); }
+    catch (error) { return res.status(error.status || 503).json({ ok: false, error: error.code || 'CICLO_FISCAL_INDISPONIVEL', message: error.message }); }
+  });
+  router.put('/rotinas/pausa-geral', requireAccountType('FIRM'), async (req, res) => {
+    if (!['admin', 'contador'].includes(String(req.auth?.user?.role || '').toLowerCase())) return res.status(403).json({ error: 'forbidden_admin_or_contador_only' });
+    try {
+      const { paused, version, reason } = req.body || {};
+      const policy = await alterarAutomacaoCicloFiscal({ paused, version, reason, actor: req.auth.user });
+      return res.json({ ok: true, policy });
+    } catch (error) { return res.status(error.status || 503).json({ ok: false, error: error.code || 'CICLO_FISCAL_INDISPONIVEL', message: error.status ? error.message : 'Não foi possível salvar a pausa. Atualize para conferir o estado persistido.' }); }
+  });
+
   router.get("/rotinas", requireAccountType("FIRM"), async (req, res) => {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {
@@ -3371,7 +3387,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     try {
       const portal = await prisma.portalClient.findUnique({
         where: { id: portalClientId },
-        select: { id: true, hasProlabore: true, empresaZerada: true, companyId: true },
+        select: { id: true, hasProlabore: true, temFolha: true, empresaZerada: true, companyId: true },
       });
       if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
       const legacy = portal.companyId
@@ -3381,7 +3397,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           })
         : null;
       const map = await computeGuideComplianceMap(
-        [{ portalId: portal.id, hasProlabore: Boolean(portal.hasProlabore), empresaZerada: portal.empresaZerada, legacy }],
+        [{ portalId: portal.id, hasProlabore: Boolean(portal.hasProlabore), temFolha: Boolean(portal.temFolha), empresaZerada: portal.empresaZerada, legacy }],
         competencia,
       );
       const compliance = map.get(portal.id) || null;
@@ -4219,6 +4235,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
       if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
       const guide = scoped.guide;
+      if (req.operationsGuard) await req.operationsGuard.beforeDispatch({ guide, canal: 'EMAIL' });
       if (guide.status !== "PROCESSED") {
         return res.status(400).json({
           error: "guide_not_processed",
@@ -4249,7 +4266,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Q10.2: reenvio é SÍNCRONO — não depende do worker rodar em background.
       // Permite ao contador clicar "Reenviar" e ter feedback imediato (SENT ou ERROR).
       try {
-        const result = await runGuideEmailWorkerSelected({ guideIds: [updated.id] });
+        const result = await runGuideEmailWorkerSelected({ guideIds: [updated.id], ...(req.operationsGuard ? { operationsGuard: req.operationsGuard } : {}) });
         if (result?.skipped) {
           return res.json({
             ok: true,
@@ -4325,6 +4342,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       const userId = req.auth?.user?.id || null;
+      if (req.operationsGuard) await req.operationsGuard.beforeDispatch({ guide, canal: 'EMAIL' });
       // 1) marca esta guia como liberada ao cliente (no-op se já liberada)
       const lib = await liberarGuiaCliente({ guideId: guide.id, userId });
       // 2) envia SÓ esta guia por e-mail — síncrono, feedback imediato ao contador
@@ -4335,7 +4353,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // reportar sucesso sobre metade do trabalho.
       const prefixo = "Guia liberada ao cliente, mas ";
       try {
-        const result = await runGuideEmailWorkerSelected({ guideIds: [guide.id] });
+        const result = await runGuideEmailWorkerSelected({ guideIds: [guide.id], ...(req.operationsGuard ? { operationsGuard: req.operationsGuard } : {}) });
         if (result?.skipped) {
           // ⚠ Aqui dizia "ficará em fila". NÃO EXISTE FILA (Q55: o laço automático foi removido e
           // nada drena `emailNextRetryAt`). O contador lia a promessa, fechava a tela, e a guia
@@ -4398,13 +4416,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (!scoped.guide || scoped.guide.portalClientId !== companyId) return res.status(404).json({ ok: false, message: "Guia não encontrada nesta empresa." });
     }
     const whatsappRequested = req.body?.whatsappRequested === true;
+    let operationsGuard = null;
+    if (req.body?.operationsPreviewToken !== undefined) {
+      try {
+        operationsGuard = await createOperationsGuideEvidence({ db: prisma }).reserve({ token: req.body.operationsPreviewToken,
+          userId: req.auth.user.id, companyId, competencia: req.body.competencia, items, whatsappRequested });
+      } catch (e) { return res.status(e.status || 409).json({ ok: false, message: e.status ? e.message : 'Confira novamente os documentos e destinatários antes de enviar.' }); }
+    }
     const sendWhatsapp = createIndividualGuideHandler({ log });
     return respondWithTask(req, res, { kind: "envio-guias", companyIds: [companyId], total: items.length, fingerprint: "envio-da-empresa" }, async (res, progress) => {
       const resultados = [];
       for (const item of items) {
         let email, whatsapp = null;
         try {
-          const scopedReq = { auth: req.auth, params: { companyId, guideId: item.guideId },
+          const scopedReq = { auth: req.auth, operationsGuard, params: { companyId, guideId: item.guideId },
             body: item.reenviarConfirmado ? { reenviar: true } : { complementar: true } };
           const output = item.reenviarConfirmado && whatsappRequested
             ? { statusCode: 200, body: { sent: false, envio: { naoSeAplica: true, preservado: true }, message: "E-mail não reenviado; reenvio somente por WhatsApp." } }

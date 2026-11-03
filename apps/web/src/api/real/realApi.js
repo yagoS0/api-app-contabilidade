@@ -828,7 +828,13 @@ export function createRealApi() {
     async getRotinas() {
       return request(`/firm/rotinas`);
     },
+    getPausaCicloFiscal: () => request('/firm/rotinas/pausa-geral'),
+    savePausaCicloFiscal: input => request('/firm/rotinas/pausa-geral', { method: 'PUT', body: JSON.stringify(input) }),
+    getCompanyGuideTracking: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/acompanhamento-guias`),
+    getCompanyGuideDelivery: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/envio-guias`),
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
+    getCompanySimplesCycle: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples`),
+    reviseCompanySimplesCycle: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples/revisao`, { method: 'POST', body: JSON.stringify(input) }),
     getOperationRoutines: () => request('/firm/operacoes/rotinas'),
     getOperationEvidence: competencia => request('/firm/operacoes/evidencias?competencia=' + encodeURIComponent(competencia)),
     getOperationConsultas: competencia => request('/firm/operacoes/consultas?competencia=' + encodeURIComponent(competencia)),
@@ -836,6 +842,10 @@ export function createRealApi() {
     getCompanyManualInss: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/inss-manual`),
     saveCompanyManualInss: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/inss-manual`, { method: 'PUT', body: JSON.stringify(input) }),
     getCompanyOperation: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`),
+    previewOperationsBatch: (competencia, batchId = null) => request('/firm/operacoes/lotes/previa', { method: 'POST', body: JSON.stringify({ competencia, batchId }) }),
+    acceptOperationsBatch: input => request('/firm/operacoes/lotes/aceitar', { method: 'POST', body: JSON.stringify(input) }),
+    getOperationsBatch: id => request(`/firm/operacoes/lotes/${encodeURIComponent(id)}`),
+    listOperationsBatches: competencia => request(`/firm/operacoes/lotes?competencia=${encodeURIComponent(competencia)}`),
     getOperationAlerts: (offset = 0) => request('/firm/operacoes/avisos' + (offset ? '?offset=' + encodeURIComponent(offset) : '')),
     executeCompanyOperation: (companyId, competencia, expectedRevision) => background.request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/executar`, { method: 'POST', body: JSON.stringify({ expectedRevision, confirmCompetencia: competencia }) }),
     saveCompanyOperation: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`, { method: 'PUT', body: JSON.stringify(input) }),
@@ -1309,6 +1319,25 @@ export function createRealApi() {
     // não carrega o token, então o PDF vem como blob autenticado.
     async getPgdasHistorico(companyId, competencia) {
       return request(`/firm/companies/${companyId}/pgdas/${encodeURIComponent(competencia)}/historico`);
+    },
+    getOperationsGuideEvidence(companyId, competencia, offset = 0) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/guide-evidence?offset=${offset}`);
+    },
+    previewOperationsGuideSend(companyId, competencia, body) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/guide-evidence/preview`, { method: 'POST', body: JSON.stringify(body) });
+    },
+    getOperationsTransmissionDocuments(companyId, competencia) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/transmission-documents`);
+    },
+    async downloadOperationsTransmissionDocuments(items, zip = false) {
+      const token = accessToken || readStoredToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const item = items[0];
+      const path = zip ? '/firm/operacoes/transmission-documents/zip' : `/firm/companies/${encodeURIComponent(item.companyId)}/operacoes/${encodeURIComponent(item.competencia)}/transmission-documents/${encodeURIComponent(item.releaseId)}/${encodeURIComponent(item.versionId)}/${encodeURIComponent(item.tipo || 'extrato')}`;
+      if (zip) headers['Content-Type'] = 'application/json';
+      const response = await fetch(`${getApiBaseUrl()}${path}`, { method: zip ? 'POST' : 'GET', headers, ...(zip ? { body: JSON.stringify({ items }) } : {}) });
+      if (!response.ok) throw Error((await response.json().catch(() => ({}))).message || 'Download indisponível.');
+      return response.blob();
     },
     async fetchPgdasPdfBlob(companyId, competencia, tipo = "declaracao", versao = null) {
       const baseUrl = getApiBaseUrl();

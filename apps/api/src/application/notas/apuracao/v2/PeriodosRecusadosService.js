@@ -30,12 +30,14 @@ export async function assinaturasSimulacao(params) {
  * antes da próxima chamada. Não altera receitas/folhas salvas nem confirma lista aceita.
  * Insumos diferentes geram outro vínculo; não importa ledger sem prova do payload original. */
 export async function executarComRetomada(executar, params, {
-  portalClientId, competencia, ajustarPeriodos, db = prisma,
+  portalClientId, competencia, ajustarPeriodos, db = prisma, tentativaUnica = false,
 }) {
   if (typeof executar !== 'function' || typeof ajustarPeriodos !== 'function') throw new TypeError('Executores da simulação são obrigatórios.');
   const preparado = await prepararRetomada(params, { portalClientId, competencia, db });
   // Uma chamada por período restante, mais a confirmação final. Só avança com recusa explícita persistida.
-  const maxTentativas = Math.min(25, preparado.params.receitasBrutasAnteriores.length + preparado.params.folhasSalario.length + 1);
+  // R2A: a automação pode aproveitar recusas já comprovadas, mas uma nova recusa
+  // encerra esta tentativa. O caminho manual mantém seu limite anterior.
+  const maxTentativas = tentativaUnica ? 1 : Math.min(25, preparado.params.receitasBrutasAnteriores.length + preparado.params.folhasSalario.length + 1);
   const resultado = await ajustarPeriodos(executar, preparado.params, { onPeriodoRemovido: preparado.onPeriodoRemovido, maxTentativas });
   return { ...resultado, periodosReaproveitados: preparado.periodosReaproveitados };
 }

@@ -1,6 +1,28 @@
 jest.mock('../SerproRuntimeSettings.js', () => ({ ROTINA_KEYS: ['das', 'inss'] }));
+jest.mock('../../../../infrastructure/db/prisma.js', () => ({ prisma: {} }));
 jest.mock('../CompanyRotinasService.js', () => ({ ROTINA_LABELS: { das: 'DAS', inss: 'INSS' } }));
-import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../CompanyAutomationService.js';
+import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa, identidadeSelecaoCicloSimples } from '../CompanyAutomationService.js';
+
+test.each(['global', 'empresa'])('replay após mudança da pausa %s exige recarga sem regravar histórico', async scope => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: before.revision, requestId: 'replay-atual', rotinas: { das: true } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  const audit = structuredClone(db.appSetting.create.mock.calls[0][0]);
+  const key = scope === 'global' ? 'automacao_ciclo_fiscal' : 'company_automation_policy:a';
+  const value = scope === 'global'
+    ? { paused: true, version: 1, reason: 'Conferir', actor: { id: 'outro' }, changedAt: '2026-11-01T10:00:00Z', resumedAt: null }
+    : { paused: true, version: 1, reason: 'Conferir', updatedBy: 'outro', updatedAt: '2026-11-01T10:00:00Z', resumedAt: null };
+  await db.appSetting.upsert({ create: { key, value } });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', input)).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED', status: 409 });
+  expect(db.appSetting.create).toHaveBeenCalledTimes(1);
+  expect(db.appSetting.create.mock.calls[0][0]).toEqual(audit);
+  expect(db.appSetting.upsert).toHaveBeenCalledTimes(1);
+  expect(db.companyRotina.upsert).toHaveBeenCalledTimes(1);
+  expect(saved.effectiveAutomationState).toBe('SUBJECT_TO_SCHEDULE');
+  const current = await lerAutomacaoEmpresa(db, 'a');
+  expect(current.effectiveAutomationState).toBe(scope === 'global' ? 'GLOBAL_PAUSED' : 'COMPANY_PAUSED');
+  expect(current.rotinas[0].enabled).toBe(true);
+});
 
 function database() {
   const rows = [], settings = new Map([['serpro_runtime_settings', { value: { clientSecret: 'nunca-expor', rotinas: { das: { enabled: true, day: 5, hour: 7 } } } }]]);
@@ -15,6 +37,32 @@ function database() {
   db.$transaction = jest.fn(fn => fn(db));
   return db;
 }
+
+test('token interno detecta ABA; no-op e replay preservam token, legado não migra em leitura', async () => {
+  const db = database(), key = 'ciclo_simples_config:a';
+  const legacy = { enabled: true, fontes: ['NFSE', 'NFE'] };
+  await db.appSetting.upsert({ create: { key, value: legacy } });
+  const identity = identidadeSelecaoCicloSimples(legacy);
+  expect(identity).toBe(identidadeSelecaoCicloSimples({ enabled: true, fontes: ['NFE', 'NFSE'] }));
+  expect(identity).toMatch(/^legacy:/);
+  const save = async (cicloSimples, requestId) => { const before = await lerAutomacaoEmpresa(db, 'a'); return salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId, cicloSimples }); };
+  await save({ enabled: true, fontes: ['NFE', 'NFSE'] }, 'noop-legado');
+  expect((await db.appSetting.findUnique({ where: { key } })).value).toEqual(legacy);
+  await save({ enabled: false, fontes: ['NFE', 'NFSE'] }, 'desativacao-token');
+  const disabled = (await db.appSetting.findUnique({ where: { key } })).value;
+  expect(disabled.selectionToken).toMatch(/^[a-f0-9-]{36}$/);
+  await save({ enabled: true, fontes: ['NFE', 'NFSE'] }, 'reativacao-token');
+  const restored = (await db.appSetting.findUnique({ where: { key } })).value;
+  expect(restored.selectionToken).not.toBe(disabled.selectionToken);
+  expect(identidadeSelecaoCicloSimples(restored)).not.toBe(identity);
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: before.revision, requestId: 'noop-token', cicloSimples: { enabled: true, fontes: ['NFSE', 'NFE'] } };
+  const once = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(once);
+  expect((await db.appSetting.findUnique({ where: { key } })).value).toEqual(restored);
+  expect(once.cicloSimples).not.toHaveProperty('selectionToken');
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'token-injetado', cicloSimples: { ...input.cicloSimples, selectionToken: restored.selectionToken } })).rejects.toMatchObject({ code: 'INVALID_AUTOMATION' });
+});
 test('leitura não habilita rotinas nem expõe credenciais', async () => {
   const db = database(), r = await lerAutomacaoEmpresa(db, 'a');
   expect(r.rotinas.every(x => !x.enabled)).toBe(true);
@@ -137,4 +185,105 @@ test('agenda global entra na revisão; leitura não salva ou expõe dados privad
   expect(current.lembretes).toMatchObject({ enabled: false, agenda: { enabled: true, hour: 8 } });
   await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'agenda-reminder', lembretes: { enabled: true } })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
   expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+});
+
+test('pausa automática própria é auditada, não muda SERPRO, rotinas ou lembretes e replay não repete', async () => {
+  const db = database(), initial = await lerAutomacaoEmpresa(db, 'a');
+  const input = { expectedRevision: initial.revision, requestId: 'automacao-pause', automationPolicy: { paused: true, reason: 'Conferir ciclo' } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(saved.automationPolicy).toMatchObject({ paused: true, version: 1, updatedBy: 'user', reason: 'Conferir ciclo' });
+  expect(saved.effectiveAutomationState).toBe('COMPANY_PAUSED');
+  expect(saved.serproPolicy).toEqual(initial.serproPolicy);
+  expect(saved.rotinas).toEqual(initial.rotinas); expect(saved.lembretes).toEqual(initial.lembretes);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(saved);
+  expect(db.appSetting.upsert).toHaveBeenCalledTimes(1);
+  expect(db.appSetting.create.mock.calls[0][0].data.value.beforeAutomationPolicy.paused).toBe(false);
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'stale-auto' })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
+  db.companyFirmAccess.findUnique.mockResolvedValue({ status: 'REVOKED', role: 'ACCOUNTANT' });
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', input)).rejects.toMatchObject({ status: 403 });
+});
+
+test('ciclo opt-in mantém uma fonte de configuração e revisão auditada', async () => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  expect(before.cicloSimples).toEqual({ enabled: false, fontes: [], applicableCurrentRegime: true, configurationValid: false });
+  const input = { expectedRevision: before.revision, requestId: 'ciclo-pedido-123', cicloSimples: { enabled: true, fontes: ['NFSE'] } };
+  const saved = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+  expect(saved.cicloSimples).toEqual({ ...input.cicloSimples, applicableCurrentRegime: true, configurationValid: true });
+  expect(saved.revision).not.toBe(before.revision);
+  expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+  expect(db.appSetting.create.mock.calls[0][0].data.value.beforeCicloSimples).toEqual(before.cicloSimples);
+  expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(saved);
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { ...input, requestId: 'ciclo-pedido-456' })).rejects.toMatchObject({ code: 'AUTOMATION_CHANGED' });
+});
+test.each([{ enabled: true, fontes: [] }, { enabled: true, fontes: ['NFE', 'NFE'] }, { enabled: true, fontes: ['OUTRA'] }])('recusa fontes não explícitas ou inválidas %j', async cicloSimples => {
+  const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'ciclo-invalido', cicloSimples })).rejects.toMatchObject({ status: 422 });
+  expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('seleção anterior permanece visível fora do regime atual e pode ser desativada com auditoria', async () => {
+  const db = database();
+  await db.appSetting.upsert({ create: { key: 'ciclo_simples_config:a', value: { enabled: true, fontes: ['NFSE'] } } });
+  db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  expect(before.cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: false, configurationValid: true });
+  expect(db.appSetting.create).not.toHaveBeenCalled();
+  const result = await salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'desativar-ciclo-legado', cicloSimples: { enabled: false, fontes: ['NFSE'] } });
+  expect(result.cicloSimples).toEqual({ ...before.cicloSimples, enabled: false });
+  expect(db.appSetting.create.mock.calls[0][0].data.value.beforeCicloSimples).toEqual(before.cicloSimples);
+});
+
+test.each([
+  { anterior: { enabled: false, fontes: ['NFSE'] }, novo: { enabled: true, fontes: ['NFSE'] } },
+  { anterior: { enabled: true, fontes: ['NFSE'] }, novo: { enabled: true, fontes: ['NFSE', 'NFE'] } },
+  { anterior: { enabled: true, fontes: ['NFSE'] }, novo: { enabled: false, fontes: ['NFSE', 'NFE'] } },
+])('fora do regime atual recusa ativação ou ampliação, preservando seleção: %j', async ({ anterior, novo }) => {
+  const db = database();
+  await db.appSetting.upsert({ create: { key: 'ciclo_simples_config:a', value: anterior } });
+  db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  db.appSetting.upsert.mockClear();
+  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'bloqueio-ciclo-legado', cicloSimples: novo })).rejects.toMatchObject({ code: 'ROUTINE_NOT_APPLICABLE' });
+  expect(db.appSetting.upsert).not.toHaveBeenCalled();
+  expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('salvar outros controles fora do regime preserva ciclo selecionado sem reativar', async () => {
+  const db = database(), selected = { enabled: true, fontes: ['NFSE'] };
+  await db.appSetting.upsert({ create: { key: 'ciclo_simples_config:a', value: selected } });
+  db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+  const before = await lerAutomacaoEmpresa(db, 'a');
+  const result = await salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'manter-ciclo-legado', cicloSimples: selected, lembretes: { enabled: false } });
+  expect(result.cicloSimples).toEqual(before.cicloSimples);
+  expect(result.lembretes.enabled).toBe(false);
+});
+
+test('envio de guias nasce desligado, salva seleção independente com token e recibo, e não ativa lembretes', async () => {
+ const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+ expect(before.envioGuias.enabled).toBe(false);
+ const input = { expectedRevision: before.revision, requestId: 'envio-guias-teste', envioGuias: { enabled: true } };
+ const result = await salvarAutomacaoEmpresa(db, 'a', 'user', input);
+ expect(result.envioGuias.enabled).toBe(true); expect(result.lembretes.enabled).toBe(false);
+ expect(db.companyRotina.upsert).not.toHaveBeenCalled();
+ const saved = (await db.appSetting.findUnique({ where: { key: 'envio_guias_config:a' } })).value;
+ expect(saved).toMatchObject({ enabled: true, selectionToken: expect.any(String), updatedBy: 'user' });
+ expect(db.appSetting.create.mock.calls[0][0].data.value.beforeEnvioGuias.enabled).toBe(false);
+ expect(await salvarAutomacaoEmpresa(db, 'a', 'user', input)).toEqual(result);
+ expect(result.envioGuias).not.toHaveProperty('selectionToken');
+});
+test.each([{enabled:'true'}, {enabled:true, token:'externo'}, null])('envio rejeita configuração inválida %j', async envioGuias => {
+ const db = database(), before = await lerAutomacaoEmpresa(db, 'a');
+ await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'envio-invalido', envioGuias })).rejects.toMatchObject({ status: 422 });
+ expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('acompanhamento nasce desligado, exige contrato e limite explícitos e audita sem ligar agenda', async () => {
+ const db=database(), before=await lerAutomacaoEmpresa(db,'a');
+ expect(before.acompanhamentoGuias).toEqual({enabled:false,politica:null,limiteConsultas:0});
+ const input={expectedRevision:before.revision,requestId:'tracking-select',acompanhamentoGuias:{enabled:true,politica:'D2_D0_D2_V1',limiteConsultas:1}};
+ const saved=await salvarAutomacaoEmpresa(db,'a','user',input);
+ expect(saved.acompanhamentoGuias).toEqual(input.acompanhamentoGuias); expect(saved.lembretes.enabled).toBe(false);expect(saved.lembretes.agenda.enabled).toBe(false);
+ expect(db.companyRotina.upsert).not.toHaveBeenCalled();expect(db.appSetting.create.mock.calls.at(-1)[0].data.value.beforeAcompanhamentoGuias.enabled).toBe(false);
+ expect(await salvarAutomacaoEmpresa(db,'a','user',input)).toEqual(saved);
+ await expect(salvarAutomacaoEmpresa(db,'a','user',{...input,requestId:'tracking-bad-limit',expectedRevision:saved.revision,acompanhamentoGuias:{...input.acompanhamentoGuias,limiteConsultas:2}})).rejects.toMatchObject({code:'INVALID_AUTOMATION'});
 });
