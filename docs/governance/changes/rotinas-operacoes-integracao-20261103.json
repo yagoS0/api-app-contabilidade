@@ -29,6 +29,12 @@
     "Nenhuma ativação de automações autorizada por esta integração. Guru em conferência, eNotas ativo, benefício pendente, Sintropia fora de ativação. Antes de ativar: calendário/feriados, contatos/prova de envio, templatesUTILITY, custos e configuração precisam validação operacional."
   ],
   "validationMode": "authorized_complementary_record_with_required_final_ci",
+  "ciPdfCorrection": {
+    "cause": "Leitura fria de PDF válido falha no caminho Buffer de pdf-parse1.1.4/pdf.js1.10.100; reprodução independente separou tipo de offset, com bytes preservados.",
+    "change": "Normalizar a entrada do consumidor PGDAS para uma cópia Uint8Array, mantendo parser, parâmetros fiscais e guardas. Fixture PDFKit e verificações de receita, imposto e identidade preservam e ampliam a regressão.",
+    "operationalImpact": "Correção técnica de leitura local, sem nova regra fiscal, dependência, retry, ato externo ou alteração de dados reais.",
+    "evidence": "output/rotinas-operacoes-design-20261103/ci-pdfkit: reprodução fria, controle independente tipo/offset e dez cenários PostgreSQL aprovados. CI final ainda obrigatório; falhas dos runs41718578245,41719794277,41720657479 preservadas."
+  },
   "sourceFingerprintBeforeIntegration": "aeb3e2101433d2b9545ce64869487278b229eef7dcfee3e321d220d0ba5970c2",
   "sourcePaths": [
     "apps/api/src/application/company/FluxoCarteiraService.js",
@@ -44,6 +50,7 @@
     "apps/api/src/application/fiscal/serpro/SerproCallGuard.js",
     "apps/api/src/application/fiscal/serpro/SerproHttpClient.js",
     "apps/api/src/application/fiscal/serpro/SerproParcelaPagamentoService.js",
+    "apps/api/src/application/fiscal/serpro/SerproPgdasDeclaracaoService.js",
     "apps/api/src/application/fiscal/serpro/SerproPaymentConfirmationService.js",
     "apps/api/src/application/fiscal/serpro/SerproRuntimeSettings.js",
     "apps/api/src/application/fiscal/serpro/__tests__/CompanyRotinasService.test.js",

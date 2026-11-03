@@ -12,6 +12,7 @@ jest.mock('../../guides/GuideStorageService.js', () => ({ GuideStorageService: {
   upload: async ({ key }) => ({ key, url: `https://storage.invalid/${key}` }),
 }) } }));
 import axios from 'axios';
+import PDFDocument from 'pdfkit';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { createOperationsBatchService } from '../OperationsBatchService.js';
@@ -105,18 +106,18 @@ async function fixture(run, { realTransmission = false } = {}) {
 }
 
 async function syntheticPdf(identity) {
-  // PDF 1.4 ASCII sem compressão, xref em offsets de bytes. Identidade evita
-  // reutilizar o mesmo hash de documento em empresas distintas (Guide.hash único).
-  const text = `Documento sintetico R2B. Sem validade fiscal. ${identity}`.replace(/[()\\]/g, '_');
-  const stream = `BT /F1 10 Tf 40 700 Td (${text}) Tj ET\n`;
-  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream`];
-  let document = '%PDF-1.4\n'; const offsets = [0];
-  objects.forEach((object, i) => { offsets.push(Buffer.byteLength(document)); document += `${i + 1} 0 obj\n${object}\nendobj\n`; });
-  const start = Buffer.byteLength(document);
-  document += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
-  return Buffer.from(document, 'ascii').toString('base64');
+  // PDF sintético válido; o parser fiscal permanece real.
+  // Identidade única evita colisão de Guide.hash entre empresas.
+  return new Promise((resolve, reject) => {
+    const pdf = new PDFDocument({ compress: false }), chunks = [];
+    pdf.on('data', chunk => chunks.push(chunk));
+    pdf.on('error', reject);
+    pdf.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
+    pdf.text(`Documento sintetico R2B. Sem validade fiscal. ${identity}`);
+    pdf.text("Receita Bruta Informada: R$ 1.000,00");
+    pdf.text("Valor Total do Documento 10,00");
+    pdf.end();
+  });
 }
 
 const circularDiagnostic = c => c && ({ id: c.id, portalClientId: c.portalClientId, competencia: c.competencia,
@@ -169,6 +170,10 @@ test.each(['existing-declaration', 'changed-declaration-after-extract'])('Postgr
     expect(attempt).toMatchObject({ evolucaoDocumental: { documento: { numeroDeclaracao: `existing-${id}` } } });
     const dasRequests = requests.filter(r => r.id === id && ['GERARDAS12', 'GERARDASCOBRANCA17'].includes(r.service));
     if (mode === 'existing-declaration') {
+      const parsedCircular = await pg.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: id, competencia: pa } } });
+      expect(parsedCircular).toMatchObject({ portalClientId: id, competencia: pa, pgdasNumeroDeclaracao: `existing-${id}` });
+      expect(Number(parsedCircular.receitaBruta)).toBe(1000);
+      expect(Number(parsedCircular.dasTotal)).toBe(10);
       expect(dasRequests).toHaveLength(1);
       expect(attempt.status).toBe('DONE'); expect(attempt.documentos.guia.ok).toBe(true);
       expect(await pg.guide.count({ where: { portalClientId: id, competencia: pa, tipo: 'SIMPLES', status: 'PROCESSED' } })).toBe(1);

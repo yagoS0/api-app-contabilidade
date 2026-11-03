@@ -442,7 +442,8 @@ function parseAtividadesPgdas(text) {
 
 async function parsePgdasDeclarationPdf(buffer) {
   const pdfParse = (await import("pdf-parse")).default;
-  const pdfData = await pdfParse(buffer);
+  // pdf.js antigo falha com Buffer em leitura fria; copiar para Uint8Array preserva os bytes.
+  const pdfData = await pdfParse(new Uint8Array(buffer));
   const rawText = String(pdfData?.text || "");
 
   // 1) Receita Bruta total — vem do header (seção 2.1 Discriminativo de Receitas)

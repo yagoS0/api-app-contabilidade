@@ -1,5 +1,7 @@
 # Estado atual da integração — 03/11/2026
 
+Complemento do PR #251: o CI revelou `bad XRef entry` na leitura fria de um PDF sintético válido. A reprodução independente isolou a incompatibilidade do tipo Buffer no leitor antigo, sem relação demonstrada com PostgreSQL ou offsets do arquivo. O consumidor PGDAS agora entrega uma cópia exata em Uint8Array ao mesmo parser. A fixture usa PDFKit já existente e preserva todas as verificações, acrescentando receita, imposto e identidade da declaração. Os dez cenários PostgreSQL do candidato passaram. Não há nova regra fiscal, nova dependência, repetição automática ou consulta real. O CI do código corrigido permanece obrigatório; os três resultados falhos anteriores são preservados.
+
 Os 17 arquivos de correção e os dois ajustes posteriores de testes foram aplicados e revisados. O relato abaixo é histórico da preparação; suas menções a checkout congelado e candidatos não aplicados não descrevem o estado atual.
 
 A API tem cobertura completa de 721 suítes: 12.290 testes aprovados e um teste herdado pendente. Governança (85), portal (1.586) e ambos os builds passaram localmente. A regressão integral da interface será concluída pelo CI oficial sobre a versão integrada com a main; a execução local parcial e suas falhas anteriores permanecem preservadas. O teste atualizado da página passou em 30 casos isolados e recebeu revisão independente. As provas visuais compatíveis e o complemento de Transmitido em computador/celular foram preservados.
