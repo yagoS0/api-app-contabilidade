@@ -32,11 +32,12 @@ function fixture(status = 'CONFIRMED') {
   return { api, resolve: () => { current = { ...current, status: 'EXECUTED', execution: { status: 'DONE' } }; resolveExecution({ ok: true }); }, reject: () => rejectExecution(new Error('Resultado desconhecido')) };
 }
 
-async function openApprovals() {
-  fireEvent.click(screen.getByRole('button', { name: 'Apuração' }));
-  await waitFor(() => expect(screen.getByRole('button', {name:'Conferir e continuar rotina'})).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', {name:'Conferir e continuar rotina'}));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled());
+async function openApprovals(stage = 'Confirmado') {
+  const trigger = screen.getByRole('button', { name: new RegExp(`^${stage} `) });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  trigger.focus();
+  fireEvent.click(trigger);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled());
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
 }
 
@@ -64,13 +65,13 @@ test('acompanhamento integrado anuncia falha de atualização sem perder o últi
 
 test('a conferência da empresa usa uma só camada de diálogo e não executa ao abrir', async () => {
   const { api } = fixture('PENDING');
-  await openApprovals();
-  fireEvent.click(screen.getByRole('button', { name: 'Conferir' }));
+  await openApprovals('Calculado');
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(screen.getByRole('region', { name: 'Conferir CDA' })).toHaveTextContent('Imposto salvo');
   fireEvent.click(within(screen.getByRole('region', { name: 'Conferir CDA' })).getByRole('button', { name: 'Voltar' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  expect(screen.getByRole('button', { name: 'Conferir' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled();
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(api.saveCompanyOperation).not.toHaveBeenCalled();
@@ -108,8 +109,9 @@ test('rotina integrada usa uma camada, retorna foco e bloqueia Escape durante ac
 test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupado e não repete execução (%s)', async result => {
   const task = fixture();
   await openApprovals();
-  fireEvent.click(screen.getByRole('button', { name: 'Selecionar elegíveis (1)' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas (1)' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' }));
+  expect(screen.getByRole('checkbox', { name: 'Selecionar CDA' })).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   const execute = screen.getByRole('button', { name: 'Liberar e executar' });
   expect(execute).toBeDisabled();
@@ -133,7 +135,12 @@ test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupa
   if (result === 'success') expect(await within(screen.getByRole('region', { name: 'Conferência e programação de Operações' })).findByRole('status')).toHaveTextContent('1 liberação(ões) processada(s)');
   else {
     expect(await screen.findByRole('alert')).toHaveTextContent('Resultado desconhecido');
-    expect(screen.getByRole('button', { name: 'Conferir' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Conferir detalhes' })).not.toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: 'Transmitir selecionadas' });
+    expect(retry).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' })).toBeDisabled();
+    fireEvent.click(retry);
+    expect(task.api.saveCompanyOperation).toHaveBeenCalledTimes(1);
   }
   expect(task.api.executeCompanyOperation).toHaveBeenCalledWith('a', '2026-09', 'r2');
   expect(task.api.executeCompanyOperation).toHaveBeenCalledTimes(1);
