@@ -424,7 +424,6 @@ function AppInterno({ session, feedback }) {
   if (session.page === "companyDetail") {
     return (
       <CompanyDetailPage
-        consultasPanel={{ onRunOp: companiesWorkspace.runSerproOp }}
         usuarioId={session.user?.id}
         company={{
           selectedCompany: companiesWorkspace.selectedCompany,
