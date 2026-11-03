@@ -1,0 +1,58 @@
+name: NFS-e complete API gate
+on:
+  push:
+    branches: [codex/validacao-competencia-lote-20261103]
+permissions:
+  contents: read
+jobs:
+  api-complete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: altan_test
+          POSTGRES_PASSWORD: fixture_only_ci
+          POSTGRES_DB: competencia_lote_governance_test
+        ports: [55463:5432]
+        options: >-
+          --health-cmd "pg_isready -U altan_test -d competencia_lote_governance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://altan_test:fixture_only_ci@127.0.0.1:55463/competencia_lote_governance_test
+      ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://altan_test:fixture_only_ci@127.0.0.1:55463/competencia_lote_governance_test
+      NODE_ENV: test
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2c28f0025280aaaf1a3c1280690dbfc9d47c8a81
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run prisma:generate -w @contabilidade/api
+      - run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Disable external integrations for tests
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const flags = new Set([...Object.keys(process.env).filter(k => k.startsWith('INTEGRACAO_')), ...fs.readFileSync('apps/api/src/config.js', 'utf8').matchAll(/INTEGRACAO_[A-Z_]+/g)].map(v => typeof v === 'string' ? v : v[0]));
+          fs.appendFileSync(process.env.GITHUB_ENV, [...flags].map(k => `${k}=0`).join('\n') + '\n');
+          NODE
+      - name: Unmodified complete API gate on reviewed source
+        timeout-minutes: 20
+        working-directory: apps/api
+        run: node ../../scripts/governance/run-jest-batches.mjs
+      - name: Preserve complete evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: competencia-api-gate-evidence
+          path: .altan-governance/test-batches/
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: error
