@@ -1,0 +1,18 @@
+{
+  "summary": "Remove a aba e o painel Consultas de dentro da empresa, conforme correção explícita do usuário.",
+  "risk": "high",
+  "domains": ["operations", "portal", "web"],
+  "operationalImpact": "Sem alteração de regra operacional. Remoção de interface R22; preserva a página global Consultas, contratos de resultados, correções contábeis e recarga/feedback R19. Nenhuma alteração no backend, dados, migrações ou integrações fiscais.",
+  "tests": ["70 testes focados aprovados: navegação, recarga Lançamentos/Circular, feedback e contratos existentes.", "Build web aprovado (827 módulos); git diff --check limpo.", "Visual local com fixture sintética: menu/painel ausentes em 1440px e 390px, sem overflow. Sem consultas externas.", "CI obrigatório antes da integração; sem bypass."],
+  "reviews": [
+    {"reviewer": "/root/diagnostico_consultas", "verdict": "approved", "scope": "Remoção UI/UX, rota e preservação de consultas globais e correções contábeis"},
+    {"reviewer": "/root/revisao_sistemica", "verdict": "approved", "scope": "Escopo transversal, ausência de mudança backend/portal/global e metadata", "headerSha256": "23D96495F12D7B4E425798A79A1B1BEC37EF5793F7D083AF8BF2FB61D44C070E"}
+  ],
+  "rollback": "Reverter somente este incremento de interface. Nenhuma operação de dados necessária.",
+  "humanDecisions": ["Usuário reiterou remover o menu de consulta após o diagnóstico somente leitura. Autoriza a remoção solicitada; os demais bugs diagnosticados permanecem sem alteração neste incremento."],
+  "controller": {
+    "status": "interrupted_by_principal_during_planning",
+    "run": "2026-11-03T18-28-18-985Z-81755fd6",
+    "reason": "Controlador iniciado após conferir referência operacional e recuperar lock de execução interrompida a pedido do usuário. Principal interrompeu a nova execução durante planejamento e conduziu a remoção delimitada com executor e revisor nativos independentes. Nenhuma aprovação do controlador é alegada; logs preservados e gates não modificados."
+  }
+}

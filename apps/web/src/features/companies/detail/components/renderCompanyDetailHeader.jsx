@@ -40,7 +40,7 @@ import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 // já foram conferidas?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como
 // conferir outro. ⚠ O recorte "sem competência" é um botão DENTRO da aba, não um valor do seletor —
 // ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
-const TABS_COM_COMPETENCIA = new Set(["consultas", "lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
+const TABS_COM_COMPETENCIA = new Set([ "lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
 // Navegação de trabalho: Anotações, Contabilidade, Fiscal e Documentos.
 // Cadastro, acessos e parâmetros ficam na engrenagem de configurações.
@@ -105,11 +105,6 @@ const GROUPS = [
       // intervalo próprio — ver o comentário em TABS_COM_COMPETENCIA logo acima.
       { key: "relatorios", label: "Relatórios" },
     ],
-  },
-  {
-    key: "consultas",
-    label: "Consultas",
-    tabs: [{ key: "consultas", label: "Consultas" }],
   },
   {
     key: "fiscal",
