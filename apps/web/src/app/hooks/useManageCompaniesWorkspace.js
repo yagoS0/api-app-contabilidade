@@ -1,3 +1,4 @@
+import { resultadoExtrato, resultadoPagamento, resultadoDocumento } from "../../features/fiscal/serpro/lib/consultaResultado";
 import { useEffect, useRef, useState } from "react";
 import { detalhesDaConfirmacaoDoResponsavel } from "../../lib/portal/responsavelCompartilhado";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -51,7 +52,7 @@ function deriveCompanyDetailTab(pathname) {
   return SEGMENT_TO_TAB[match[1]] || "anotacoes";
 }
 
-export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced, onGuidePaymentConfirmed }) {
+export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced, onGuidePaymentConfirmed, getCompetenciaAtual }) {
   const location = useLocation();
   const navigate = useNavigate();
   const telaAtual = useRef(location.key);
@@ -497,6 +498,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       feedback.setError("Informe a competência para sincronizar o PGDAS-D.");
       return false;
     }
+    const telaInicio = telaAtual.current;
+    const stillCurrent = () => telaAtual.current === telaInicio && (!getCompetenciaAtual || getCompetenciaAtual() === competencia);
     setSyncingSerproPgdas(true);
     feedback.clearFeedback();
     try {
@@ -504,27 +507,21 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         contratanteCnpj: input?.contratanteCnpj || undefined,
         atualizar: input?.atualizar === true,
       });
-      if (payload?.ok === false || !payload?.result?.circular) throw new Error(payload?.message || "Sincronização sem confirmação. Confira os documentos antes de repetir.");
-      if (payload?.result?.circular?.serproSyncStatus === "NOT_FOUND") {
-        feedback.setMessage("Nenhuma declaração PGDAS-D transmitida foi encontrada para essa competência.");
-      } else if (payload.result.circular.serproSyncStatus !== "SUCCESS") {
-        feedback.setError("Extrato incompleto ou indisponível. Confira os documentos e os valores antes de contabilizar.");
-      } else if (payload.result.accounting?.ok !== true || payload.result.accounting?.divergences?.length || payload.result.accounting?.skipped?.length) {
-        feedback.setError("Extrato obtido; contabilização pendente. Confira as contas, regras, divergências e o fechamento em Lançamentos.");
-      } else {
-        const criados = payload.result.accounting.generatedEntries?.filter(e => e.action === "created").length || 0;
-        feedback.setMessage(`${payload.result.reutilizado ? "Extrato salvo reaproveitado" : "Extrato obtido"}. ${criados} lançamentos criados; confira a contabilidade.`);
-      }
-      if (typeof onPgdasSynced === "function") {
+      const resumo = resultadoExtrato(payload);
+      if (stillCurrent() && typeof onPgdasSynced === "function") {
         try {
           await onPgdasSynced(companyId, payload?.result || null);
         } catch {
           // best-effort refresh
         }
       }
-      return payload?.result || null;
+      if (stillCurrent()) {
+        if (resumo.ok) feedback.setMessage(resumo.message);
+        else feedback.setError(resumo.message);
+      }
+      return { ...payload?.result, ...resumo };
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao sincronizar o PGDAS-D.");
+      if (stillCurrent()) feedback.setError(err?.message || "Falha ao sincronizar o PGDAS-D.");
       return false;
     } finally {
       setSyncingSerproPgdas(false);
@@ -551,28 +548,28 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       feedback.setError("Informe a competência para buscar os tributos do Presumido.");
       return { ok: false, tentativaEnviada: false };
     }
+    const telaInicio = telaAtual.current;
+    const stillCurrent = () => telaAtual.current === telaInicio && (!getCompetenciaAtual || getCompetenciaAtual() === competencia);
     setCapturingSerproLp(true);
     feedback.clearFeedback();
     try {
       const payload = await api.captureSerproLp(companyId, { competencia });
       if (payload?.ok === false) {
-        feedback.setMessage(payload?.message || "Nada a buscar nesta competência.");
-        return { ok: false, tentativaEnviada: true, resultadoIncerto: false };
+        if (stillCurrent()) feedback.setError(payload?.message || "Nada a buscar nesta competência.");
+        return { ok: false, message: payload?.message || "Nada a buscar nesta competência.", tentativaEnviada: true, resultadoIncerto: false };
       }
       if (!payload?.result || !Array.isArray(payload.result.debitos)) throw new Error("Resposta sem confirmação. Confira os tributos antes de repetir a consulta paga.");
       const qtd = payload.result.debitos.length;
-      feedback.setMessage(
-        qtd
-          ? `Tributos do Presumido buscados: ${qtd} provisão(ões) na competência.`
-          : "Consulta feita, mas não havia débito nesta competência.",
-      );
-      if (typeof onPgdasSynced === "function") {
+      if (stillCurrent() && typeof onPgdasSynced === "function") {
         try { await onPgdasSynced(companyId, payload?.result || null); } catch { /* best-effort */ }
       }
+      if (stillCurrent()) feedback.setMessage(qtd
+        ? `Tributos do Presumido buscados: ${qtd} débito(s) na competência; confira as provisões.`
+        : "Consulta feita, mas não havia débito nesta competência.");
       return { ...payload.result, tentativaEnviada: payload.result.reutilizado !== true, resultadoIncerto: false };
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao buscar os tributos do Presumido.");
-      return { ok: false, tentativaEnviada: true, resultadoIncerto: true };
+      if (stillCurrent()) feedback.setError(err?.message || "Falha ao buscar os tributos do Presumido.");
+      return { ok: false, message: err?.message || "Falha ao buscar os tributos do Presumido.", tentativaEnviada: true, resultadoIncerto: true };
     } finally {
       setCapturingSerproLp(false);
     }
@@ -610,10 +607,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   async function runSerproOp(op, companyId, competencia) {
     try {
       if (!companyId) return { ok: false, message: "Empresa não informada." };
+      if (["conciliar", "das", "inss", "extrato", "presumido", "pagamento"].includes(op) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || "")) return { ok: false, message: "Informe uma competência válida." };
       switch (op) {
         case "procuracao": {
           const payload = await api.checkSerproCompanyProcuration(companyId, {});
           const procuracao = payload?.result;
+          if (payload?.ok === false || !procuracao?.status) return { ok: false, message: payload?.message || "Procuração sem resultado confirmado." };
           return { ok: true, procuracao, message: procuracao?.status === "AUSENTE" ? "Sem procuração ativa. Regularize a autorização antes de conciliar." : "Procuração consultada." };
         }
         case "conciliar": {
@@ -623,38 +622,35 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           return { ok: Boolean(completa), message: completa ? "Entrega confirmada; extrato e recibo disponíveis." : "Documentação não confirmada. Confira o resultado na Apuração." };
         }
         case "parcelamento":
-          await api.captureSerproParcelamento(companyId);
-          return { ok: true };
         case "das":
-          await api.captureSerproPgdasd(companyId, { competencia });
-          return { ok: true };
-        case "inss":
-          await api.syncSerproInss(companyId, { competencia });
-          return { ok: true };
+        case "inss": {
+          const r = op === "parcelamento" ? await api.captureSerproParcelamento(companyId)
+            : op === "das" ? await api.captureSerproPgdasd(companyId, { competencia })
+              : await api.syncSerproInss(companyId, { competencia });
+          return resultadoDocumento(op, r);
+        }
         case "extrato":
-          await api.syncPgdasCircular(companyId, competencia, {});
-          return { ok: true };
+          return resultadoExtrato(await api.syncPgdasCircular(companyId, competencia, { atualizar: false }));
         case "presumido": {
           // Módulo Fiscal M2 — Lucro Presumido (DCTFWeb → provisão + split + reconciliação).
           const r = await api.captureSerproLp(companyId, { competencia });
           if (r?.ok === false) return { ok: false, message: r?.message || "DCTFWeb não transmitida" };
+          if (!Array.isArray(r?.result?.debitos)) return { ok: false, message: "Resposta sem confirmação. Confira os tributos antes de repetir." };
           const tot = r?.result?.totais?.principal;
-          const alerta = r?.result?.reconciliacao?.alerta;
+          const reconciliacao = r.result.reconciliacao;
+          const itens = reconciliacao?.reconciliacao;
+          const confirmada = reconciliacao?.alerta === false && itens?.PIS?.status === "ok" && itens?.COFINS?.status === "ok"
+            && Object.values(itens).every(item => item?.status === "ok");
           const base = tot != null ? `Presumido: R$ ${Number(tot).toFixed(2)}` : "Presumido capturado";
-          return { ok: true, message: base + (alerta ? " ⚠ divergência calc × DCTFWeb (conferir)" : " ✓ reconciliado") };
+          return { ok: confirmada, message: base + (reconciliacao?.alerta
+            ? ". Divergência entre cálculo e DCTFWeb. Confira a reconciliação e as provisões."
+            : confirmada ? ". Valores reconciliados; confira as provisões."
+            : ". Reconciliação não confirmada. Confira a reconciliação e as provisões.") };
         }
         case "pagamento": {
           // Q40/Q43: confirma pagamento das guias OPEN (via PAGTOWEB). competencia é opcional.
           const r = await api.confirmarPagamentoSerpro(companyId, competencia ? { competencia } : {});
-          const res = r?.result || {};
-          const paid = res.paid ?? 0;
-          const errors = res.errors ?? 0;
-          // Q45: usa a mensagem detalhada do backend (pagas / não localizadas / sem nº / desabilitado).
-          const message = res.mensagem
-            || (paid ? `${paid} pago(s)` : (res.total ? "Nenhum pago" : "Sem guias a confirmar"));
-          // Não reporta OK quando PAGTOWEB está desligado ou tudo falhou.
-          const ok = !res.pagtowebDisabled && !(errors > 0 && paid === 0);
-          return { ok, message };
+          return resultadoPagamento(r);
         }
         case "sitfis": {
           // Q40: relatório de situação fiscal.

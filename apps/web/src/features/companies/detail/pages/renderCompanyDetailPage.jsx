@@ -18,6 +18,7 @@ import { companyTabPath } from "../lib/rotasDaEmpresa";
 import { telaDeApuracao, APURACAO } from "../../../apuracao-lp/lib/regimeDaAba";
 import { CompanyFichaTab } from "../components/renderCompanyFichaTab";
 import { PageHeader } from "../../../../components/layout/PageHeader";
+import { CompanyConsultas } from "../components/CompanyConsultas";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { BackButton } from "../../../../components/ui/BackButton";
@@ -408,7 +409,7 @@ export function PlanoContasAviso({ panel = {}, mostrarErro = true }) {
 }
 
 function CompanyDetailContent({
-  usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions }) {
+  usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions, consultasPanel }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o
@@ -458,6 +459,13 @@ function CompanyDetailContent({
 
   // ─── Aba Lançamentos: layout full-screen com barra de topo compacta ────────
 
+  if (companyDetailTab === "consultas") return <CompanyTabLayout company={selectedCompany} activeTab="consultas"
+    onBack={onBack} onTabChange={switchTab} canEditCompany={canEditCompany}
+    competencia={circularPanel?.competencia} onCompetenciaChange={circularPanel?.onCompetenciaChange} largura="leitura">
+    <CompanyConsultas key={companyId + ":" + circularPanel?.competencia} companyId={companyId}
+      competencia={circularPanel?.competencia} onRunOp={consultasPanel?.onRunOp} />
+  </CompanyTabLayout>;
+
   if (companyDetailTab === "lancamentos") {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
@@ -475,6 +483,7 @@ function CompanyDetailContent({
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
+          <Feedback message={feedback?.message} error={feedback?.error} />
           <PlanoContasAviso panel={accountingPanel} mostrarErro={false} />
           <AccountingEntriesTab
             companyId={companyId}

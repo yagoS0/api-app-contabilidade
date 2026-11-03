@@ -19,16 +19,7 @@ import { PendenciasContent } from "../../../pendencias/pages/renderPendenciasPag
 
 // useRange=true → a função roda por competência (usa o intervalo De/Até).
 // useRange=false → roda uma vez por empresa (ignora o intervalo).
-const OP_DEFS = [
-  { key: "procuracao", label: "Testar procuração", useRange: false },
-  { key: "conciliar", label: "Conciliar PGDAS-D — somente documentos", useRange: true },
-  { key: "das", label: "DAS — guia do Simples", useRange: true },
-  { key: "inss", label: "INSS — DARF da DCTFWeb", useRange: true },
-  { key: "extrato", label: "Extrato do Simples — receita e imposto", useRange: true },
-  { key: "presumido", label: "DCTFWeb — PIS, COFINS, IRPJ e CSLL", useRange: true },
-  { key: "parcelamento", label: "Parcelamento", useRange: false },
-  { key: "pagamento", label: "Confirmar pagamento", useRange: true },
-];
+import { CONSULTA_OPERATIONS as OP_DEFS } from "../lib/consultaOperations";
 
 function currentCompetencia() {
   const now = new Date();

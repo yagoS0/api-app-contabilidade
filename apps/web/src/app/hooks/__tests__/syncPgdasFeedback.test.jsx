@@ -19,11 +19,11 @@ test.each([
   expect(t.feedback.setError).toHaveBeenCalledWith(expect.stringMatching(message));
   expect(t.feedback.setMessage).not.toHaveBeenCalled();
 });
-test("reaproveitamento informa somente quantidade criada e envia intenção explícita", async () => {
+test("reaproveitamento distingue criados e ja existentes e envia intenção explícita", async () => {
   const t = montar({ reutilizado: true, circular: { serproSyncStatus: "SUCCESS" }, accounting: { ok: true, generatedEntries: [{ action: "created" }, { action: "noop" }] } });
   await act(async () => { await t.result.current.handleSyncSerproPgdas("c", { competencia: "2026-09", atualizar: true }); });
   expect(t.api.syncPgdasCircular).toHaveBeenCalledWith("c", "2026-09", expect.objectContaining({ atualizar: true }));
-  expect(t.feedback.setMessage).toHaveBeenCalledWith(expect.stringMatching(/reaproveitado.*1 lançamentos/));
+  expect(t.feedback.setMessage).toHaveBeenCalledWith(expect.stringMatching(/reaproveitado.*1 criados; 1 já existentes/));
 });
 
 test.each([
@@ -50,4 +50,20 @@ test("Presumido sem competência não registra tentativa externa", async () => {
   await act(async () => { resposta = await t.result.current.handleCaptureSerproLp("c", {}); });
   expect(resposta).toMatchObject({ ok: false, tentativaEnviada: false });
   expect(t.api.captureSerproLp).not.toHaveBeenCalled();
+});
+
+test.each(["handleSyncSerproPgdas", "handleCaptureSerproLp"])("%s publica feedback depois da recarga e descarta outra competência", async method => {
+  let resolver; let competencia="2026-09"; const eventos=[];
+  const resposta={ok:true,result:{circular:{serproSyncStatus:"SUCCESS"},accounting:{ok:true,generatedEntries:[]},debitos:[]}};
+  const chamada=()=>new Promise(r=>{resolver=r;});
+  const api={listCompanies:async()=>[],getCompanyGuides:async()=>[],getSerproSettings:async()=>({}),syncPgdasCircular:chamada,captureSerproLp:chamada};
+  const feedback={clearFeedback:()=>eventos.push("clear"),setError:()=>eventos.push("error"),setMessage:()=>eventos.push("message")};
+  const refresh=jest.fn(async()=>{feedback.clearFeedback();});
+  const {result}=renderHook(()=>useManageCompaniesWorkspace({api,feedback,page:"companyDetail",setPage:jest.fn(),onPgdasSynced:refresh,getCompetenciaAtual:()=>competencia}),{wrapper:({children})=><MemoryRouter initialEntries={["/companies/c/lancamentos"]}>{children}</MemoryRouter>});
+  let pending; act(()=>{pending=result.current[method]("c",{competencia});});
+  await act(async()=>{resolver(resposta);await pending;});
+  expect(eventos.at(-1)).toBe("message"); expect(refresh).toHaveBeenCalledTimes(1);
+  act(()=>{pending=result.current[method]("c",{competencia});}); competencia="2026-10";
+  const anterior=[...eventos]; await act(async()=>{resolver(resposta);await pending;});
+  expect(eventos).toEqual(anterior); expect(refresh).toHaveBeenCalledTimes(1);
 });
