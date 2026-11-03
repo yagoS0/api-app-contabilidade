@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { OperationsApproval } from '../OperationsApproval';
 
 const rows = [{ company: { companyId: 'a', razao: 'CDA', myRole: 'ACCOUNTANT' } }];
@@ -212,4 +212,23 @@ import { Modal } from '../../../components/ui/Modal';
 test.each([['calculado','PENDING','Liberar para transmissão','Conferir liberação para transmissão'],['confirmado','CONFIRMED','Transmitir selecionadas','Liberar apurações confirmadas']])('cancelar prévia %s devolve foco ao gatilho dentro do Modal real',async(stage,status,label,heading)=>{
  const api=fixture({status});api.executeCompanyOperation=jest.fn();render(<Modal titulo="Operações" aoFechar={()=>{}}><OperationsApproval api={api} rows={rows} competencia="2026-09" stage={stage} embedded/></Modal>);
  await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());fireEvent.click(screen.getByLabelText('Selecionar CDA'));const trigger=screen.getByRole('button',{name:label,exact:true});trigger.focus();fireEvent.click(trigger);expect(screen.getByRole('heading',{name:heading})).toHaveFocus();const cancel=screen.getByRole('button',{name:'Cancelar',exact:true});cancel.focus();fireEvent.click(cancel);expect(screen.getByRole('button',{name:label,exact:true})).toHaveFocus();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
+test('três empresas em paralelo; fechar não inicia detalhes, provas ou restante da carteira', async () => {
+ const pending=[];const api=fixture();api.getCompanyOperation=jest.fn(()=>new Promise(resolve=>pending.push(resolve)));api.getOperationsTransmissionDocuments=jest.fn();
+ const many=Array.from({length:8},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`,myRole:'ACCOUNTANT'}}));
+ const view=render(<OperationsApproval api={api} rows={many} competencia="2026-09" stage="confirmado"/>);
+ expect(api.getCompanyOperation.mock.calls.map(([id])=>id)).toEqual(['0','1','2']);view.unmount();
+ await act(async()=>pending.forEach((resolve,i)=>resolve({companyId:String(i),competencia:'2026-09',revision:'r1',pending:[]})));
+ expect(api.getCompanyOperation).toHaveBeenCalledTimes(3);expect(api.getApuracaoSnapshot).not.toHaveBeenCalled();expect(api.getOperationsTransmissionDocuments).not.toHaveBeenCalled();expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+});
+
+test('troca de competência descarta a fila antiga antes de ler evidências', async () => {
+ const pending=[];const api=fixture();api.getCompanyOperation=jest.fn((id,competencia)=>competencia==='2026-09'?new Promise(resolve=>pending.push(()=>resolve({companyId:id,competencia,revision:'antiga',pending:[]}))):Promise.resolve({companyId:id,competencia,revision:'nova',status:'PENDING',pending:[]}));
+ const many=Array.from({length:5},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`}}));
+ const view=render(<OperationsApproval api={api} rows={many} competencia="2026-09"/>);
+ view.rerender(<OperationsApproval api={api} rows={many} competencia="2026-10"/>);
+ await waitFor(()=>expect(api.getCompanyOperation).toHaveBeenCalledTimes(8));await act(async()=>pending.forEach(resolve=>resolve()));
+ expect(api.getCompanyOperation.mock.calls.filter(([,comp])=>comp==='2026-09')).toHaveLength(3);
+ expect(api.getApuracaoSnapshot.mock.calls.every(([,comp])=>comp==='2026-10')).toBe(true);expect(api.saveCompanyOperation).not.toHaveBeenCalled();
 });

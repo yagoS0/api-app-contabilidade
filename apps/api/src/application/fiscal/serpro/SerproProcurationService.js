@@ -1,5 +1,5 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
+import { getResolvedSerproCredentials, getSerproRuntimeSettings } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
 
 const PROCURATION_PREFIX = "serpro_procuration_status:";
@@ -7,7 +7,7 @@ export const PROCURATION_ATTEMPT_PREFIX = "serpro_procuration_attempt:";
 
 // Projeção documental: não concede autorização nem provoca consulta externa.
 export function projetarProcuracaoSalva(evidencia = {}, tentativa = {}, { cnpj, procuradorCnpj } = {}) {
-  const mesmoVinculo = valor => valor.cnpj === onlyDigits(cnpj) && valor.procuradorCnpj === onlyDigits(procuradorCnpj);
+  const mesmoVinculo = valor => /^\d{14}$/.test(onlyDigits(cnpj)) && /^\d{14}$/.test(onlyDigits(procuradorCnpj)) && valor.cnpj === onlyDigits(cnpj) && valor.procuradorCnpj === onlyDigits(procuradorCnpj);
   return {
     procurationStatus: evidencia.status || 'DESCONHECIDA', checkedAt: evidencia.checkedAt || null,
     validUntil: evidencia.validUntil || null, systems: Array.isArray(evidencia.systems) ? evidencia.systems : [],
@@ -107,6 +107,21 @@ export async function getStoredProcurationStatus(portalClientId, client = prisma
     procuradorCnpj: value.procuradorCnpj || null,
     payload: value.payload || null,
   };
+}
+
+// Mesma projeção da carteira, com identidade atual obtida somente no servidor.
+// Usa as configurações da carteira; não consulta o SERPRO nem grava evidências.
+export async function getStoredProcurationProjection(portalClientId, client = prisma, readSettings = getSerproRuntimeSettings) {
+  const [company, settings, stored, attempt] = await Promise.all([
+    client.portalClient.findUnique({ where: { id: String(portalClientId) }, select: { id: true, cnpj: true } }),
+    readSettings(),
+    getStoredProcurationStatus(portalClientId, client),
+    client.appSetting.findUnique({ where: { key: `${PROCURATION_ATTEMPT_PREFIX}${portalClientId}` } }),
+  ]);
+  if (!company || company.id !== String(portalClientId)) throw Error('company_identity_unavailable');
+  return { ...stored, ...projetarProcuracaoSalva(stored, attempt?.value || {}, {
+    cnpj: company.cnpj, procuradorCnpj: settings?.certificate?.document,
+  }) };
 }
 
 export class SerproProcurationService {

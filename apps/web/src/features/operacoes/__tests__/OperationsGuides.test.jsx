@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { OperationsGuides } from '../OperationsGuides';
 import { reconcileOperationGuides } from '../operationsDetails';
 const row={company:{companyId:'a',razao:'Alfa'},guideSummary:{items:[{key:'das',guideId:'g1',label:'DAS'}]}};
@@ -40,4 +40,49 @@ test('data legada de pagamento não substitui instante de confirmação ausente 
 test.each([['ERROR','Erro de processamento'],['NEEDS_REVIEW','Em conferência']])('estado documental %s prevalece sobre projeção Disponível antiga',async(status,label)=>{
  const stale={...row,guideSummary:{items:[{key:'das',guideId:'g1',label:'DAS',documento:'Disponível',comunicacao:'Enviada',pagamento:'Não confirmado'}]}};
  const api={getCompanyGuides:jest.fn(async()=>[{...guide,status,paymentStatus:'OPEN'}])};render(<OperationsGuides api={api} rows={[stale]} competencia="2026-10" stage="disponivel"/>);await screen.findByText('Documento g1');expect(screen.getByText(label)).toBeInTheDocument();expect(screen.getByText(/Expectativa: Disponível/)).toBeInTheDocument();expect(screen.queryByText('Disponível',{exact:true})).not.toBeInTheDocument();
+});
+
+test('carga paralela limitada não inicia evidências ou outras empresas após fechar', async () => {
+ const pending=[];const api={getCompanyGuides:jest.fn(()=>new Promise(resolve=>pending.push(resolve))),getOperationsGuideEvidence:jest.fn(),send:jest.fn()};
+ const many=Array.from({length:8},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`}}));
+ const view=render(<OperationsGuides api={api} rows={many} competencia="2026-10" stage="disponivel"/>);
+ expect(api.getCompanyGuides.mock.calls.map(([id])=>id)).toEqual(['0','1','2']);view.unmount();
+ await act(async()=>pending.forEach(resolve=>resolve([])));
+ expect(api.getCompanyGuides).toHaveBeenCalledTimes(3);expect(api.getOperationsGuideEvidence).not.toHaveBeenCalled();expect(api.send).not.toHaveBeenCalled();
+});
+test.each([null, {}, [{...guide,companyId:undefined}], [{...guide,companyId:'outra'}]])('leitura inválida não vira ausência nem libera evidências',async value=>{
+ const api={getCompanyGuides:jest.fn(async()=>value),getOperationsGuideEvidence:jest.fn(),send:jest.fn()};render(<OperationsGuides api={api} rows={[row]} competencia="2026-10" stage="disponivel"/>);
+ await screen.findByText(/Resposta de documentos inválida/);expect(screen.queryByText(/Nenhum documento identificado/)).not.toBeInTheDocument();expect(api.getOperationsGuideEvidence).not.toHaveBeenCalled();expect(api.send).not.toHaveBeenCalled();
+});
+
+test('comunicação só lê a empresa expandida e relê ao reabrir', async () => {
+ const api={getCompanyGuides:jest.fn(async()=>[]),getCompanyGuideDelivery:jest.fn(async()=>null)};
+ render(<OperationsGuides api={api} rows={[row,{company:{companyId:'b',razao:'Beta'}}]} competencia="2026-10" stage="disponivel"/>);
+ await waitFor(()=>expect(api.getCompanyGuides).toHaveBeenCalledTimes(2));expect(api.getCompanyGuideDelivery).not.toHaveBeenCalled();
+ const detail=screen.getAllByText('Comunicação da empresa')[0].closest('details');
+ detail.open=true;fireEvent(detail,new Event('toggle'));await waitFor(()=>expect(api.getCompanyGuideDelivery).toHaveBeenCalledTimes(1));
+ expect(api.getCompanyGuideDelivery).toHaveBeenCalledWith('a','2026-10');
+ detail.open=false;fireEvent(detail,new Event('toggle'));detail.open=true;fireEvent(detail,new Event('toggle'));
+ await waitFor(()=>expect(api.getCompanyGuideDelivery).toHaveBeenCalledTimes(2));
+});
+
+
+test('guia sem competência não invalida documento do mês nem entra na seleção de envio', async () => {
+ const valid={...guide,paymentStatus:'OPEN'};
+ const unscoped={...valid,guideId:'sem-periodo',competencia:null};
+ const writable={...row,company:{...row.company,myRole:'ACCOUNTANT'}};
+ expect(reconcileOperationGuides([valid,unscoped],writable,'2026-10').guides).toEqual([valid]);
+ const api={getCompanyGuides:jest.fn(async()=>[valid,unscoped]),
+  listarContatosWhatsapp:jest.fn(async()=>({canalPadraoEnvio:'EMAIL'})),
+  previewOperationsGuideSend:jest.fn(async()=>({preview:{companyId:'a',competencia:'2026-10',items:[]}})),
+  sendGuidesTask:jest.fn()};
+ render(<OperationsGuides api={api} rows={[writable]} competencia="2026-10" stage="enviado"/>);
+ await screen.findByText('Documento g1');
+ expect(screen.queryByText(/Resposta de documentos inválida/)).not.toBeInTheDocument();
+ expect(screen.queryByText('Documento sem-periodo')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('checkbox',{name:'Selecionar Alfa'}));
+ fireEvent.click(screen.getByRole('button',{name:'Conferir envio / reenvio'}));
+ await waitFor(()=>expect(api.previewOperationsGuideSend).toHaveBeenCalledTimes(1));
+ expect(api.previewOperationsGuideSend).toHaveBeenCalledWith('a','2026-10',{items:[{guideId:'g1',reenviarConfirmado:false}],whatsappRequested:false});
+ expect(api.sendGuidesTask).not.toHaveBeenCalled();
 });

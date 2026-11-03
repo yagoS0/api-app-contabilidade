@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { operationsReadQueue } from './operationsReadQueue';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { InternalLink } from '../../components/ui/InternalLink';
@@ -55,9 +56,9 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
     let active = true;
     setData({}); setConfirmation({}); setConfirmPreview(null); setChecked({}); setBatch(null); setSelected(null); setConfirmCompetencia(''); setError(''); setReading(true);
     if (!api?.getCompanyOperation) return;
-    // Leituras exclusivamente locais, sequenciais para limitar carga na carteira.
+    // Três empresas por vez, sem reutilizar evidências entre contextos.
     (async () => {
-      for (const id of ids.split('|').filter(Boolean)) {
+      await operationsReadQueue(ids.split('|').filter(Boolean), async id => {
         try {
           const value = await api.getCompanyOperation(id, competencia);
           if (!active) return;
@@ -71,8 +72,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
             if (proof?.companyId === id && proof.competencia === competencia) setConfirmation(old => ({ ...old, [id]: proof.confirmation?.fingerprint === value.fingerprint ? proof.confirmation : null }));
           }
         } catch { if (active) setError('Algumas empresas não puderam ser conferidas. Atualize antes de liberar.'); }
-        if (!active) return;
-      }
+      }, { isActive: () => active });
       if (active) setReading(false);
     })();
     return () => { active = false; };

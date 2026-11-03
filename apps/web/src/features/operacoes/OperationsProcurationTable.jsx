@@ -12,7 +12,7 @@ export function OperationsProcurationTable({ api, rows, competencia, onClose, on
   const generation=useRef(0), lock=useRef(false);
   const ids=rows.map(r=>r.company.companyId).sort().join('|');
   useEffect(()=>{const run=++generation.current;setData({});setChecked({});setPreview(null);setResults({});setBusy(false);
-    (async()=>{for(const id of ids.split('|').filter(Boolean)){let item;try{const r=await api.getSerproCompanyProcuration(id);if(r?.ok!==true||!r.result||r.result.companyId&&r.result.companyId!==id)throw Error('Leitura indisponível');item={value:r.result};}catch(e){item={error:e.message};}if(run!==generation.current)return;setData(old=>({...old,[id]:item}));}})();
+    (async()=>{for(const id of ids.split('|').filter(Boolean)){let item;try{const r=await api.getSerproCompanyProcuration(id);if(r?.ok!==true||!r.result||r.result.companyId!==id)throw Error('Leitura indisponível');item={value:r.result};}catch(e){item={error:e.message};}if(run!==generation.current)return;setData(old=>({...old,[id]:item}));}})();
     return()=>{generation.current++;};
   },[api,ids,competencia]);
   const category=id=>{const value=data[id]?.value;const marker=marcadorProcuracao(value);return marker.chave==='ativa'?'active':marker.chave==='regularizar'?'missing':'unknown';};
@@ -23,7 +23,7 @@ export function OperationsProcurationTable({ api, rows, competencia, onClose, on
   async function execute(){if(lock.current||!preview)return;lock.current=true;setBusy(true);const run=generation.current;
     try{for(const row of preview){if(run!==generation.current)return;const id=row.company.companyId;let result;try{
       if(!allowed.current.has(id))throw Error('Acesso mudou; atualize a seleção.');const out=await api.checkSerproCompanyProcuration(id);if(out?.ok!==true||!out.result)throw Error('Resultado não confirmado; confira a tentativa antes de repetir.');
-      const saved=await api.getSerproCompanyProcuration(id);if(saved?.ok!==true||!saved.result||saved.result.companyId&&saved.result.companyId!==id)throw Error('Consulta retornou, mas a leitura salva está indisponível.');
+      if(run!==generation.current)return;const saved=await api.getSerproCompanyProcuration(id);if(saved?.ok!==true||!saved.result||saved.result.companyId!==id)throw Error('Consulta retornou, mas a leitura salva está indisponível.');
       if(run!==generation.current)return;setData(old=>({...old,[id]:{value:saved.result}}));result=out.result.reutilizado?'Evidência salva reutilizada.':'Consulta concluída; confira vínculo, serviços e vigência.';
     }catch(e){result=e.message;}if(run===generation.current)setResults(old=>({...old,[id]:result}));}if(run===generation.current)onChanged?.();}
     finally{lock.current=false;if(run===generation.current){setBusy(false);setPreview(null);setChecked({});}}
