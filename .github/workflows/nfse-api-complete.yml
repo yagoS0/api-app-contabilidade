@@ -8,17 +8,6 @@ jobs:
   api-complete:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: altan_test
-          POSTGRES_PASSWORD: fixture_only_ci
-          POSTGRES_DB: competencia_lote_governance_test
-        ports: [55463:5432]
-        options: >-
-          --health-cmd "pg_isready -U altan_test -d competencia_lote_governance_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://altan_test:fixture_only_ci@127.0.0.1:55463/competencia_lote_governance_test
       ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://altan_test:fixture_only_ci@127.0.0.1:55463/competencia_lote_governance_test
@@ -35,6 +24,14 @@ jobs:
           cache: npm
       - run: npm ci --include=dev
       - run: npm run prisma:generate -w @contabilidade/api
+      - name: Start disposable PostgreSQL on real loopback
+        run: |
+          docker run -d --name competencia-pg --network host -e POSTGRES_USER=altan_test -e POSTGRES_PASSWORD=fixture_only_ci -e POSTGRES_DB=competencia_lote_governance_test postgres:16 -p 55463 -c listen_addresses=127.0.0.1
+          for attempt in {1..30}; do
+            if docker exec competencia-pg pg_isready -h 127.0.0.1 -p 55463 -U altan_test -d competencia_lote_governance_test; then exit 0; fi
+            sleep 2
+          done
+          exit 1
       - run: npm run prisma:migrate:deploy -w @contabilidade/api
       - name: Disable external integrations for tests
         run: |
