@@ -28,6 +28,10 @@ import { consultarDocumentos } from "./lib/consultasDoLote";
 import { lerRecusaDaPlanilha } from "./lib/recusaDaPlanilha";
 import {
   aindaCorrendo,
+  loteDaRetentativaRecusada,
+  loteDaRespostaReconhecida,
+  suspenderRetentativaSemDetalhes,
+  atualizarLoteConsultado,
   observacaoDaLinha,
   avisoDaLinhaIndeterminada,
   confirmacaoDaEmissao,
@@ -95,6 +99,24 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
   const [erroEmissao, setErroEmissao] = useState(null);
   const [reconhecido, setReconhecido] = useState(false);
 
+  // Identidade da navegação e ordem das operações, inclusive antes do próximo render.
+  const contextoRef = useRef({ companyId, versao: 0, ocupado: false });
+  if (contextoRef.current.companyId !== companyId) {
+    contextoRef.current = { companyId, versao: 0, ocupado: false };
+  }
+  useEffect(() => () => { contextoRef.current.versao += 1; }, []);
+
+  function iniciarOperacao() {
+    const contexto = contextoRef.current;
+    if (contexto.ocupado) return null;
+    contexto.ocupado = true;
+    const versao = ++contexto.versao;
+    return {
+      atual: () => contextoRef.current === contexto && contexto.versao === versao,
+      finalizar: () => { contexto.ocupado = false; },
+    };
+  }
+
   const [municipios, setMunicipios] = useState(null);
   const [municipiosFalharam, setMunicipiosFalharam] = useState(false);
   const pararRef = useRef(false);
@@ -160,6 +182,7 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
     setConfirmando(false);
     setErroEmissao(null);
     setReconhecido(false);
+    setEmitindo(false);
   }, [companyId]);
 
   // ⚠⚠ O POLLING. O lote corre no servidor (uma nota pode levar até 15 s), e o desfecho de cada
@@ -168,20 +191,26 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
   useEffect(() => {
     if (!lote?.id || !aindaCorrendo(lote)) return undefined;
     let vivo = true;
+    let consultando = false;
+    const contexto = contextoRef.current;
+    const versao = contexto.versao;
     const id = setInterval(async () => {
+      if (consultando || contexto.ocupado) return;
+      consultando = true;
       try {
         const r = await api.consultarLoteEmissao(companyId, lote.id);
-        if (vivo && r?.lote) setLote(r.lote);
+        if (vivo && contextoRef.current === contexto && contexto.versao === versao
+          && r?.lote?.id === lote.id) setLote(anterior => atualizarLoteConsultado(anterior, r.lote));
       } catch {
         // ⚠ Falha de polling NÃO é falha do lote — ele segue no servidor. Silenciar aqui é o certo:
         // um erro na tela faria a pessoa achar que a emissão parou, e ela não parou.
-      }
+      } finally { consultando = false; }
     }, 2000);
     return () => {
       vivo = false;
       clearInterval(id);
     };
-  }, [companyId, lote]);
+  }, [companyId, lote, emitindo]);
 
   const veredito = vereditosDoLote(leitura, { municipios });
   const resumo = veredito.resumo;
@@ -227,6 +256,9 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
   );
 
   function escolherArquivo(evento) {
+    contextoRef.current.versao += 1;
+    contextoRef.current.ocupado = false;
+    setEmitindo(false);
     const escolhido = evento.target.files?.[0] || null;
     setArquivo(escolhido);
     setLeitura(null);
@@ -286,6 +318,8 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
   // ═══════════════════════════════════════════════════════════════════════════════════════════
 
   async function emitirDeVerdade() {
+    const operacao = iniciarOperacao();
+    if (!operacao) return;
     setConfirmando(false);
     setErroEmissao(null);
     setEmitindo(true);
@@ -293,12 +327,13 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
       // ⚠ VAI O ARQUIVO, não a lista de linhas. Quem decide o que é `pronta` é o servidor, que
       // reclassifica tudo de novo — a tela não escolhe o que se emite.
       const r = await api.emitirLoteDeNotas(companyId, arquivo, { consultas, ajustes });
+      if (!operacao.atual()) return;
       setReconhecido(Boolean(r?.reconhecido));
-      setLote(r?.lote || null);
+      setLote(loteDaRespostaReconhecida(r));
     } catch (err) {
-      setErroEmissao(err);
+      if (operacao.atual()) setErroEmissao(err);
     } finally {
-      setEmitindo(false);
+      if (operacao.atual()) { operacao.finalizar(); setEmitindo(false); }
     }
   }
 
@@ -309,15 +344,17 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
    * ANTES do clique (ver `conviteParaRetomar`), porque "retomar" se lê como "resolver tudo".
    */
   async function retomar() {
+    const operacao = iniciarOperacao();
+    if (!operacao) return;
     setErroEmissao(null);
     setEmitindo(true);
     try {
       const r = await api.retomarLoteEmissao(companyId, lote.id);
-      setLote(r?.lote || null);
+      if (operacao.atual() && r?.lote?.id === lote.id) setLote(r.lote);
     } catch (err) {
-      setErroEmissao(err);
+      if (operacao.atual()) setErroEmissao(err);
     } finally {
-      setEmitindo(false);
+      if (operacao.atual()) { operacao.finalizar(); setEmitindo(false); }
     }
   }
 
@@ -329,18 +366,27 @@ export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
    * novo" se lê como "refazer o lote", e refazer o lote reemitiria nota que já existe.
    */
   async function retentar() {
+    const operacao = iniciarOperacao();
+    if (!operacao) return;
     setErroEmissao(null);
     setEmitindo(true);
     try {
       const r = await api.retentarLoteEmissao(companyId, lote.id);
-      setLote(r?.lote || null);
+      if (!operacao.atual() || r?.lote?.id !== lote.id) return;
+      setLote(r.lote);
       // ⚠ A partir daqui o relatório é o da tentativa NOVA — a frase de "já foi enviada antes"
       // deixaria de descrever o que está na tela.
       setReconhecido(false);
     } catch (err) {
+      if (!operacao.atual()) return;
+      const atualizado = loteDaRetentativaRecusada(err, lote.id);
+      if (atualizado) setLote(atualizado);
+      else if (err?.status === 422 && err?.code === "nada_a_retentar") {
+        setLote(suspenderRetentativaSemDetalhes(lote));
+      }
       setErroEmissao(err);
     } finally {
-      setEmitindo(false);
+      if (operacao.atual()) { operacao.finalizar(); setEmitindo(false); }
     }
   }
 
@@ -899,6 +945,13 @@ function RelatorioDoLote({ companyId, lote, reconhecido, ocupado, aoRetomar, aoR
         </p>
       ) : null}
 
+      {lote.retentativaDetalhesIndisponiveis ? (
+        <p className="muted" data-emissao="retentativa-sem-detalhes">
+          A nova tentativa foi bloqueada, mas os detalhes atualizados não foram recebidos.
+          O relatório anterior foi preservado. Peça ao contador para conferir o lote antes de reenviar.
+        </p>
+      ) : null}
+
       {aviso ? (
         <div className="card" style={{ padding: "14px", borderColor: "var(--warning-surface-border)" }} data-emissao="indeterminada">
           <h3 style={{ marginTop: 0 }}>A linha {aviso.numeroLinha} precisa da sua conferência</h3>
@@ -1043,7 +1096,7 @@ function RelatorioDoLote({ companyId, lote, reconhecido, ocupado, aoRetomar, aoR
                   {/* ⚠ Traço na linha não tentada — ninguém encostou nela, e pôr a data do LOTE
                       aqui carimbaria de fato o que nunca aconteceu. */}
                   <td>{fmtDataHora(l.tentadaEm)}</td>
-                  <td>{observacaoDaLinha(l)}</td>
+                  <td>{observacaoDaLinha(l, lote)}</td>
                   <td><BotaoDanfseDaLinha linha={l} companyId={companyId} /></td>
                 </tr>
               );

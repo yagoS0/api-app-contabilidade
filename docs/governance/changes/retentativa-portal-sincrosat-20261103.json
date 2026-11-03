@@ -1,0 +1,40 @@
+{
+  "summary": "Corrige relatório obsoleto e convite contraditório na retentativa de lotes do portal do cliente.",
+  "risk": "high",
+  "domains": [
+    "portal",
+    "governance"
+  ],
+  "operationalImpact": "Sem nova regra operacional. R01/R02/R19/R20/R22: refletir evidência atual e preservar identidade, histórico e bloqueios fiscais. Nenhuma alteração de backend, migração ou emissão real.",
+  "tests": [
+    "94/94 testes focados em 3 suítes aprovados, incluindo realApi com fetch simulado.",
+    "85/85 testes de governança aprovados. Build portal aprovado.",
+    "Verificação visual local desktop e celular com fixture sintética, sem transporte fiscal.",
+    "Suíte completa portal em execução; CI obrigatório antes de integrar."
+  ],
+  "rollback": "Reverter apenas este incremento, sem modificar dados, notas ou histórico.",
+  "humanDecisions": [
+    "Usuário autorizou corrigir e publicar; reiterou não emitir novas notas.",
+    "Causa fiscal concreta do bloqueio produtivo não comprovada. Incremento corrige a apresentação da resposta autoritativa."
+  ],
+  "sourcePaths": [
+    "apps/portal-cliente-web/src/features/lote/LotePlanilhaPage.jsx",
+    "apps/portal-cliente-web/src/features/lote/lib/emissaoDoLote.js",
+    "apps/portal-cliente-web/src/features/lote/lib/__tests__/emissaoDoLote.test.js",
+    "apps/portal-cliente-web/src/features/lote/__tests__/retentativaRealApiNaTela.ligacao.test.jsx"
+  ],
+  "reviews": [
+    {
+      "scope": "Portal, contrato backend e sistêmica",
+      "basis": "Três achados corrigidos: reconhecimento, polling posterior e recusa incompleta. Hashes finais conferidos.",
+      "reviewer": "/root/diagnostico_retentar",
+      "verdict": "approved"
+    }
+  ],
+  "controller": {
+    "status": "interrupted_after_independent_review_findings",
+    "run": "2026-11-03T16-43-53-983Z-2f3c0e9f",
+    "reason": "Planner e executor concluídos; principal interrompeu durante gates após revisão nativa detectar três lacunas. Executor nativo corrigiu e revisor independente aprovou. Logs originais preservados, sem aprovação retroativa ou alteração de gates."
+  },
+  "evidenceDirectory": "../output/competencia-lote-20261103"
+}
