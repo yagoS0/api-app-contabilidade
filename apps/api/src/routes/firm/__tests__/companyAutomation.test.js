@@ -1,3 +1,5 @@
+jest.mock('../../../application/guides/CicloAcompanhamentoGuiasService.js', () => ({ lerAcompanhamentoGuias: jest.fn() }));
+import { lerAcompanhamentoGuias } from '../../../application/guides/CicloAcompanhamentoGuiasService.js';
 jest.mock('../../../application/guides/CicloEnvioGuiasService.js', () => ({ lerCicloEnvioGuias: jest.fn() }));
 import { lerCicloEnvioGuias } from '../../../application/guides/CicloEnvioGuiasService.js';
 jest.mock('../../../application/notas/apuracao/v2/CicloSimplesService.js', () => ({ lerCicloSimples: jest.fn(), revisarCicloSimples: jest.fn() }));
@@ -73,4 +75,15 @@ test('envio automático tem apenas leitura protegida por empresa, sem executar t
  prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
  expect((await request(app).get('/companies/b/operacoes/2026-10/envio-guias')).status).toBe(403);
  expect(lerCicloEnvioGuias).toHaveBeenCalledTimes(1);
+});
+
+test('acompanhamento GET respeita empresa e acesso e não possui comando de execução', async () => {
+ lerAcompanhamentoGuias.mockResolvedValue({portalClientId:'a',competencia:'2026-10',items:[]});
+ const read=await request(mount()).get('/companies/a/operacoes/2026-10/acompanhamento-guias');
+ expect(read.status).toBe(200);expect(read.headers['cache-control']).toBe('no-store');
+ expect(lerAcompanhamentoGuias).toHaveBeenCalledWith({portalClientId:'a',competencia:'2026-10'},{db:prisma});
+ expect((await request(mount()).post('/companies/a/operacoes/2026-10/acompanhamento-guias')).status).toBe(404);
+ prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
+ expect((await request(mount()).get('/companies/b/operacoes/2026-10/acompanhamento-guias')).status).toBe(403);
+ expect(lerAcompanhamentoGuias).toHaveBeenCalledTimes(1);
 });

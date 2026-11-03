@@ -1,4 +1,62 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+
+const tentativa = new AsyncLocalStorage();
+export const chaveConsultaAutomatica = ({ guideId, parcelaId }) => guideId
+  ? `pagamento_auto_tentativa:guia:${guideId}` : `pagamento_auto_tentativa:parcela:${parcelaId}`;
+const reservas = input => [input.guideId && chaveConsultaAutomatica({ guideId: input.guideId }),
+  input.parcelaId && chaveConsultaAutomatica({ parcelaId: input.parcelaId })].filter(Boolean).sort();
+
+// A posse é interna, não vem do corpo HTTP. Toda reutilização confere o claim persistido.
+export async function conferirReservaConsulta(input, db = prisma) {
+  const owner = tentativa.getStore();
+  if (!owner || owner.db !== db || owner.companyId !== input.companyId) return false;
+  for (const key of reservas(input)) {
+    const row = await db.appSetting.findUnique({ where: { key } });
+    if (!owner.keys.includes(key) || row?.value?.claim !== owner.claim || row.value.status !== 'INICIADA') return false;
+  }
+  return reservas(input).length > 0;
+}
+
+export async function executarConsultaAutomatica(input, run, db = prisma) {
+  if (!input.scheduledAt) return run();
+  if (await conferirReservaConsulta(input, db)) return run();
+  const keys = reservas(input);
+  if (!keys.length || !input.companyId) throw new Error('Identidade da consulta automática incompleta.');
+  const config = (await db.appSetting.findUnique({ where: { key: `acompanhamento_guias_config:${input.companyId}` } }))?.value;
+  if (config?.enabled === true && input.politica !== config.politica) return { ok: true, skipped: 'acompanhamento_exclusivo' };
+  const claim = randomUUID();
+  const value = { companyId: input.companyId, guideId: input.guideId || null, parcelaId: input.parcelaId || null,
+    revisao: input.revisao || null, politica: input.politica || 'LEGADO', fase: input.fase || 'PAGAMENTO',
+    claim, status: 'INICIADA', scheduledAt: input.scheduledAt, iniciadaEm: new Date().toISOString() };
+  try {
+    await db.$transaction(async tx => {
+      if (await consultaAutomaticaEncerrada(input, tx)) throw Object.assign(new Error('Consulta encerrada.'), { code: 'CONSULTA_ENCERRADA' });
+      for (const key of keys) await tx.appSetting.create({ data: { key, value } });
+    });
+  } catch (e) {
+    if (!['P2002', 'CONSULTA_ENCERRADA'].includes(e.code)) throw e;
+    return { ok: true, skipped: 'conferencia_manual' };
+  }
+  return tentativa.run({ db, companyId: input.companyId, keys, claim }, async () => {
+    const finish = async extra => db.$transaction(async tx => {
+      for (const key of keys) {
+        const persisted = await tx.appSetting.findUnique({ where: { key } });
+        if (persisted?.value?.claim !== claim || persisted.value.status !== 'INICIADA') throw new Error('A reserva da consulta mudou; exige conferência.');
+        await tx.appSetting.update({ where: { key }, data: { value: { ...value, ...extra, concluidaEm: new Date().toISOString() } } });
+      }
+    });
+    try {
+      const result = await run();
+      await finish({ status: result?.pago === true ? 'PAGA' : 'REVISAO', resultado: result?.pago === true ? 'PAGA' : result?.negativaConfirmada || result?.status === 'NAO_LOCALIZADO' ? 'NAO_LOCALIZADO' : 'INCONCLUSIVO' });
+      return result;
+    } catch (e) {
+      await finish({ status: 'REVISAO', resultado: 'ERRO', motivo: 'Confira a tentativa fiscal; não haverá repetição automática.' });
+      throw e;
+    }
+  });
+}
 
 const chaves = ({ guideId, parcelaId }) => [guideId && `pagamento_auto_negativo:guia:${guideId}`, parcelaId && `pagamento_auto_negativo:parcela:${parcelaId}`].filter(Boolean);
 
@@ -12,6 +70,11 @@ export function elegibilidadeVencimentoAutomatico(vencimento, now = new Date()) 
 export async function consultaAutomaticaEncerrada(input, db = prisma) {
   if (!input.scheduledAt) return false;
   for (const key of chaves(input)) if (await db.appSetting.findUnique({ where: { key } })) return true;
+  const owner = tentativa.getStore();
+  for (const key of reservas(input)) {
+    const row = await db.appSetting.findUnique({ where: { key } });
+    if (row && !(owner?.db === db && owner.keys.includes(key) && row.value?.claim === owner.claim && row.value.status === 'INICIADA')) return true;
+  }
   return false;
 }
 

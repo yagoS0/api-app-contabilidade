@@ -76,3 +76,13 @@ test('mock de envio é independente, inicia desligado e não dispara ao consulta
  const delivery=await api.getCompanyGuideDelivery(id,'2026-10');expect(delivery.status).toBe('DISABLED');expect(delivery.items).toEqual([]);
  expect(delivery.warnings[0].message).toContain('nenhum envio real');
 });
+
+test('acompanhamento mock mantém desligado, isolamento, revisão e leitura sem provas inventadas', async () => {
+ const api=criarCompanyAutomationMock([{companyId:'track-a'},{companyId:'track-b'}]);
+ const before=await api.getCompanyAutomation('track-a');expect(before.acompanhamentoGuias.enabled).toBe(false);
+ const input={expectedRevision:before.revision,requestId:'tracking-mock',acompanhamentoGuias:{enabled:true,politica:'D2_D0_D2_V1',limiteConsultas:1}};
+ const saved=await api.saveCompanyAutomation('track-a',input);expect(saved.lembretes).toEqual(before.lembretes);expect(saved.rotinas).toEqual(before.rotinas);
+ expect(saved.revision).not.toBe(before.revision);expect(await api.saveCompanyAutomation('track-a',input)).toEqual(saved);
+ expect((await api.getCompanyGuideTracking('track-a','2026-10')).items).toEqual([]);expect((await api.getCompanyGuideTracking('track-b','2026-10')).enabled).toBe(false);
+ await expect(api.saveCompanyAutomation('track-a',{...input,expectedRevision:saved.revision,requestId:'tracking-invalid',acompanhamentoGuias:{...input.acompanhamentoGuias,limiteConsultas:2}})).rejects.toMatchObject({status:422});
+});

@@ -22,6 +22,9 @@ const scheduledAt = "2026-09-24T11:00:00Z";
 beforeEach(() => {
   jest.useFakeTimers().setSystemTime(new Date("2026-09-24T15:00:00Z"));
   jest.clearAllMocks(); const ledger = new Map();
+  prisma.$transaction = async run => run(prisma);
+  prisma.appSetting.create = jest.fn(async ({data}) => {if(ledger.has(data.key))throw Object.assign(Error('duplicate'),{code:'P2002'});ledger.set(data.key,data);return data;});
+  prisma.appSetting.update = jest.fn(async ({where,data}) => {ledger.set(where.key,{key:where.key,...data});return data;});
   prisma.appSetting.findUnique.mockImplementation(async ({ where }) => ledger.get(where.key));
   prisma.appSetting.upsert.mockImplementation(async ({ create }) => { ledger.set(create.key, create); return create; });
   prisma.guide.findUnique.mockResolvedValue({ id: "g", tipo: "SIMPLES", competencia: "2026-09", vencimento: "2026-09-20", portalClientId: "c", portalClient: { cnpj: "11111111000191" }, paymentStatus: "OPEN" });

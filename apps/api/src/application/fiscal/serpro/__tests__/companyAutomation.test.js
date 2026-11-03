@@ -276,3 +276,14 @@ test.each([{enabled:'true'}, {enabled:true, token:'externo'}, null])('envio reje
  await expect(salvarAutomacaoEmpresa(db, 'a', 'user', { expectedRevision: before.revision, requestId: 'envio-invalido', envioGuias })).rejects.toMatchObject({ status: 422 });
  expect(db.appSetting.create).not.toHaveBeenCalled();
 });
+
+test('acompanhamento nasce desligado, exige contrato e limite explícitos e audita sem ligar agenda', async () => {
+ const db=database(), before=await lerAutomacaoEmpresa(db,'a');
+ expect(before.acompanhamentoGuias).toEqual({enabled:false,politica:null,limiteConsultas:0});
+ const input={expectedRevision:before.revision,requestId:'tracking-select',acompanhamentoGuias:{enabled:true,politica:'D2_D0_D2_V1',limiteConsultas:1}};
+ const saved=await salvarAutomacaoEmpresa(db,'a','user',input);
+ expect(saved.acompanhamentoGuias).toEqual(input.acompanhamentoGuias); expect(saved.lembretes.enabled).toBe(false);expect(saved.lembretes.agenda.enabled).toBe(false);
+ expect(db.companyRotina.upsert).not.toHaveBeenCalled();expect(db.appSetting.create.mock.calls.at(-1)[0].data.value.beforeAcompanhamentoGuias.enabled).toBe(false);
+ expect(await salvarAutomacaoEmpresa(db,'a','user',input)).toEqual(saved);
+ await expect(salvarAutomacaoEmpresa(db,'a','user',{...input,requestId:'tracking-bad-limit',expectedRevision:saved.revision,acompanhamentoGuias:{...input.acompanhamentoGuias,limiteConsultas:2}})).rejects.toMatchObject({code:'INVALID_AUTOMATION'});
+});

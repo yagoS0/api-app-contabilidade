@@ -1,3 +1,4 @@
+import { CompanyGuideTracking } from './CompanyGuideTracking';
 import { CompanyGuideDelivery } from './CompanyGuideDelivery';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
@@ -97,6 +98,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
   const [paused, setPaused] = useState(false), [reason, setReason] = useState('');
   const [automationPaused, setAutomationPaused] = useState(false), [automationReason, setAutomationReason] = useState('');
   const [envioGuias, setEnvioGuias] = useState(false);
+  const [tracking, setTracking] = useState(false);
   const [reminders, setReminders] = useState(false);
   const [cicloSimples, setCicloSimples] = useState({ enabled: false, fontes: [] });
   const [reloadRequired, setReloadRequired] = useState(false);
@@ -119,11 +121,12 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
   const policyChanged = paused !== (data?.serproPolicy?.paused === true);
   const automationChanged = automationPaused !== (data?.automationPolicy?.paused === true);
   const envioChanged = envioGuias !== (data?.envioGuias?.enabled === true);
+  const trackingChanged = tracking !== (data?.acompanhamentoGuias?.enabled === true);
   const remindersChanged = reminders !== (data?.lembretes?.enabled === true);
   const cicloApplicable = data?.cicloSimples?.applicableCurrentRegime ?? data?.regime === 'SIMPLES';
   const cicloChanged = cicloSimples.enabled !== (data?.cicloSimples?.enabled === true) || JSON.stringify([...cicloSimples.fontes].sort()) !== JSON.stringify([...(data?.cicloSimples?.fontes || [])].sort());
   const cicloInvalid = cicloSimples.enabled && !cicloSimples.fontes.length;
-  const hasChanges = !!data && (changes.length > 0 || policyChanged || remindersChanged || automationChanged || cicloChanged || envioChanged);
+  const hasChanges = !!data && (changes.length > 0 || policyChanged || remindersChanged || automationChanged || cicloChanged || envioChanged || trackingChanged);
   const locked = !canEdit || busy || preview || !!pending.current || reloadRequired;
   useEdicaoPendente(hasChanges);
   const load = useCallback(async (event) => {
@@ -136,7 +139,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
       if (generation.current !== current) return;
       if (!r || r.ok === false || !r.revision || !Array.isArray(r.rotinas) || (r.companyId && r.companyId !== companyId)) throw new Error('Não foi possível confirmar a configuração desta empresa. Recarregue para conferir.');
       setData(r); setValues(Object.fromEntries(r.rotinas.map(x => [x.key, x.enabled]))); pending.current = null;
-      setPaused(r.serproPolicy?.paused === true); setReason(''); setReminders(r.lembretes?.enabled === true); setEnvioGuias(r.envioGuias?.enabled === true);
+      setPaused(r.serproPolicy?.paused === true); setReason(''); setReminders(r.lembretes?.enabled === true); setTracking(r.acompanhamentoGuias?.enabled === true); setEnvioGuias(r.envioGuias?.enabled === true);
       setAutomationPaused(r.automationPolicy?.paused === true); setAutomationReason('');
       setCicloSimples({ enabled: r.cicloSimples?.enabled === true, fontes: r.cicloSimples?.fontes || [] });
     } catch (e) { if (generation.current === current) setError(e.message || 'Não foi possível carregar a configuração.'); }
@@ -148,6 +151,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
     const current = generation.current;
     const input = pending.current || { expectedRevision: data.revision, requestId: crypto.randomUUID(),
       ...(automationChanged ? { automationPolicy: { paused: automationPaused, reason: automationReason.trim() } } : {}),
+      ...(trackingChanged ? { acompanhamentoGuias: { enabled: tracking, politica: 'D2_D0_D2_V1', limiteConsultas: 1 } } : {}),
       ...(remindersChanged ? { lembretes: { enabled: reminders } } : {}),
       ...(envioChanged ? { envioGuias: { enabled: envioGuias } } : {}),
       ...(cicloChanged ? { cicloSimples } : {}),
@@ -158,13 +162,14 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
     try {
       const r = await api.saveCompanyAutomation(companyId, input);
       if (generation.current !== current) return;
+      if (input.acompanhamentoGuias && ['enabled', 'politica', 'limiteConsultas'].some(key => r?.acompanhamentoGuias?.[key] !== input.acompanhamentoGuias[key])) throw new Error('Não foi possível confirmar o acompanhamento salvo. A intenção foi preservada; confira o resultado antes de continuar.');
       if (input.envioGuias && r?.envioGuias?.enabled !== input.envioGuias.enabled) throw new Error('Não foi possível confirmar o envio automático salvo. Recarregue para conferir.');
       if (input.lembretes && r?.lembretes?.enabled !== input.lembretes.enabled) throw new Error('Não foi possível confirmar os lembretes salvos. Recarregue para conferir.');
       if (input.cicloSimples && (r?.cicloSimples?.enabled !== input.cicloSimples.enabled || JSON.stringify([...(r?.cicloSimples?.fontes || [])].sort()) !== JSON.stringify([...input.cicloSimples.fontes].sort()))) throw new Error('Não foi possível confirmar as fontes salvas. Recarregue para conferir.');
       if (input.automationPolicy && (r?.automationPolicy?.paused !== input.automationPolicy.paused || !r.automationPolicy.updatedAt || !r.automationPolicy.updatedBy)) throw new Error('Não foi possível confirmar a pausa empresarial salva. Recarregue para conferir.');
       if (!r || r.ok === false || !r.revision || !Array.isArray(r.rotinas) || (r.companyId && r.companyId !== companyId)) throw new Error('Não foi possível confirmar a configuração desta empresa. Recarregue para conferir.');
       setData(r); setValues(Object.fromEntries(r.rotinas.map(x => [x.key, x.enabled]))); pending.current = null; setPreview(false);
-      setPaused(r.serproPolicy?.paused === true); setReason(''); setReminders(r.lembretes?.enabled === true); setEnvioGuias(r.envioGuias?.enabled === true);
+      setPaused(r.serproPolicy?.paused === true); setReason(''); setReminders(r.lembretes?.enabled === true); setTracking(r.acompanhamentoGuias?.enabled === true); setEnvioGuias(r.envioGuias?.enabled === true);
       setSaved('Configuração salva. Nenhuma consulta ou mensagem foi iniciada agora.');
       setCicloSimples({ enabled: r.cicloSimples?.enabled === true, fontes: r.cicloSimples?.fontes || [] });
       setAutomationPaused(r.automationPolicy?.paused === true); setAutomationReason('');
@@ -221,7 +226,9 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
           <input type="checkbox" checked={reminders} disabled={locked || !data.lembretes} onChange={e => { setReminders(e.target.checked); setSaved(''); }} />
           <span>Selecionar empresa para lembretes no WhatsApp</span>
         </label>
-        <p>Um dia útil antes, no dia útil do vencimento e um dia útil depois. O vencimento do documento é preservado.</p>
+        <label className="operacoes-rotina"><input type="checkbox" checked={tracking} disabled={locked || !data.acompanhamentoGuias} onChange={e => { setTracking(e.target.checked); setSaved(''); }} /><span>Adotar acompanhamento em dois dias úteis</span></label>
+        <p>{tracking ? 'Confirmação dois dias úteis antes e no dia de comunicação do vencimento. Dois dias úteis depois, uma consulta fiscal por guia ainda não confirmada nem recalculada e oferta de atualização quando elegível.' : data.acompanhamentoGuias?.politica ? 'Novo acompanhamento desligado nesta empresa.' : 'Fluxo anterior: um dia útil antes, no dia útil do vencimento e um dia útil depois.'} O vencimento nominal do documento é preservado.</p>
+        <p>O novo acompanhamento autoriza no máximo uma consulta automática por guia, sujeita aos limites e custos SERPRO existentes. Falha ou resultado inconclusivo exige conferência, sem repetição. A adesão não seleciona a empresa para WhatsApp nem liga a agenda global.</p>
         <p>{!data.lembretes ? 'Configuração de lembretes indisponível. Recarregue antes de alterar.' : data.lembretes.agenda?.enabled
           ? `Agenda global: diariamente às ${String(data.lembretes.agenda.hour).padStart(2, '0')}:00 · Brasília.`
           : 'Agenda global desligada ou incompleta. Selecionar esta empresa não ativa a agenda.'}</p>
@@ -252,6 +259,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         <h3 ref={previewRef} tabIndex={-1}>Conferir alteração</h3>
         {automationChanged && <p>{automationPaused ? 'Pausar automações desta empresa.' : 'Retomar automações desta empresa conforme pausa geral, seleções e agendas salvas.'} Motivo: {automationReason.trim()}</p>}
         {envioChanged && <p>Envio automático de guias: {envioGuias ? 'selecionar esta empresa' : 'desativar nesta empresa'}. A agenda global permanece como está.</p>}
+        {trackingChanged && <p>Acompanhamento em dois dias úteis: {tracking ? 'adotar contrato com limite de uma consulta automática por guia' : 'desativar nesta empresa'}. Seleção WhatsApp, agenda global e pausas permanecem independentes.</p>}
         {remindersChanged && <p>Lembretes de guias: {reminders ? 'selecionar esta empresa' : 'desativar nesta empresa'}. A agenda global permanece como está.</p>}
         {cicloChanged && <p>Coleta e cálculo: {cicloSimples.enabled ? 'selecionar esta empresa' : 'desativar nesta empresa'}. Fontes: {cicloSimples.fontes.map(f => f === 'NFE' ? 'NF-e' : 'NFS-e').join(', ') || 'nenhuma'}. A agenda global permanece como está.</p>}
         <ul>{changes.map(r => <li key={r.key}>{r.label}: {values[r.key] ? 'ativar nesta empresa' : 'desativar nesta empresa'}</li>)}</ul>
@@ -260,6 +268,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         <Button onClick={save} disabled={busy || reloadRequired}>{busy ? 'Salvando…' : 'Salvar configuração'}</Button>{' '}
         <Button variant="secondary" disabled={busy || !!pending.current} onClick={() => { requestFocus('review'); setPreview(false); }}>Voltar à edição</Button>
       </div> : <Button ref={reviewRef} disabled={busy || reloadRequired || !hasChanges || cicloInvalid || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())} onClick={() => { requestFocus('preview'); setPreview(true); }}>Conferir alterações</Button>}
+      {api?.getCompanyGuideTracking && <CompanyGuideTracking key={companyId} api={api} companyId={companyId} />}
       {api?.getCompanyGuideDelivery && <CompanyGuideDelivery api={api} companyId={companyId} />}
       {(data.cicloSimples || data.regime === 'SIMPLES') && <CompanySimplesCycle key={companyId} api={api} companyId={companyId} canEdit={canEdit} configurationPending={hasChanges || busy} />}
     </>}

@@ -58,3 +58,42 @@ test('resposta de gravação vazia ou negativa não anuncia sucesso', async () =
  await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível confirmar a configuração'));
  expect(screen.queryByText(/Configuração salva/)).toBeNull();
 });
+
+test('adesão explícita ao acompanhamento salva contrato e limite sem selecionar WhatsApp ou agenda', async () => {
+ const base={...initial,acompanhamentoGuias:{enabled:false,politica:null,limiteConsultas:0}};
+ const api={getCompanyAutomation:async()=>base,saveCompanyAutomation:jest.fn(async(id,input)=>({...base,revision:'r2',acompanhamentoGuias:input.acompanhamentoGuias}))};
+ render(<CompanyAutomation api={api} companyId="a" canEdit/>);
+ const tracking=await screen.findByRole('checkbox',{name:'Adotar acompanhamento em dois dias úteis'});expect(tracking).not.toBeChecked();
+ fireEvent.click(tracking);fireEvent.click(screen.getByText('Conferir alterações'));
+ expect(screen.getByText(/adotar contrato com limite de uma consulta/)).toBeVisible();
+ fireEvent.click(screen.getByText('Salvar configuração'));await screen.findByText(/Configuração salva/);
+ expect(api.saveCompanyAutomation).toHaveBeenCalledWith('a',{expectedRevision:'r1',requestId:'reminder-request',acompanhamentoGuias:{enabled:true,politica:'D2_D0_D2_V1',limiteConsultas:1}});
+ expect(checkbox()).not.toBeChecked();expect(screen.getByText(/Agenda global desligada/)).toBeVisible();
+});
+
+test.each([
+ undefined,
+ {enabled:false,politica:'D2_D0_D2_V1',limiteConsultas:1},
+ {enabled:true,politica:'OUTRA',limiteConsultas:1},
+ {enabled:true,politica:'D2_D0_D2_V1',limiteConsultas:2},
+])('resposta de acompanhamento divergente %j preserva intenção e requestId sem anunciar sucesso', async retornado=>{
+ const base={...initial,acompanhamentoGuias:{enabled:false,politica:null,limiteConsultas:0}};
+ const save=jest.fn().mockResolvedValueOnce({...base,revision:'r2',acompanhamentoGuias:retornado})
+  .mockImplementationOnce(async(id,input)=>({...base,revision:'r2',acompanhamentoGuias:input.acompanhamentoGuias}));
+ render(<CompanyAutomation api={{getCompanyAutomation:async()=>base,saveCompanyAutomation:save}} companyId="a" canEdit/>);
+ const tracking=await screen.findByRole('checkbox',{name:'Adotar acompanhamento em dois dias úteis'});
+ fireEvent.click(tracking);fireEvent.click(screen.getByText('Conferir alterações'));fireEvent.click(screen.getByText('Salvar configuração'));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível confirmar o acompanhamento salvo');
+ expect(screen.queryByText(/Configuração salva/)).toBeNull();expect(tracking).toBeChecked();expect(tracking).toBeDisabled();
+ fireEvent.click(screen.getByText('Salvar configuração'));await screen.findByText(/Configuração salva/);
+ expect(save.mock.calls[1]).toEqual(save.mock.calls[0]);expect(tracking).toBeChecked();expect(checkbox()).not.toBeChecked();
+});
+test('retorno que mantém acompanhamento ativo não confirma desativação', async()=>{
+ const base={...initial,acompanhamentoGuias:{enabled:true,politica:'D2_D0_D2_V1',limiteConsultas:1}};
+ const save=jest.fn(async()=>({...base,revision:'r2'}));
+ render(<CompanyAutomation api={{getCompanyAutomation:async()=>base,saveCompanyAutomation:save}} companyId="a" canEdit/>);
+ const tracking=await screen.findByRole('checkbox',{name:'Adotar acompanhamento em dois dias úteis'});
+ fireEvent.click(tracking);fireEvent.click(screen.getByText('Conferir alterações'));fireEvent.click(screen.getByText('Salvar configuração'));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível confirmar o acompanhamento salvo');expect(tracking).not.toBeChecked();expect(screen.queryByText(/Configuração salva/)).toBeNull();
+ expect(save.mock.calls[0][1].acompanhamentoGuias.enabled).toBe(false);
+});

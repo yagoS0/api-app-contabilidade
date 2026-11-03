@@ -10,7 +10,7 @@ export function aplicabilidadeRotinasMock(company) {
 export function criarCompanyAutomationMock(companies) {
   const policies = new Map(), requests = new Map();
   const automationPolicies = new Map();
-  const ciclos = new Map();
+  const ciclos = new Map(), tracking = new Map();
   const fail = (message, status = 409) => Object.assign(new Error(message), { status });
   async function getCompanyAutomation(companyId) {
     const data = mockCarregarRotinas(companies);
@@ -23,8 +23,9 @@ export function criarCompanyAutomationMock(companies) {
     const rotinas = data.rotinas.filter(r => !['avisos_guias_whatsapp', 'simples_coleta_calculo', 'simples_envio_guias'].includes(r.key)).map(r => ({ ...r, label: r.key === 'parcelamento' ? 'Parcelamento do Simples' : r.label, applicable: applicability.applicableKeys.includes(r.key), enabled: company.rotinas[r.key] === true, agenda: data.agenda[r.key] }));
     const envioGuias = { ...(company.envioGuias || { enabled: false }), applicableCurrentRegime: applicability.regime === 'SIMPLES', configurationValid: true };
     const cicloSimples = company.cicloSimples || { enabled: false, fontes: [] };
+    const acompanhamentoGuias = tracking.get(companyId) || { enabled: false, politica: null, limiteConsultas: 0 };
     const lembretes = { enabled: company.rotinas.avisos_guias_whatsapp === true, agenda: data.agenda.avisos_guias_whatsapp };
-    return structuredClone({ companyId, revision: JSON.stringify([rotinas, serproPolicy, lembretes, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias]), rotinas, serproPolicy, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias,
+    return structuredClone({ companyId, revision: JSON.stringify([rotinas, serproPolicy, lembretes, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias, acompanhamentoGuias]), acompanhamentoGuias, rotinas, serproPolicy, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias,
       effectiveAutomationState: globalAutomationPolicy.paused ? 'GLOBAL_PAUSED' : automationPolicy.paused ? 'COMPANY_PAUSED' : 'SUBJECT_TO_SCHEDULE', lembretes, ...applicability });
   }
   async function getCompanySimplesCycle(companyId, competencia) {
@@ -37,7 +38,13 @@ export function criarCompanyAutomationMock(companies) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) throw fail('Competência inválida.', 422);
     return { ok: true, portalClientId: companyId, competencia, revision: 0, status: 'DISABLED', enabled: false, paused: data.automationPolicy.paused || data.globalAutomationPolicy.paused, cutoffDate: null, expectation: { state: 'REVIEW', missing: [], requiredCount: 0, availableCount: 0 }, items: [], warnings: [{ id: 'demo', message: 'Demonstração: nenhum envio real é realizado.' }], lastAttempt: null };
   }
-  return { getCompanyAutomation, getCompanyGuideDelivery, getCompanySimplesCycle, async reviseCompanySimplesCycle(companyId, competencia, input) {
+  async function getCompanyGuideTracking(companyId, competencia) {
+    const data = await getCompanyAutomation(companyId);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) throw fail('Competência inválida.', 422);
+    return { ok: true, portalClientId: companyId, competencia, ...data.acompanhamentoGuias, paused: data.automationPolicy.paused || data.globalAutomationPolicy.paused,
+      items: [], template: { status: 'A_CONFERIR', mensagem: 'Demonstração: modelos e entregas não comprovados; nenhuma saída real.' } };
+  }
+  return { getCompanyGuideTracking, getCompanyAutomation, getCompanyGuideDelivery, getCompanySimplesCycle, async reviseCompanySimplesCycle(companyId, competencia, input) {
     const current = await getCompanySimplesCycle(companyId, competencia);
     if (input.expectedRevision !== current.revision || !current.canRevise) throw fail('Confira a tentativa antes de registrar nova revisão.');
     if (typeof input.motivo !== 'string' || input.motivo.trim().length < 3 || input.motivo.trim().length > 500) throw fail('Informe o motivo da revisão.', 422);
@@ -55,6 +62,9 @@ export function criarCompanyAutomationMock(companies) {
     }
     const current = await getCompanyAutomation(companyId);
     if (current.revision !== input.expectedRevision) throw fail('A configuração mudou em outra sessão. Recarregue antes de salvar.');
+    if (input.acompanhamentoGuias !== undefined && (!input.acompanhamentoGuias || Array.isArray(input.acompanhamentoGuias)
+      || typeof input.acompanhamentoGuias.enabled !== 'boolean' || input.acompanhamentoGuias.politica !== 'D2_D0_D2_V1' || input.acompanhamentoGuias.limiteConsultas !== 1
+      || Object.keys(input.acompanhamentoGuias).some(k => !['enabled', 'politica', 'limiteConsultas'].includes(k)))) throw fail('Revise o contrato e limite de consulta do acompanhamento.', 422);
     if (input.envioGuias !== undefined && (!input.envioGuias || Array.isArray(input.envioGuias) || typeof input.envioGuias.enabled !== 'boolean' || Object.keys(input.envioGuias).some(k => k !== 'enabled') || input.envioGuias.enabled && !current.envioGuias.enabled && current.regime !== 'SIMPLES')) throw fail('Revise a seleção do envio automático.', 422);
     if (input.cicloSimples !== undefined && (!input.cicloSimples || Array.isArray(input.cicloSimples) || typeof input.cicloSimples.enabled !== 'boolean' || !Array.isArray(input.cicloSimples.fontes)
       || input.cicloSimples.fontes.some(f => !['NFE', 'NFSE'].includes(f)) || new Set(input.cicloSimples.fontes).size !== input.cicloSimples.fontes.length
@@ -87,6 +97,7 @@ export function criarCompanyAutomationMock(companies) {
       automationPolicies.set(companyId, { ...input.automationPolicy, reason: input.automationPolicy.reason.trim(), version: current.automationPolicy.version + 1,
         updatedAt, updatedBy: 'mock-user', resumedAt: !input.automationPolicy.paused && current.automationPolicy.paused ? updatedAt : current.automationPolicy.resumedAt });
     }
+    if (input.acompanhamentoGuias !== undefined) tracking.set(companyId, structuredClone(input.acompanhamentoGuias));
     const result = await getCompanyAutomation(companyId);
     requests.set(input.requestId, { identity, result });
     return structuredClone(result);

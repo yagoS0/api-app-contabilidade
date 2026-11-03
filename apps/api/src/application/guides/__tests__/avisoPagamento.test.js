@@ -286,3 +286,13 @@ test('pausa empresarial na preparação do WhatsApp impede saída e preserva res
  await expect(f.run()).rejects.toMatchObject({code:'AUTOMACAO_EMPRESA_HORARIO_ANTERIOR'});
  expect([...f.records]).toEqual(preserved);expect(network).not.toHaveBeenCalled();
 });
+test('D0 antecipado do novo contrato informa data nominal sem afirmar vence hoje', async()=>{
+ const f=setup({vencimento:'2026-09-26'});jest.setSystemTime(new Date('2026-09-25T15:00:00Z'));
+ await f.run({politica:'D2_D0_D2_V1'});
+ const msg=f.transporte.whatsapp.mock.calls[0][0];expect(msg.fase).toBe('NO_VENCIMENTO');expect(msg.variaveis[3]).toBe('26/09/2026');expect(msg.texto).not.toContain('vence hoje');expect(msg.acoes).toEqual([]);
+});
+test.each([false,true])('D+2 novo oferece atualização somente com capacidade real: %s', async elegivel=>{
+ const f=setup({vencimento:'2026-09-22',tipo:elegivel?'SIMPLES':'ISS',source:elegivel?'SERPRO':'MANUAL'});
+ await f.run({politica:'D2_D0_D2_V1'});
+ const msg=f.transporte.whatsapp.mock.calls[0][0];expect(msg.fase).toBe('DEPOIS');expect(msg.acoes).toHaveLength(elegivel?1:0);expect(msg.texto).toContain('Não é necessário pagar novamente');
+});
