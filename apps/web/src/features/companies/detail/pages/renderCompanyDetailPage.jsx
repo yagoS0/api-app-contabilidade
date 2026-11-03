@@ -475,6 +475,7 @@ function CompanyDetailContent({
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
+          <Feedback message={feedback?.message} error={feedback?.error} />
           <PlanoContasAviso panel={accountingPanel} mostrarErro={false} />
           <AccountingEntriesTab
             companyId={companyId}

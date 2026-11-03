@@ -86,6 +86,7 @@ import { NfseService } from "../NfseService.js";
 import { fingerprintConfirmacaoEmissao } from '../fingerprintConfirmacaoEmissao.js';
 import { prepararDadosFiscaisDoCliente } from '../preparacaoFiscalDoCliente.js';
 import { NfseRepository } from '../../../infrastructure/db/NfseRepository.js';
+import { criarOuReconhecerLote, processarLoteEmissao, DESFECHO_LINHA } from '../lote/emissaoLote.js';
 
 const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -173,6 +174,93 @@ function xmlEnviado() {
   return gunzipSync(Buffer.from(body.dpsXmlGZipB64, "base64")).toString("utf-8");
 }
 
+test.each([new Date('2025-12-31T00:00:00.000Z'), '2025-12-31T00:00:00.000Z', '2025-12-31', '2025-12'])
+('emissão direta conserva competência e regime histórico: %s', async competencia => {
+  montarCenario({ empresa: { regimeTributario: 'LUCRO_PRESUMIDO', regimeHistorico: [
+    { id: 'anterior', regime: 'SIMPLES', vigenciaInicio: '2025-01-01', vigenciaFim: '2025-12-31' },
+    { id: 'atual', regime: 'LUCRO_PRESUMIDO', vigenciaInicio: '2026-01-01', vigenciaFim: null },
+  ] } });
+  const pedido = Object.freeze({ ...PAYLOAD_BASE, competencia });
+  const result = await NfseService.issue({ data: pedido, log });
+  expect(pedido.competencia).toBe(competencia);
+  expect(result.status).toBe('issued');
+  const dia = competencia === '2025-12' ? '2025-12-01' : '2025-12-31';
+  expect(xmlEnviado()).toContain(`<dCompet>${dia}</dCompet>`);
+  expect(xmlEnviado()).toContain('<opSimpNac>3</opSimpNac>');
+  expect(prisma.serviceInvoice.create).toHaveBeenCalledWith(expect.objectContaining({
+    data: expect.objectContaining({ competencia: new Date(`${dia}T00:00:00.000Z`) }),
+  }));
+});
+
+test('competência mensal com mudança de regime no mês recusa antes de reservar e enviar', async () => {
+  montarCenario({ empresa: { regimeHistorico: [
+    { id: 'anterior', regime: 'SIMPLES', vigenciaInicio: '2025-01-01', vigenciaFim: '2025-12-15' },
+    { id: 'novo', regime: 'LUCRO_PRESUMIDO', vigenciaInicio: '2025-12-16', vigenciaFim: null },
+  ] } });
+  const result = await NfseService.issue({ data: { ...PAYLOAD_BASE, competencia: '2025-12' }, log });
+  expect(result.codigo).toBe('NFSE_REGIME_HISTORICO_AMBIGUO');
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  expect(postMock).not.toHaveBeenCalled();
+});
+
+test('lote persistido em JSON passa pelo serviço real e conserva o dia no XML, sem reemitir', async () => {
+  montarCenario();
+  let lote;
+  let linha;
+  const bancoLote = {
+    loteEmissaoNfse: {
+      findFirst: jest.fn(async () => lote || null),
+      create: jest.fn(async ({ data }) => {
+        lote = { id: 'lote-1', companyId: data.companyId, linhaIndeterminada: null };
+        linha = { id: 'linha-1', loteId: lote.id, desfecho: DESFECHO_LINHA.NAO_TENTADA,
+          ...data.linhas.create[0], dados: JSON.parse(JSON.stringify(data.linhas.create[0].dados)) };
+        return { ...lote };
+      }),
+      findUnique: jest.fn(async () => ({ ...lote })),
+      update: jest.fn(async ({ data }) => Object.assign(lote, data)),
+    },
+    loteEmissaoNfseLinha: {
+      findMany: jest.fn(async ({ where }) => {
+        const aceita = !where.desfecho || (where.desfecho.in
+          ? where.desfecho.in.includes(linha.desfecho) : where.desfecho === linha.desfecho);
+        return aceita ? [{ ...linha }] : [];
+      }),
+      updateMany: jest.fn(async ({ where, data }) => {
+        if (where.id !== linha.id || !where.desfecho.in.includes(linha.desfecho)) return { count: 0 };
+        Object.assign(linha, data);
+        return { count: 1 };
+      }),
+      update: jest.fn(async ({ data }) => Object.assign(linha, data)),
+    },
+  };
+  await criarOuReconhecerLote({ prisma: bancoLote, companyId: PAYLOAD_BASE.companyId,
+    linhasProntas: [{ numero: 2, dados: PAYLOAD_BASE }] });
+  expect(linha.dados.competencia).toBe('2026-01-23T00:00:00.000Z');
+  const executar = () => processarLoteEmissao({ prisma: bancoLote, loteId: lote.id,
+    companyId: PAYLOAD_BASE.companyId, emitir: NfseService.issue, log });
+  const resultado = await executar();
+  expect(resultado.emitidas).toBe(1);
+  expect(resultado.recusadas).toBe(0);
+  expect(linha.desfecho).toBe(DESFECHO_LINHA.EMITIDA);
+  expect(xmlEnviado()).toContain('<dCompet>2026-01-23</dCompet>');
+  expect(prisma.serviceInvoice.create).toHaveBeenCalledWith(expect.objectContaining({
+    data: expect.objectContaining({ competencia: new Date('2026-01-23T00:00:00.000Z') }),
+  }));
+  await executar();
+  expect(postMock).toHaveBeenCalledTimes(1);
+});
+
+test.each(['2026-02-30T00:00:00.000Z', '2026-01-01T24:00:00.000Z', '', null])
+('competência inválida não reserva DPS nem envia: %s', async competencia => {
+  montarCenario();
+  const result = await NfseService.issue({ data: { ...PAYLOAD_BASE, competencia }, log });
+  expect(result.codigo).toBe('NFSE_REGIME_COMPETENCIA_INVALIDA');
+  expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(postMock).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   resolverCertificadosDaEmpresa.mockResolvedValue(CERT_DA_EMPRESA);
@@ -249,6 +337,21 @@ describe('resumo fiscal confirmado e prova de autorização', () => {
     const r = await NfseService.issue({ data: PAYLOAD_BASE, log, exigirConfirmacao: true, fingerprintConfirmado: confirmado,
       antesDeEnviar: async () => prisma.company.findUnique.mockResolvedValue({ ...company, inscricaoMunicipal: 'alterada' }) });
     expect(r).toMatchObject({ status: 'falha_envio', camada: 'NOSSA', codigo: 'NFSE_RESUMO_ALTERADO', antesDoPost: true, indeterminado: false, invoiceId: 'inv-1' });
+    expect(postMock).not.toHaveBeenCalled();
+  });
+  it('revalidação preserva o mês inteiro se o histórico mudar depois da reserva', async () => {
+    montarCenario();
+    const confirmado = await fingerprint();
+    const company = await prisma.company.findUnique();
+    const r = await NfseService.issue({ data: { ...PAYLOAD_BASE, competencia: '2026-01' }, log,
+      exigirConfirmacao: true, fingerprintConfirmado: confirmado,
+      antesDeEnviar: async () => prisma.company.findUnique.mockResolvedValue({ ...company,
+        regimeHistorico: [
+          { id: 'rh-teste', regime: 'SIMPLES_NACIONAL', vigenciaInicio: '2020-01-01', vigenciaFim: '2026-01-15' },
+          { id: 'novo', regime: 'LUCRO_PRESUMIDO', vigenciaInicio: '2026-01-16', vigenciaFim: null },
+        ],
+      }) });
+    expect(r).toMatchObject({ status: 'falha_envio', codigo: 'NFSE_RESUMO_ALTERADO', antesDoPost: true });
     expect(postMock).not.toHaveBeenCalled();
   });
   it('perfil efetivo alterado depois do resumo é recusado antes da reserva', async () => {

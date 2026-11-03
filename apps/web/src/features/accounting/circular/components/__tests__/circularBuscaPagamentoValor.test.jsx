@@ -8,7 +8,7 @@
 // ⚠ Não há formatador novo: é o `fmtValor` que a célula, o popover e o rodapé desta mesma aba já
 // usam. O que se trava aqui é que ele continua sendo o de lá.
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({ BaixaModal: () => null }));
@@ -75,8 +75,7 @@ describe("Circular — o desfecho da busca de pagamento fala pt-BR", () => {
     renderTab();
     buscar();
 
-    await waitFor(() => expect(alerta).toHaveBeenCalled());
-    const texto = alerta.mock.calls[0][0];
+    const texto = (await screen.findByText(/Pagamento localizado em/)).textContent;
     expect(texto).toContain("R$ 193,03");
     expect(texto).not.toContain("193.03");
   });
@@ -89,8 +88,7 @@ describe("Circular — o desfecho da busca de pagamento fala pt-BR", () => {
     renderTab();
     buscar();
 
-    await waitFor(() => expect(alerta).toHaveBeenCalled());
-    expect(alerta.mock.calls[0][0]).toContain("R$ 1.234,56");
+    expect(await screen.findByText(/Pagamento localizado em/)).toHaveTextContent("R$ 1.234,56");
   });
 
   it("⚠ comprovante sem total NÃO vira 'R$ 0,00' — a frase omite o valor", async () => {
@@ -101,8 +99,7 @@ describe("Circular — o desfecho da busca de pagamento fala pt-BR", () => {
     renderTab();
     buscar();
 
-    await waitFor(() => expect(alerta).toHaveBeenCalled());
-    const texto = alerta.mock.calls[0][0];
+    const texto = (await screen.findByText(/Pagamento localizado em/)).textContent;
     expect(texto).toContain("Pagamento localizado em 20/07/2026");
     expect(texto).not.toMatch(/R\$/);
     expect(texto).not.toContain("null");

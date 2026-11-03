@@ -92,6 +92,7 @@ export function avisoDaLinhaIndeterminada(lote) {
  * nacional.
  */
 export function conviteParaRetomar(lote) {
+  if (lote?.retentativaRecusada) return null;
   if (!lote || lote.status !== STATUS_LOTE.PARADO_INDETERMINADO) return null;
   const restantes = (lote.linhas || []).filter(
     (l) => l.desfecho === DESFECHO.NAO_TENTADA && l.numeroLinha > (lote.linhaIndeterminada ?? -Infinity)
@@ -270,6 +271,7 @@ export function planoDeRetentativa(lote) {
  * não existe mal-entendido a desfazer, e a frase sairia.**
  */
 export function conviteParaRetentar(lote) {
+  if (lote?.retentativaRecusada) return null;
   const plano = planoDeRetentativa(lote);
   if (!plano.quantas) return null;
 
@@ -350,7 +352,59 @@ export function exigeConferenciaDaLinha(linha) {
     || linha?.numeroReutilizavel === false
     || String(linha?.codigo || "").toUpperCase() === "NFSE_RETRY_NAO_PERMITIDO";
 }
-export function observacaoDaLinha(linha) {
+/** O 422 traz evidência atual, mas não comprova uma nova tentativa fiscal.
+ * A empresa é vinculada pelo path autenticado e pelo contexto da requisição na tela:
+ * paraTela não expõe companyId (Company e PortalClient são identidades diferentes).
+ */
+export function loteDaRetentativaRecusada(erro, loteId) {
+  if (erro?.status !== 422 || erro?.code !== "nada_a_retentar") return null;
+  return loteComBloqueioDoServidor(erro.corpo, loteId);
+}
+
+function loteComBloqueioDoServidor(corpo, loteId) {
+  const { lote, retentativa } = corpo || {};
+  if (!loteId || lote?.id !== loteId || !Object.values(STATUS_LOTE).includes(lote.status)
+    || !Array.isArray(lote.linhas) || !lote.linhas.length
+    || retentativa?.quantas !== 0 || !Array.isArray(retentativa.retentaveis)
+    || retentativa.retentaveis.length || !Array.isArray(retentativa.bloqueadas)) return null;
+  const numeros = new Set(lote.linhas.map(l => l?.numeroLinha));
+  const bloqueios = retentativa.bloqueadas;
+  if (numeros.size !== lote.linhas.length || [...numeros].some(n => !Number.isInteger(n))
+    || bloqueios.length !== numeros.size
+    || new Set(bloqueios.map(b => b?.numeroLinha)).size !== numeros.size
+    || bloqueios.some(b => !numeros.has(b?.numeroLinha) || typeof b?.motivo !== "string" || !b.motivo.trim())) return null;
+  return { ...lote, retentativaRecusada: true, bloqueiosRetentativa: bloqueios };
+}
+
+// Uma recusa conhecida suspende a ação, mesmo sem detalhes suficientes para
+// substituir o histórico. Não transforma ausência de resposta em desfecho fiscal.
+export function suspenderRetentativaSemDetalhes(lote) {
+  return { ...lote, retentativaRecusada: true, retentativaDetalhesIndisponiveis: true };
+}
+
+export function loteDaRespostaReconhecida(resposta) {
+  const lote = resposta?.lote || null;
+  if (!lote || resposta?.reconhecido !== true || resposta?.retentativa?.quantas !== 0) return lote;
+  return loteComBloqueioDoServidor(resposta, lote.id) || suspenderRetentativaSemDetalhes(lote);
+}
+
+// GET de acompanhamento não contém um plano: atualiza o relatório, mas não
+// revoga um bloqueio informado pelo servidor para este mesmo lote/contexto.
+export function atualizarLoteConsultado(anterior, consultado) {
+  if (!anterior?.retentativaRecusada || anterior.id !== consultado?.id) return consultado;
+  return { ...consultado, retentativaRecusada: true,
+    bloqueiosRetentativa: anterior.bloqueiosRetentativa,
+    retentativaDetalhesIndisponiveis: anterior.retentativaDetalhesIndisponiveis };
+}
+
+export function observacaoDaLinha(linha, lote = null) {
+  const motivo = lote?.bloqueiosRetentativa?.find(b => b.numeroLinha === linha?.numeroLinha)?.motivo;
+  const observacao = observacaoOriginalDaLinha(linha);
+  if (!motivo || observacao.includes(motivo)) return observacao;
+  return observacao === "—" ? motivo : `${observacao} · ${motivo}`;
+}
+
+function observacaoOriginalDaLinha(linha) {
   if (exigeConferenciaDaLinha(linha)) return ORIENTACAO_CONFERENCIA;
   const original = linha?.mensagem || linha?.correcao;
   if (!original) return "—";

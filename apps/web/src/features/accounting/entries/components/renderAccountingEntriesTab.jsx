@@ -976,6 +976,9 @@ export function AccountingEntriesTab({
       const resultado = qual === "extrato"
         ? await handler(companyId, { competencia: activeComp, atualizar })
         : await handler(companyId, { competencia: activeComp });
+      if (!resultado || resultado.ok === false) {
+        setErroConsultaSerpro({ companyId, competencia: activeComp, mensagem: resultado?.message || "Resultado da consulta não confirmado. Confira os dados antes de solicitar outra consulta paga." });
+      }
       if (resultado?.reutilizado || resultado?.cancelado || resultado?.tentativaEnviada === false) {
         if (anterior) tentativasSerpro.current.set(chave, anterior);
         else tentativasSerpro.current.delete(chave);

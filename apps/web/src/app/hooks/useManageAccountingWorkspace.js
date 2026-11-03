@@ -1,3 +1,4 @@
+import { resultadoContabil } from "../../features/fiscal/serpro/lib/consultaResultado";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccountingEntries } from "../../features/accounting/hooks/useManageAccountingEntries";
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
@@ -233,6 +234,8 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
 
   async function handleSaveCircular(input) {
     if (!selectedCompanyId) return;
+    const scope = currentCircularScope.current;
+    const stillCurrent = () => currentCircularScope.current === scope;
     setSavingCircular(true);
     setEntriesError("");
     setEntriesMessage("");
@@ -240,11 +243,16 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       // Frente B: a matriz edita a célula de um mês específico → aceita override por input.competencia.
       const { competencia: compOverride, ...patch } = input || {};
       const competencia = compOverride || circularCompetencia;
-      await api.updateCircular(selectedCompanyId, competencia, patch);
+      const response = await api.updateCircular(selectedCompanyId, competencia, patch);
+      if (!stillCurrent()) return;
+      if (response?.ok !== true || !response?.circular) throw new Error("Gravação da circular sem confirmação. Releia os dados antes de repetir.");
       await loadCircular(circularYear, competencia);
-      setEntriesMessage("Circular atualizada e lançamentos regenerados.");
+      if (!stillCurrent()) return;
+      const resumo = resultadoContabil(response.accounting);
+      if (resumo.ok) setEntriesMessage("Circular atualizada. " + resumo.message);
+      else setEntriesError(anterior => [anterior, "Circular salva; " + resumo.message].filter(Boolean).join(" "));
     } catch (err) {
-      setEntriesError(err?.message || "Falha ao salvar circular.");
+      if (stillCurrent()) setEntriesError(err?.message || "Falha ao salvar circular.");
     } finally {
       setSavingCircular(false);
     }
@@ -269,6 +277,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
 
   async function handleCreateBaixa(entryId, input) {
     if (!selectedCompanyId) return;
+    if (!entryId || String(entryId).startsWith("synthetic-das-")) throw new Error("DAS sem provisão contábil. Reaproveite o extrato e resolva as pendências em Lançamentos antes da baixa.");
     setSavingBaixa(true);
     setEntriesError("");
     setEntriesMessage("");

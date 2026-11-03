@@ -6,7 +6,7 @@ import { CredenciaisConsumoPage } from "./features/configuracoes/CredenciaisCons
 import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
@@ -73,7 +73,9 @@ function AppInterno({ session, feedback }) {
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
   // fora do `companiesWorkspace`: ele já carrega 40 estados, e este é de uma página só.
   const loteWhatsapp = useLoteWhatsapp({ api, feedback });
+  const competenciaConsulta = useRef(null);
   const companiesWorkspace = useManageCompaniesWorkspace({
+    getCompetenciaAtual: () => competenciaConsulta.current,
     api,
     page: session.page,
     setPage: session.setPage,
@@ -119,6 +121,7 @@ function AppInterno({ session, feedback }) {
     companyDetailTab: companiesWorkspace.companyDetailTab,
     feedback,
   });
+  competenciaConsulta.current = accountingWorkspace.circularCompetencia;
   // Q6: Funções de Lançamento — escopo da empresa selecionada
   const accountingFunctions = useAccountingFunctions({
     api,

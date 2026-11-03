@@ -6,10 +6,22 @@ export function diaFiscal(valor) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : null;
 }
 
+// Somente a competência da nota admite Date serializado pelo JSON do lote.
+// Não ampliar diaFiscal: consumidores e vigências usam seu contrato estrito.
+function diaDaCompetencia(valor) {
+  if (typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(valor)) {
+    const instante = new Date(valor);
+    // O round-trip rejeita dias impossíveis e 24:00, normalizados por Date.
+    if (Number.isNaN(instante.getTime()) || instante.toISOString() !== valor) return null;
+    return diaFiscal(valor.slice(0, 10));
+  }
+  return diaFiscal(valor);
+}
+
 export function regimeDaCompetencia({ historico, competencia }) {
   const falha = (codigo, message) => ({ ok: false, codigo, message, correcao: 'Confira o histórico de regime e as datas no cadastro da empresa antes de emitir.' });
   const mes = typeof competencia === 'string' && /^\d{4}-\d{2}$/.test(competencia);
-  const inicio = diaFiscal(mes ? `${competencia}-01` : competencia);
+  const inicio = diaDaCompetencia(mes ? `${competencia}-01` : competencia);
   if (!inicio) return falha('NFSE_REGIME_COMPETENCIA_INVALIDA', 'Informe uma competência válida para resolver o regime.');
   const fim = mes ? new Date(Date.UTC(Number(inicio.slice(0, 4)), Number(inicio.slice(5, 7)), 0)).toISOString().slice(0, 10) : inicio;
   if (historico != null && !Array.isArray(historico)) return falha('NFSE_REGIME_HISTORICO_INVALIDO', 'O histórico tem formato inválido.');
