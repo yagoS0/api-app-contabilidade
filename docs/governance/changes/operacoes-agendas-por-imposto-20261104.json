@@ -22,7 +22,8 @@
     "Governança85/85, portal1610/1610, data-gate e2cenários PostgreSQL de referência/agenda aprovados e reaproveitados mediante compatibilidade de fontes.",
     "Visual:10capturas1440/390 e9percursos, complemento de4verificações referência409 e3verificações recarga409/503. Sem transporte externo.",
     "Lint dos56JS/JSXweb alterados:exit0,zeroerros/dezavisos dehooks analisados. Três limpezas sem mudança de comportamento revisadas pelo Principal. Buildwebfinalpós-lint:exit0,sourceGuardtrue,FP a99f6ad57798330b75f66699b97fb50f5798e8876e1195de7fd6e36578e372c2. Buildportal compatível preservado.",
-    "Revisão independente final conferiu composição API/web por arquivo e cenário, sem duplicar resultados, e aprovou fechamento complementar. CI do PR e inspeção pós-deploy ainda são etapas seguintes; nenhuma homologação fiscal real é declarada."
+    "Revisão independente final conferiu composição API/web por arquivo e cenário, sem duplicar resultados, e aprovou fechamento complementar. CI do PR e inspeção pós-deploy ainda são etapas seguintes; nenhuma homologação fiscal real é declarada.",
+    "Complemento do PR254: o CI detectou guarda de teste incompatível com o endereço Docker do banco descartável. Dois testes usam helper exclusivo de teste que mantém loopback e valida identidade, com exceção estrita ao serviço/job existente. 31 testes puros de aceitação/recusa e dois cenários PostgreSQL aplicados passaram (33/33), com revisão independente. Produto, gates e workflow inalterados; falha original preservada. Novo CI obrigatório antes do merge."
   ],
   "rollback": "Reverter somente o commit deste incremento, preservando trabalhos independentes. A migração é aditiva; manter tabelas de referência e histórico, sem apagar eventos ou reverter dados. Não mudar flags/seleções/agendas. Conferir saúde da API e interface após reversão.",
   "humanDecisions": [

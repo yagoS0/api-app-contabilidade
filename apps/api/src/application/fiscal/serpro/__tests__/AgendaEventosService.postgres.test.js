@@ -1,3 +1,4 @@
+import { assertDisposablePostgres } from '../../../../test-support/disposablePostgresGuard.js';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { lerAutomacaoEmpresa, salvarAutomacaoEmpresa } from '../CompanyAutomationService.js';
@@ -8,8 +9,9 @@ const url=new URL(raw);
 if(!['postgres:','postgresql:'].includes(url.protocol)||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||!/^\/[a-zA-Z0-9_]+_governance_test$/.test(url.pathname)||url.search||url.hash)throw Error('Disposable loopback database required');
 const db=new PrismaClient({datasources:{db:{url:raw}}}),companyId=randomUUID(),userId=randomUUID();
 beforeAll(async()=>{
-  const [actual]=await db.$queryRaw`SELECT current_database() AS name,host(inet_server_addr()) AS address`;
-  expect(actual.name).toBe(url.pathname.slice(1));expect(['127.0.0.1','::1','::ffff:127.0.0.1']).toContain(actual.address);
+  const [actual]=await db.$queryRaw`SELECT current_database() AS name,current_user AS username,host(inet_server_addr()) AS address,inet_server_port() AS port,current_setting('server_version_num') AS "versionNumber"`;
+  expect(actual.name).toBe(url.pathname.slice(1));
+  assertDisposablePostgres({raw,actual});
   await db.user.create({data:{id:userId,email:`${userId}@example.invalid`,passwordHash:'NOT_USABLE',role:'admin',accountType:'FIRM',status:'active'}});
   await db.portalClient.create({data:{id:companyId,razao:'R2 synthetic fixture',cnpj:`test-${companyId}`}});
 });

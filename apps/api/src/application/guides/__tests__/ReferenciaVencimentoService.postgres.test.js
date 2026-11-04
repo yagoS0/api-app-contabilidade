@@ -1,3 +1,4 @@
+import { assertDisposablePostgres } from '../../../test-support/disposablePostgresGuard.js';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { lerReferenciaVencimento, salvarReferenciaVencimento } from '../ReferenciaVencimentoService.js';
@@ -9,8 +10,9 @@ if(!['postgres:','postgresql:'].includes(url.protocol)||!['127.0.0.1','localhost
 const db=new PrismaClient({datasources:{db:{url:raw}}}),companyId=randomUUID(),userId=randomUUID();
 const identity={tributo:'IRPJ',tipoPeriodo:'TRIMESTRAL',competencia:'2026-T3'};
 beforeAll(async()=>{
-  const [actual]=await db.$queryRaw`SELECT current_database() AS name,host(inet_server_addr()) AS address`;
-  expect(actual.name).toBe(url.pathname.slice(1));expect(['127.0.0.1','::1','::ffff:127.0.0.1']).toContain(actual.address);
+  const [actual]=await db.$queryRaw`SELECT current_database() AS name,current_user AS username,host(inet_server_addr()) AS address,inet_server_port() AS port,current_setting('server_version_num') AS "versionNumber"`;
+  expect(actual.name).toBe(url.pathname.slice(1));
+  assertDisposablePostgres({raw,actual});
   await db.user.create({data:{id:userId,email:`${userId}@example.invalid`,passwordHash:'NOT_USABLE',role:'admin',accountType:'FIRM',status:'active'}});
   await db.portalClient.create({data:{id:companyId,razao:'R2 reference synthetic fixture',cnpj:`test-${companyId}`}});
 });
