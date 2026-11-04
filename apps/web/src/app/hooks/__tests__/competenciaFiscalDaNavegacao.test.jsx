@@ -10,9 +10,9 @@ function Reader({workspace,onRead}) {
   useEffect(()=>{onRead(workspace.circularCompetencia);},[workspace.circularCompetencia,onRead]);
   return <output data-testid="period">{workspace.circularCompetencia}|{workspace.accountingEntriesState.filters.competencia}|{workspace.circularYear}</output>;
 }
-function Harness({onRead,id='a'}){
+function Harness({onRead,id='a',tab='cadastroFiscal'}){
  const navigation=useLocation(),navigate=useNavigate();
- const workspace=useManageAccountingWorkspace({api,page:'companyDetail',selectedCompanyId:id,companyDetailTab:'cadastroFiscal',navigation});
+ const workspace=useManageAccountingWorkspace({api,page:'companyDetail',selectedCompanyId:id,companyDetailTab:tab,navigation});
  return <><Reader workspace={workspace} onRead={onRead}/><button onClick={()=>workspace.setCircularCompetencia('2025-08')}>Manual</button><button onClick={()=>workspace.handleCircularYearChange(2024)}>Ano manual</button><button onClick={()=>navigate('/companies/a/cadastro-fiscal?competencia=2026-07')}>Julho</button><button onClick={()=>navigate(-1)}>Voltar</button></>;
 }
 function mount(url,onRead=jest.fn()) {return {onRead,...render(<MemoryRouter initialEntries={[url]}><Harness onRead={onRead}/></MemoryRouter>)};}
@@ -81,4 +81,23 @@ test.each(['direta','interna'])('Apuração real consome primeiro período corre
  expect(reads.getApuracaoSnapshot.mock.calls.every(([id,period])=>id==='a'&&period==='2025-12')).toBe(true);
  expect(reads.listPendencias.mock.calls.every(([id,input])=>id==='a'&&input.competencia==='2025-12')).toBe(true);
  expect(reads.getRelatorioFaturamento.mock.calls.every(([id,period])=>id==='a'&&period==='2025-12')).toBe(true);
+});
+test('Guias abre diretamente na competência do documento e mantém a seleção manual após a entrada',()=>{
+ const onRead=jest.fn();
+ render(<MemoryRouter initialEntries={['/companies/a/guides?competencia=2025-10']}>
+   <Harness id="a" tab="guides" onRead={onRead}/>
+ </MemoryRouter>);
+ expect(screen.getByTestId('period')).toHaveTextContent('2025-10|2025-10|2025');
+ expect(onRead.mock.calls).toEqual([['2025-10']]);
+ fireEvent.click(screen.getByText('Manual'));
+ expect(screen.getByTestId('period')).toHaveTextContent('2025-08|2025-08|2025');
+});
+test.each([
+ '/companies/b/guides?competencia=2025-10',
+ '/companies/a/cadastro-fiscal?competencia=2025-10',
+ '/companies/a/guides?competencia=2025-10&competencia=2025-11',
+])('Guias recusa competência de empresa, aba ou consulta incompatível: %s',url=>{
+ const onRead=jest.fn();
+ render(<MemoryRouter initialEntries={[url]}><Harness id="a" tab="guides" onRead={onRead}/></MemoryRouter>);
+ expect(onRead).not.toHaveBeenCalledWith('2025-10');
 });

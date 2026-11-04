@@ -734,3 +734,21 @@ Alteração ou revogação exige permissão e revisão atual, preservando o regi
 Critérios adicionais: registro/recarga isolados por empresa e período; concorrência/replay e revogação auditados; referência trimestral não concede capacidade mensal; confirmação sem ativação, consulta ou alteração de pausas; documento vigente impede recaptura; recuperação de conflito lê a revisão atual e não reinstala snapshot antigo. Estes critérios acompanham os testes do incremento e não declaram aprovação ou homologação externa.
 
 Impacto: explicita a fonte autorizada da seção33 e preserva R01/R02/R07/R19–R22. Não altera matriz tributária, autoriza dados reais ou modifica governança. Implementação da primeira busca permanece etapa própria até validação completa.
+### Complemento de Operações — cálculo manual e ausência documental, decisão de 04/11/2026
+
+O usuário solicitou a ação de cálculo das empresas no modal Calculado de Operações. Preservar a localização da etapa em Apuração, a empresa/competência escolhidas e o fluxo manual existente. Calcular não confirma a conferência, não libera rotina e não transmite. PGDAS-D permanece restrito ao Simples Nacional comprovado e compatível com o período e os parâmetros usados; regime atual isolado não prova enquadramento histórico. Consultas pagas exigem confirmação explícita. Manter permissões, bloqueios de revisão/resultado incerto e controles fiscais; este pedido de implementação não executa cálculos reais nem ativa automações.
+
+Consulta oficial concluída com ausência identificada de procuração vigente mostra Sem procuração vigente. Esse resultado documental salvo não volta a A verificar apenas pela passagem de 24 horas. Novas evidências podem substituí-lo. Falha, timeout, resposta ambígua, vínculo não confirmado e ausência de consulta não comprovam inexistência de procuração. Revalidação operacional e cache do provedor conservam seus próprios prazos e não concedem autorização pela classificação visual.
+
+A confirmação de busca SERPRO em Operações apresenta quantidade de empresas/consultas, competência e consequências/custo aplicáveis, sem repetir a lista nominal. Preservar a seleção efetiva, cancelamento e confirmação explícita; a prévia de envio continua identificando destinatários e canais. No quadro Rotinas, nome e número ficam próximos, mantendo foco e alvos acessíveis.
+
+Parcela sem exigência documental não vira guia faltante. Acompanhamento de pagamento permanece separado e documentos reais/erros continuam visíveis. O pedido de investigar Alessandro não autoriza excluir parcelas ou dar baixa; a causa concreta exige identidade e período comprovados. Isto explicita R08/R17/R18 e não altera o cadastro real.
+
+Critérios: T116 — ausência oficial antiga permanece negativa, erro/identidade inconclusiva não; T117 — preparar/cancelar busca não consulta e confirmar conserva exatamente a seleção, sem remover destinatários de envios; T118 — cálculo manual distingue regimes/competências e não transmite, respostas tardias/duplo clique não repetem efeitos; T119 — parcela sem guia exigível não entra em faltantes, mantendo documento real, erro e pagamento independente.
+
+Impacto: apresentação e novo acesso manual conforme R01/R02/R06/R19–R22 e seções 32/33. Registro de decisão, não atestado de testes, publicação ou autorização de atos fiscais reais. Histórico: solicitações expressas do usuário neste incremento; resultados técnicos e pendências devem ser registrados separadamente.
+### Guias por competência fiscal — decisão de 04/11/2026
+
+Operações e Guias da empresa agrupam cada guia pela competência registrada no documento. O vencimento serve para o calendário de entrega, os lembretes e o acompanhamento. Uma guia de outubro que vence em novembro pertence a outubro. Uma parcela prevista segue a referência contratual e se distingue do documento emitido. Uma competência ausente exige identificação e não pode ser inferida do vencimento para seleção, envio ou baixa.
+
+T120 — competência fiscal da guia: em outubro incluir documento de outubro vencendo em novembro e excluir documento de novembro; repetir com dezembro/janeiro e com vencimento fora do mês seguinte. Conferir concordância entre lista, contagem, detalhes e seleção em lote. Preservar relatórios explicitamente por vencimento, controles de envio e confirmação individual de pagamento.

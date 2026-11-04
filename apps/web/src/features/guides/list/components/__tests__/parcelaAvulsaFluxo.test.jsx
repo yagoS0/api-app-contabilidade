@@ -17,7 +17,7 @@ jest.mock("../GuiaDeParcelamentoModal", () => ({ GuiaDeParcelamentoModal: props 
   <button onClick={props.onCriarNovoParcelamento}>Criar contrato</button>
   <button onClick={props.onClose}>Fechar upload</button>
 </div> }));
-const props = { companyId: "c1", competencia: "2026-08", guides: [], loadingGuides: false };
+const props = { companyId: "c1", competencia: "2026-09", guides: [], loadingGuides: false };
 beforeEach(() => {
   jest.clearAllMocks(); mockVincular.mockResolvedValue({ ok: true });
   mockReport.mockResolvedValue({ conferirVencimento: [{ id: "i1", indicacaoId: "i1", portalClientId: "c1", tipo: "PARCSN", atrasada: true, atrasosInformados: 3 }] });
@@ -26,6 +26,8 @@ test("indício vira linha sem valor nem vencimento e upload não exige contrato"
   const upload = jest.fn().mockResolvedValue({ ok: true, guide: { id: "g1" } });
   const refresh = jest.fn();
   render(<CompanyGuidesTable {...props} onUploadGuide={upload} onRefresh={refresh} />);
+  fireEvent.click(screen.getByText("Outras consultas"));
+  fireEvent.click(screen.getByRole("button", { name: "Por vencimento" }));
   expect(await screen.findByText("Conferir forma de pagamento")).toBeInTheDocument();
   expect(screen.getByText("3 parcela(s) em atraso no relatório fiscal.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Subir parcela" }));
@@ -38,6 +40,8 @@ test("falha no vínculo conserva guia e repetir não repete upload", async () =>
   mockVincular.mockRejectedValueOnce(new Error("Indisponível"));
   const upload = jest.fn().mockResolvedValue({ ok: true, guide: { id: "g1" } });
   render(<CompanyGuidesTable {...props} onUploadGuide={upload} />);
+  fireEvent.click(screen.getByText("Outras consultas"));
+  fireEvent.click(screen.getByRole("button", { name: "Por vencimento" }));
   fireEvent.click(await screen.findByRole("button", { name: "Subir parcela" }));
   fireEvent.click(screen.getByText("Salvar vínculo"));
   await screen.findByText("g1");
@@ -49,6 +53,8 @@ test("falha no vínculo conserva guia e repetir não repete upload", async () =>
 });
 test("cadastro do parcelamento retorna ao upload na mesma tela", async () => {
   render(<CompanyGuidesTable {...props} onUploadGuide={jest.fn()} parcelamentos={{ ingest: jest.fn(), parcelamentos: [] }} />);
+  fireEvent.click(screen.getByText("Outras consultas"));
+  fireEvent.click(screen.getByRole("button", { name: "Por vencimento" }));
   fireEvent.click(await screen.findByRole("button", { name: "Subir parcela" }));
   fireEvent.click(screen.getByText("Criar contrato"));
   expect(screen.queryByRole("dialog", { name: "Parcela" })).toBeNull();

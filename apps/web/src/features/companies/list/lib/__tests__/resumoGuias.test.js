@@ -3,6 +3,7 @@ import { projetarOperacoesEmpresas } from '../../../../operacoes/operacoes';
 
 const node = (state, guideId) => ({ required: true, state, guideId });
 const compliance = {
+  competencia: '2026-09',
   irpj: node('enviada', 'a'), csll: node('enviada', 'b'),
   pisCofins: node('falhou', 'c'), iss: node('missing'),
 };
@@ -14,6 +15,15 @@ test('quatro obrigações: disponibilidade, envio e falha são eixos independent
   expect(p.groups.faltantes).toHaveLength(r.faltantes);
   expect(p.groups.envios).toHaveLength(r.enviosPendentes);
   expect(p.groups.erros).toHaveLength(r.falhas);
+  expect(projetarOperacoesEmpresas([company], '2026-10').rows).toHaveLength(0);
+});
+test.each([undefined, '2026-10'])('a competência das guias não confirma transmissão ou fechamento de outro contexto (%s)', (mesApuracao) => {
+  const company = { companyId: 'a', guideCompliance: compliance, fluxoCarteira: {},
+    apuracao: { estado: 'transmitida', competencia: mesApuracao }, fechamentoContabil: { fechado: true } };
+  const [{ fluxo }] = projetarOperacoesEmpresas([company], '2026-09').rows;
+  expect(fluxo.competencia).toBe('2026-09');
+  expect(fluxo.apuracao.transmitida).toBeFalsy();
+  expect(fluxo.tarefas.find(tarefa => tarefa.chave === 'contabilizar').concluida).toBe(false);
 });
 test('uma guia consolidada cobre duas obrigações; não chama cobertura de quantidade de PDFs', () => {
   const r = resumirGuias({ irpj: node('gerada', 'mesmo'), csll: node('gerada', 'mesmo') });

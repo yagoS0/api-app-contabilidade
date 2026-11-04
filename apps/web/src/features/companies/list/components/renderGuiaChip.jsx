@@ -179,7 +179,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {}, compacto = fal
           {ehParcela && <div style={{ marginBottom: 10 }}>
             {tag.itens?.length > 0 && <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{tag.itens.map((item, idx) => <li key={item.id || `${item.parcelamentoId}-${item.referencia}-${idx}`} style={{ marginBottom: 5 }}>{item.tipo || item.tipoParcelamento || "Parcelamento"}{item.numeroParcelamento ? ` nº ${item.numeroParcelamento}` : " · identificar acordo"}{item.referencia ? ` · ${item.referencia}` : ""}{item.numeroParcela ? ` · parcela ${item.numeroParcela}` : ""}{item.label ? ` — ${item.label}` : ""}</li>)}</ul>}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <InternalLink href={companyTabPath(empresa.companyId, "guides")} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</InternalLink>
+              <InternalLink href={`${companyTabPath(empresa.companyId, "guides")}?competencia=${encodeURIComponent(competencia)}`} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir guias da empresa</InternalLink>
               <InternalLink href={companyTabPath(empresa.companyId, "parcelamento")} style={{ color: "var(--accent-purple)", fontWeight: 600 }}>Abrir parcelamentos</InternalLink>
             </div>
           </div>}

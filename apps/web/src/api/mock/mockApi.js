@@ -4504,12 +4504,12 @@ export function createMockApi({ delay = defaultDelay } = {}) {
       }
       throw new Error("not_found");
     },
-    async getExpectedGuides(_companyId, competencia) {
+    async getExpectedGuides(companyId, competencia) {
       await delay();
       return {
         ok: true,
         competencia: competencia || null,
-        compliance: {
+        compliance: acompanhamentoMock.complianceAcompanhamentoParcelamentos(companyId, {
           competencia: competencia || null,
           das: { required: true, ok: false, state: "missing" },
           inss: { required: false, ok: true, state: "na" },
@@ -4518,7 +4518,7 @@ export function createMockApi({ delay = defaultDelay } = {}) {
           pisCofins: { required: false, ok: true, state: "na" },
           iss: { required: false, ok: true, state: "na" },
           ok: false,
-        },
+        }),
       };
     },
     // Mesmo contrato da API: ausência da guia independe do faturamento.

@@ -45,6 +45,7 @@ function prevMonthCompetencia() {
 }
 
 const expectedGuidesApi = createApiClient();
+const competenciaIdentificada = guia => /^\d{4}-(0[1-9]|1[0-2])$/.test(guia.competencia);
 
 function motivoForaDoEnvio(guia) {
   if (guia.status === "VAZIO") return "marcada como vazia, sem documento para enviar";
@@ -64,6 +65,7 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
   const ref = useRef(null);
 
   useEffect(() => {
+    if (!companyId || !competencia) return undefined;
     let cancel = false;
     (async () => {
       try {
@@ -608,26 +610,36 @@ export function CompanyGuidesTable({
     () => getAvailableGuideTypes(companyRegime),
     [companyRegime],
   );
-  // Um único período de trabalho: a competência do cabeçalho determina o mês seguinte.
+  // O lote por vencimento é uma consulta auxiliar explícita.
   // A visão fiscal mantém inclusive VAZIO, que não tem vencimento nem PDF a enviar.
-  const [visao, setVisao] = useState("vencimento");
+  const [visao, setVisao] = useState("competencia");
   const competenciaFiscal = competenciaGlobal || prevMonthCompetencia();
   const mesVencimento = deslocarCompetencia(competenciaFiscal, 1);
-  useEffect(() => { setVisao("vencimento"); }, [companyId, competenciaFiscal]);
+  useEffect(() => { setVisao("competencia"); }, [companyId, competenciaFiscal]);
   const filterCompetencia = visao === "competencia" ? competenciaFiscal : "";
+  const mesFormaPagamento = visao === "competencia" ? competenciaFiscal : mesVencimento;
   const [selectedIds, setSelectedIds] = useState(new Set());
   useEffect(() => { setSelectedIds(new Set()); }, [companyId, visao, mesVencimento, competenciaFiscal]);
   const [conferencia, setConferencia] = useState({ loading: false, erro: null, faltantes: [] });
   useEffect(() => {
-    if (!companyId || loadingGuides || !expectedGuidesApi.getCompanyGuideDueReport) return undefined;
+    if (!companyId || loadingGuides) return undefined;
     let cancel = false;
     setConferencia({ loading: true, erro: null, faltantes: [] });
-    expectedGuidesApi.getCompanyGuideDueReport(companyId, mesVencimento).then((report) => {
+    const leitura = Promise.resolve().then(() => visao === "competencia"
+      ? expectedGuidesApi.getExpectedGuides(companyId, competenciaFiscal).then(report => {
+          const itens = report?.compliance?.coberturaParcelamentoMes;
+          if (report?.competencia !== competenciaFiscal || !Array.isArray(itens)) throw Error("Cobertura de parcelamentos indisponível.");
+          return itens.filter(p => p.portalClientId === companyId && p.referenciaFiscal === competenciaFiscal
+            && !p.guideId && !p.pagamentoConfirmado && p.formaPagamento !== "DEBITO_AUTOMATICO")
+            .map(p => ({ ...p, key: p.id, acordo: p.numeroParcelamento }));
+        })
+      : expectedGuidesApi.getCompanyGuideDueReport(companyId, mesVencimento).then(report => parcelasFaltantesDoRelatorio(report, companyId)));
+    leitura.then((faltantes) => {
       if (cancel) return;
-      setConferencia({ loading: false, erro: null, faltantes: parcelasFaltantesDoRelatorio(report, companyId) });
+      setConferencia({ loading: false, erro: null, faltantes });
     }).catch((erro) => { if (!cancel) setConferencia({ loading: false, erro, faltantes: [] }); });
     return () => { cancel = true; };
-  }, [companyId, mesVencimento, loadingGuides, guides, vazioRefreshKey]);
+  }, [companyId, competenciaFiscal, visao, mesVencimento, loadingGuides, guides, vazioRefreshKey]);
   const faltantesVisiveis = guiaDeOrigem ? [] : parcelasFaltantesDaVisao(conferencia.faltantes, { visao, mes: mesVencimento, competencia: competenciaFiscal });
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
@@ -667,15 +679,15 @@ export function CompanyGuidesTable({
 
   const temGuiaDeOrigem = Boolean(companyId && guiaDeOrigem?.id && guiaDeOrigem.companyId === companyId);
   const filteredGuides = useMemo(() => {
-    if (temGuiaDeOrigem) return (guides || []).filter(g => (g.guideId || g.id) === guiaDeOrigem.id);
-    return guiasDaVisao(guides, { visao, mes: mesVencimento, competencia: competenciaFiscal });
-  }, [visao, mesVencimento, competenciaFiscal, guides, guiaDeOrigem, temGuiaDeOrigem]);
+    const doPeriodo = guiasDaVisao(guides, { visao, mes: mesVencimento, competencia: competenciaFiscal, companyId });
+    return temGuiaDeOrigem ? doPeriodo.filter(g => (g.guideId || g.id) === guiaDeOrigem.id) : doPeriodo;
+  }, [companyId, visao, mesVencimento, competenciaFiscal, guides, guiaDeOrigem, temGuiaDeOrigem]);
   useEffect(() => {
-    if (temGuiaDeOrigem && !loadingGuides) setSelectedIds(new Set([guiaDeOrigem.id]));
-  }, [guiaDeOrigem, temGuiaDeOrigem, loadingGuides]);
-  const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento }).length
-    + parcelasFaltantesDaVisao(conferencia.faltantes, { visao: "anteriores", mes: mesVencimento }).length;
-  const semVencimento = guiasDaVisao(guides, { visao: "semVencimento", mes: mesVencimento }).length;
+    if (temGuiaDeOrigem && !loadingGuides && filteredGuides.some(g => (g.guideId || g.id) === guiaDeOrigem.id && g.competencia === competenciaFiscal)) setSelectedIds(new Set([guiaDeOrigem.id]));
+  }, [guiaDeOrigem, temGuiaDeOrigem, loadingGuides, filteredGuides, competenciaFiscal]);
+  const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento, companyId }).length
+    + parcelasFaltantesDaVisao(conferencia.faltantes, { visao: "anteriores", mes: mesVencimento, companyId }).length;
+  const semVencimento = guiasDaVisao(guides, { visao: "semVencimento", mes: mesVencimento, companyId }).length;
 
   // ── POR QUE NÃO HÁ GUIA — o contexto que transforma o vazio em resposta ──────────────────────
   //
@@ -725,14 +737,14 @@ export function CompanyGuidesTable({
   }), [filterCompetencia, contextoVazio]);
 
   const filteredIds = useMemo(
-    () => filteredGuides.map((g) => g.guideId || g.id),
+    () => filteredGuides.filter(competenciaIdentificada).map((g) => g.guideId || g.id),
     [filteredGuides]
   );
 
   const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
   const someSelected = filteredIds.some((id) => selectedIds.has(id));
   const selectedCount = filteredIds.filter((id) => selectedIds.has(id)).length;
-  const guiasSelecionadas = filteredGuides.filter((g) => selectedIds.has(g.guideId || g.id));
+  const guiasSelecionadas = filteredGuides.filter((g) => competenciaIdentificada(g) && selectedIds.has(g.guideId || g.id));
   const guiasDisponiveis = guiasSelecionadas.filter((g) => !motivoForaDoEnvio(g));
   const guiasForaDoEnvio = guiasSelecionadas.filter((g) => motivoForaDoEnvio(g));
 
@@ -1031,7 +1043,7 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
-      <FormasIndicacoesParcelamento key={`${companyId}:${mesVencimento}`} api={expectedGuidesApi} companyId={companyId} mes={mesVencimento} onSaved={async () => { await refreshAfterVazio(); await onFormaParcelamentoSaved?.(); }} />
+      <FormasIndicacoesParcelamento key={`${companyId}:${mesFormaPagamento}`} api={expectedGuidesApi} companyId={companyId} mes={mesFormaPagamento} onSaved={async () => { await refreshAfterVazio(); await onFormaParcelamentoSaved?.(); }} />
       {temGuiaDeOrigem && <div role="status" style={{ padding: "10px 12px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", color: "var(--text-muted)" }}>
         {filteredGuides.length ? "Parcela selecionada a partir do acompanhamento." : loadingGuides ? "Localizando a guia da parcela…" : "A guia da parcela não foi localizada nesta listagem. Atualize os documentos para conferir."}
         <Button variant="secondary" size="sm" onClick={onLimparGuiaDeOrigem}>Mostrar todas as guias</Button>
@@ -1134,11 +1146,11 @@ export function CompanyGuidesTable({
               {visao === "vencimento" ? `Vencimentos de ${formatCompetencia(mesVencimento)}`
                 : visao === "anteriores" ? "Pendências anteriores"
                   : visao === "semVencimento" ? "Conferir vencimento"
-                    : visao === "competencia" ? "Consulta por competência fiscal" : "Histórico de guias"}
+                    : visao === "competencia" ? `Guias de ${formatCompetencia(competenciaFiscal)}` : "Histórico de guias"}
             </h2>
             <p className="guides-list-panel__description">
               {visao === "vencimento" ? `Competência ${formatCompetencia(competenciaFiscal)} · Inclui parcelamentos.`
-                : visao === "competencia" ? `Competência fiscal: ${competenciaFiscal}. Esta visão não é o lote de vencimentos.`
+                : visao === "competencia" ? `Competência fiscal ${competenciaFiscal} · Inclui parcelamentos.`
                   : visao === "anteriores" ? `Guias anteriores a ${mesVencimento} sem pagamento confirmado. Confira a baixa antes de reenviar.`
                     : visao === "semVencimento" ? "Documentos sem vencimento informado precisam de conferência para entrar no mês correto."
                       : "Histórico completo, incluindo guias pagas e competências marcadas como vazio."}
@@ -1224,7 +1236,7 @@ export function CompanyGuidesTable({
             </>}
           </div>
           <div className="guides-list-panel__views">
-            {visao !== "vencimento" && <Button variant="secondary" size="sm" onClick={() => setVisao("vencimento")}>Voltar às guias do mês</Button>}
+            {visao !== "competencia" && <Button variant="secondary" size="sm" onClick={() => setVisao("competencia")}>Voltar às guias do mês</Button>}
             <Button variant="secondary" size="sm" aria-pressed={visao === "anteriores"} onClick={() => setVisao("anteriores")}>
               Pendências anteriores{!loadingGuides && anteriores > 0 ? ` (${anteriores})` : ""}
             </Button>
@@ -1232,12 +1244,12 @@ export function CompanyGuidesTable({
             <details className="guides-view-menu">
               <summary>Outras consultas</summary>
               <div className="guides-view-menu__options">
-                <Button variant="secondary" size="sm" onClick={(event) => { setVisao("competencia"); event.currentTarget.closest("details").open = false; }}>Por competência fiscal</Button>
+                <Button variant="secondary" size="sm" onClick={(event) => { setVisao("vencimento"); event.currentTarget.closest("details").open = false; }}>Por vencimento</Button>
               </div>
             </details>
           </div>
         </div>
-        {!loadingGuides && visao === "vencimento" && <>
+        {!loadingGuides && <>
           {conferencia.loading && <p role="status">Conferindo parcelas previstas…</p>}
           {conferencia.erro && <Aviso className="guides-notice" tom="erro" titulo="Não foi possível conferir as parcelas previstas">Não é possível confirmar se faltam guias de parcelamento. {conferencia.erro.message}
             <Button variant="secondary" size="sm" onClick={() => setVazioRefreshKey((k) => k + 1)}>Tentar novamente</Button>
@@ -1471,7 +1483,7 @@ export function CompanyGuidesTable({
                     key={guideId}
                     className={`guides-grid__row${isSelected ? " guides-grid__row--selected" : ""}`}
                     role="row"
-                    onClick={() => toggleOne(guideId)}
+                    onClick={() => competenciaIdentificada(guide) && toggleOne(guideId)}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="guides-grid__cell guides-grid__cell--check" role="cell"
@@ -1480,6 +1492,7 @@ export function CompanyGuidesTable({
                         type="checkbox"
                         style={S.checkbox}
                         checked={isSelected}
+                        disabled={!competenciaIdentificada(guide)}
                         onChange={() => toggleOne(guideId)}
                         aria-label={`Selecionar guia ${rotuloTipoGuia(guide)} ${guide.competencia}`}
                       />
@@ -1488,7 +1501,7 @@ export function CompanyGuidesTable({
                       <span className="guides-grid__name">{rotuloTipoGuia(guide)}</span>
                       {guide.status !== 'PROCESSED' && <span className={`guides-grid__processing guides-grid__tone--${status.tone}`} title="Processamento do documento">{status.label}</span>}
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell" data-label="Competência">{guide.competencia || "-"}</span>
+                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell" data-label="Competência">{competenciaIdentificada(guide) ? guide.competencia : <>A identificar {onIdentifyGuide && <Button size="sm" variant="secondary" onClick={() => setCompletingGuide(guide)}>Identificar</Button>}</>}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell" data-label="Valor">
                       {fmtMoney(guide.valor)}
                       {/* ⚠⚠ O "R$" NÃO SE ESCREVE AQUI — `fmtMoney` já devolve "R$ 1.437,15", e o
@@ -1519,7 +1532,7 @@ export function CompanyGuidesTable({
                         >
                           desfazer vazio
                         </button>
-                      ) : <PagamentoGuia key={`${companyId}:${guide.guideId || guide.id}`} guide={guide} companyId={companyId} api={expectedGuidesApi} fallback={paymentStatus.label} />}
+                      ) : !competenciaIdentificada(guide) ? paymentStatus.label : <PagamentoGuia key={`${companyId}:${guide.guideId || guide.id}`} guide={guide} companyId={companyId} api={expectedGuidesApi} fallback={paymentStatus.label} />}
                     </span>
                     <span
                       className="guides-grid__cell guides-grid__cell--email"
@@ -1572,7 +1585,7 @@ export function CompanyGuidesTable({
             guiaExistente={anexoGuia}
             indicacaoId={anexoIndicacao?.indicacaoId}
             modalidadeInicial={anexoIndicacao?.tipo}
-            competenciaInicial={anexoIndicacao?.referencia || mesVencimento}
+            competenciaInicial={anexoIndicacao?.referenciaFiscal || anexoIndicacao?.referencia || competenciaFiscal}
             guias={guides}
             arquivo={anexoArquivo}
             onEscolherArquivo={() => anexoFileInputRef.current?.click()}

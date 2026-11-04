@@ -1,7 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 import { listarPendenciasParcelamento } from "../accounting/parcelamento/ParcelamentoAcompanhamentoService.js";
-import { complianceParcelamentos, mesOperacionalDaCompetencia, guiasParcelamentoDoMes, coberturaParcelamentoDoMes } from "../accounting/parcelamento/pendenciasParcelamento.js";
+import { complianceParcelamentos, guiasParcelamentoDoMes, coberturaParcelamentoDoMes } from "../accounting/parcelamento/pendenciasParcelamento.js";
 // Faturamento vem da MESMA função que a apuração usa. Duas definições de "o mês teve receita"
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
@@ -116,7 +116,8 @@ export async function computeGuideComplianceMap(rows, competencia) {
   // Nenhum produz `PARC_DAS`. A query custava uma varredura de `accounting_entries` sobre a
   // carteira inteira, a cada montagem do dashboard, para devolver sempre vazio.
   const allPortalIds = rows.map((r) => r.portalId).filter(Boolean);
-  const acompanhamento = await listarPendenciasParcelamento({ portalClientIds: allPortalIds, mesOperacional: mesOperacionalDaCompetencia(competencia) });
+  const acompanhamento = await listarPendenciasParcelamento({ portalClientIds: allPortalIds, mesOperacional: competencia, porCompetencia: true });
+  const coberturaInconclusiva = new Set(acompanhamento.empresasComCoberturaInconclusiva);
   const acompanhamentoByPortal = new Map(allPortalIds.map(id => [id, acompanhamento.itens.filter(i => i.portalClientId === id)]));
   const parcGuiaByPortal = new Map();
   if (allPortalIds.length > 0) {
@@ -212,6 +213,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
     const node = (required) => ({ required, ok: !required, state: required ? "missing" : "na" });
     const base = {
       competencia,
+      expectativaParcelamentoInconclusiva: coberturaInconclusiva.has(row.portalId),
       inss: node(req.inssRequired),
       das: node(req.dasRequired),
       irpj: node(req.irpjRequired),
@@ -223,7 +225,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       // selo "✓ Guias concluídas" nunca condensava numa empresa com parcelamento.
       parcDas: node(req.parcDasRequired),
       ok:
-        !req.inssRequired && !req.dasRequired
+        !coberturaInconclusiva.has(row.portalId) && !req.inssRequired && !req.dasRequired
         && !req.irpjRequired && !req.csllRequired
         && !req.pisCofinsRequired && !req.issRequired
         && !req.parcDasRequired,
@@ -414,13 +416,13 @@ export async function computeGuideComplianceMap(rows, competencia) {
     };
     const itensParc = acompanhamentoByPortal.get(portalId) || [];
     const parcDas = itensParc.length ? complianceParcelamentos(itensParc) : legacyParcDas;
-    const guiasParcelamentoMes = guiasParcelamentoDoMes(itensParc, mesOperacionalDaCompetencia(competencia));
-    const coberturaParcelamentoMes = coberturaParcelamentoDoMes(itensParc, mesOperacionalDaCompetencia(competencia));
+    const guiasParcelamentoMes = guiasParcelamentoDoMes(itensParc, competencia, true);
+    const coberturaParcelamentoMes = coberturaParcelamentoDoMes(itensParc, competencia, true);
     map.set(portalId, {
       ...current, inss, das, irpj, csll, pisCofins, iss, parcDas, guiasParcelamentoMes, coberturaParcelamentoMes,
       hasPendenciasParcelamento: guiasParcelamentoMes.length > 0,
-      // Na carteira, parcelamento exige apenas o documento do mês operacional.
-      ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok && !guiasParcelamentoMes.length,
+      // Na carteira, parcelamento exige apenas o documento da competência fiscal.
+      ok: !current.expectativaParcelamentoInconclusiva && inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok && !guiasParcelamentoMes.length,
     });
   }
 

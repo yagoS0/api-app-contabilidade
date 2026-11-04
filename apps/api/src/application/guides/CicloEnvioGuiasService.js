@@ -59,13 +59,13 @@ export function createCicloEnvioGuiasService(deps = {}) {
     if (monthlyEvidence && projection) projection.inss = { ...projection.inss, required: monthlyInss.applicable, ok: ['NOT_APPLICABLE', 'DOCUMENT_AVAILABLE', 'DOCUMENT_ABSENT'].includes(monthlyInss.status) };
     const required = Object.entries(labels).filter(([key]) => projection?.[key]?.required);
     const missing = required.filter(([key]) => !projection[key].ok).map(([obligationKey, label]) => ({ obligationKey, label, reason: 'Documento válido ainda não confirmado.' }));
-    if (projection?.guiasParcelamentoMes?.length) missing.push({ obligationKey: 'parcelamento', label: 'Parcelamento', reason: 'Confira as parcelas esperadas neste mês de vencimento.' });
+    if (projection?.guiasParcelamentoMes?.length) missing.push({ obligationKey: 'parcelamento', label: 'Parcelamento', reason: 'Confira as parcelas esperadas nesta competência.' });
     // Cadastro atual de folha não prova matriz trabalhista nem a sua vigência histórica.
     const resolvedCount = required.filter(([key]) => projection[key].ok).length;
     const absenceConfirmedCount = required.filter(([key]) => projection[key].ok && (projection[key].state === 'vazio' || key === 'inss' && monthlyEvidence && monthlyInss.status === 'DOCUMENT_ABSENT')).length;
     const availableCount = resolvedCount - absenceConfirmedCount;
-    const expectationKnown = Boolean(projection && regimeKnown && history.length > 0 && monthlyEvidence && portal.temFolha === false);
-    const guides = await db.guide.findMany({ where: { portalClientId, OR: [{ competencia }, { parcelamentoId: { not: null }, vencimento: { gte: new Date(`${mesOperacional}-01T00:00:00Z`), lt: new Date(Date.UTC(Number(mesOperacional.slice(0, 4)), Number(mesOperacional.slice(5)), 1)) } }] },
+    const expectationKnown = Boolean(projection?.expectativaParcelamentoInconclusiva === false && regimeKnown && history.length > 0 && monthlyEvidence && portal.temFolha === false);
+    const guides = await db.guide.findMany({ where: { portalClientId, competencia },
       include: { parcelamento: SELECT_PARCELA_ENVIO.parcelamento, parcela: SELECT_PARCELA_ENVIO.parcela }, orderBy: { id: 'asc' } });
     const destinations = await contatos(portalClientId), channel = await canal();
     const envios = guides.length ? await db.envioGuia.findMany({ where: { guideId: { in: guides.map(g => g.id) } } }) : [];
@@ -73,9 +73,9 @@ export function createCicloEnvioGuiasService(deps = {}) {
     const items = [], eligible = [];
     for (const guide of guides) {
       if (guide.status === 'VAZIO') continue;
-      if ((guide.parcelamentoId || guide.extracted?.indicacaoParcelamentoId) && (!guide.vencimento || new Date(guide.vencimento).toISOString().slice(0, 7) !== mesOperacional)) continue;
       let reason = null;
       if (!documentoValido(guide) || guide.status !== 'PROCESSED' || guide.paymentStatus === 'PAID' || !(Number(guide.valor) > 0) || !guide.hash || !(guide.pdfBytes?.length || guide.storageKey)) reason = 'Confira o documento vigente, o valor e o pagamento.';
+      if ((guide.parcelamentoId || guide.extracted?.indicacaoParcelamentoId) && !guide.vencimento) reason = 'Confira o vencimento da parcela.';
       if (!guide.parcelamentoId && !guide.extracted?.indicacaoParcelamentoId && guides.filter(g => g.status === 'PROCESSED' && !g.parcelamentoId && !g.extracted?.indicacaoParcelamentoId && g.tipo === guide.tipo && g.competencia === guide.competencia).length > 1) reason = 'Há mais de uma versão deste tipo de guia. Confira qual documento deve ser enviado.';
       const blocked = bloqueioEnvioParcela(guide); if (blocked) reason = blocked.message;
       try { await conferirParcelasParaEnvio([guide], { client: db }); } catch (error) { reason = error.message; }

@@ -1,0 +1,30 @@
+{
+  "summary": "Agrupa as guias de Operações e da empresa pela competência fiscal do documento. Mantém calendário de vencimentos para relatórios explícitos e lembretes.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "T120. Um documento de outubro com vencimento em novembro aparece em outubro. A previsão sem guia usa referência contratual comprovada. A seleção valida empresa e competência e o envio exige os controles documentais existentes.",
+  "tests": [
+    "104 verificações iniciais web em sete suítes e 30 verificações integradas API em quatro suítes usando banco descartável.",
+    "Suítes de contratos de parcelamento: duas falhas em fixture que dependia da consulta antiga por vencimento. Atualizado o banco simulado para afirmar a seleção exata por empresa e competência; arquivo revalidado.",
+    "Parecer de interface: 16 verificações em Chrome local com API fictícia, resoluções de 1440 e 390 pixels.",
+    "Os checks integrais do PR e a verificação do deploy são condições adicionais. O controlador local registrou timeout do executor; a revisão complementar e as provas são separadas do resultado original.",
+    "Cobertura inconclusiva: 16 testes de API e 19 de Operações passaram. Uma guia individual continua acessível quando o conjunto mensal necessita de revisão.",
+    "66 testes da interface na integração de Guias e seleção. Parecer sistêmico favorável para abertura do PR.",
+    "CI inicial registrou 4 falhas em 3 suítes da carteira; links agora exigem competência correta também ao avançar e voltar. Operações conserva a linha quando a cobertura comprova a competência e a apuração ainda não informa período, sem misturar meses. As quatro suítes focais passaram na revalidação."
+  ],
+  "rollback": "Reverter o commit de integração mediante PR. O incremento não necessita de migração de dados, ativação de rotina ou reprocessamento fiscal.",
+  "humanDecisions": [
+    "Em 04/11/2026, o usuário determinou que a guia de competência outubro vencendo em novembro deve aparecer em outubro e autorizou publicação após validação."
+  ]
+}

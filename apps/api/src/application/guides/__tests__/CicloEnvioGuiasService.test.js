@@ -15,7 +15,7 @@ function fixture({ time = scheduledAt, complete = true, folha = false, history =
  lerInssManual.mockImplementation(async()=>({applicabilitySource:'month',changedBy:'contador-ficticio',changedAt:time,applicable:!complete,status:complete?'NOT_APPLICABLE':'PENDING_DOCUMENT'}));
  const guides = [{ id: 'g', portalClientId: 'a', competencia: '2026-10', tipo: 'SIMPLES', status: 'PROCESSED', valor: '100', hash: 'hash', pdfBytes: Buffer.from('%PDF-sintetico'), vencimento: new Date('2026-11-20T00:00:00Z'), updatedAt: new Date(time), paymentStatus: 'PENDING', emailStatus: 'PENDING' }];
  const destinations = { emails: ['contador@example.test'], telefones: [] };
- const projection = { das: { required: true, ok: true }, inss: { required: !complete, ok: complete }, parcDas: { required: false, ok: true }, guiasParcelamentoMes: [] };
+ const projection = { das: { required: true, ok: true }, inss: { required: !complete, ok: complete }, parcDas: { required: false, ok: true }, guiasParcelamentoMes: [], expectativaParcelamentoInconclusiva: false };
  const db = { portalClient: { findUnique: jest.fn(async () => ({ id: 'a', companyId: 'legacy', status: 'ATIVA', temFolha: folha, hasProlabore: false })) }, company: { findUnique: jest.fn(async () => ({ regimeTributario: 'SIMPLES' })) }, regimeHistorico: { findMany: jest.fn(async () => history ? [{ regime: 'SIMPLES', vigenciaInicio: '2020-01-01', vigenciaFim: null }] : []) }, feriado: { findMany: jest.fn(async () => []) }, guide: { findMany: jest.fn(async () => guides) }, envioGuia: { findMany: jest.fn(async () => []) }, appSetting: {
   findUnique: jest.fn(async ({where}) => settings.has(where.key) ? { key: where.key, value: structuredClone(settings.get(where.key)) } : null),
   upsert: jest.fn(async ({where,create}) => { if (!settings.has(where.key)) settings.set(where.key, structuredClone(create.value)); }),
@@ -31,6 +31,66 @@ function fixture({ time = scheduledAt, complete = true, folha = false, history =
  return { settings, guides, destinations, projection, db, deps, email, service, execute };
 }
 beforeEach(() => jest.clearAllMocks());
+test.each([
+  ['2026-11-10T11:00:00Z', 'REVIEW'],
+  ['2026-11-13T11:00:00Z', 'PARTIAL_DEADLINE'],
+])('cobertura de parcelamento inconclusiva em %s preserva a decisão %s', async (time, decisao) => {
+  const f = fixture({time});
+  f.projection.expectativaParcelamentoInconclusiva = true;
+  const dto = await f.service.ler({portalClientId:'a', competencia:'2026-10'});
+  expect(dto.expectation.state).toBe('REVIEW');
+  expect(dto.decision.kind).toBe(decisao);
+  await f.execute({scheduledAt: time});
+  expect(f.email).toHaveBeenCalledTimes(decisao === 'PARTIAL_DEADLINE' ? 1 : 0);
+});
+test('indicação sem vencimento permanece em revisão e não é transportada', async () => {
+  const f = fixture();
+  Object.assign(f.guides[0], {extracted:{indicacaoParcelamentoId:'ind-1'}, vencimento:null});
+  f.db.guide.findFirst = jest.fn(async () => f.guides[0]);
+  f.db.parcelamentoIndicacao = {findFirst: jest.fn(async () => ({id:'ind-1'}))};
+  const dto = await f.service.ler({portalClientId:'a', competencia:'2026-10'});
+  expect(dto.items).toEqual([expect.objectContaining({guideId:'g', state:'REVIEW', reason:expect.stringMatching(/vencimento/)} )]);
+  await f.execute();
+  expect(f.email).not.toHaveBeenCalled();
+  expect(f.deps.whatsapp).not.toHaveBeenCalled();
+});
+test.each([
+  ['2026-10', '2026-11', ['2026-10-15', '2026-11-20', '2026-12-05']],
+  ['2026-12', '2027-01', ['2026-12-15', '2027-01-20', '2027-02-05']],
+])('separa a competência %s do calendário de envio em %s', async (competencia, mesOperacional, vencimentos) => {
+  const f = fixture();
+  const gerar = (id, ref, data) => ({
+    ...f.guides[0], id, competencia: ref, parcelamentoId: 'acordo', vencimento: new Date(data + 'T12:00:00Z'),
+  });
+  const registros = [
+    ...vencimentos.map((data, i) => gerar('propria-' + i, competencia, data)),
+    gerar('outra', mesOperacional, vencimentos[1]), gerar('sem-competencia', null, vencimentos[1]),
+  ];
+  f.db.guide.findMany.mockImplementation(async ({where}) => registros.filter(g =>
+    g.portalClientId === where.portalClientId && g.competencia === where.competencia));
+  f.db.guide.findFirst = jest.fn(async ({where}) => registros.find(g => g.id === where.id && g.portalClientId === where.portalClientId));
+  const dto = await f.service.ler({portalClientId: 'a', competencia});
+  expect(f.db.guide.findMany).toHaveBeenCalledWith(expect.objectContaining({where: {portalClientId: 'a', competencia}}));
+  expect(dto.mesOperacional).toBe(mesOperacional);
+  expect(dto.cutoffDate.startsWith(mesOperacional)).toBe(true);
+  expect(dto.items.map(i => i.guideId)).toEqual(['propria-0', 'propria-1', 'propria-2']);
+  expect(f.email).not.toHaveBeenCalled();
+});
+test('mudança de competência depois da reserva impede o transporte', async () => {
+  const f = fixture();
+  const transport = jest.fn();
+  f.db.guide.findMany.mockImplementation(async ({where}) => f.guides.filter(g =>
+    g.portalClientId === where.portalClientId && g.competencia === where.competencia));
+  f.email.mockImplementation(async input => {
+    f.guides[0].competencia = '2026-11';
+    await input.beforeDispatch();
+    transport();
+  });
+  await f.execute();
+  expect(f.email).toHaveBeenCalledTimes(1);
+  expect(transport).not.toHaveBeenCalled();
+  expect(f.settings.get('envio_guias_ciclo:a:2026-10').attempts[0].status).toBe('REVIEW');
+});
 test('leitura não reserva, envia ou ativa e não expõe bytes, token ou credenciais', async () => {
  const f = fixture(); const dto = await f.service.ler({portalClientId:'a', competencia:'2026-10'});
  expect(dto.status).toBe('COMPLETE'); expect(dto.items).toHaveLength(1);

@@ -3,6 +3,36 @@ const contrato = extra => ({ id: "c1", portalClientId: "empresa", status: "ATIVO
 const parcela = extra => ({ id: "p1", numeroParcela: 1, competencia: "2026-09", vencimento: "2026-09-20", ...extra });
 const projetar = (contratos, indicacoes = []) => projetarPendenciasParcelamento({ contratos, indicacoes, mesOperacional: "2026-09", agora: new Date("2026-09-24Z"), enviada: g => g.emailStatus === "SENT" });
 
+test('a referência da previsão usa a competência expressa e só recorre a anoMesParcela quando ela está ausente', () => {
+  const dados = [contrato({parcelas:[
+    parcela({id:'com-referencia',competencia:'2026-10',anoMesParcela:'202611'}),
+    parcela({id:'do-calendario',competencia:null,anoMesParcela:'202610'}),
+    parcela({id:'invalida',competencia:'2026-13',anoMesParcela:'202610'}),
+    parcela({id:'guia-sem-competencia',guia:{id:'g',portalClientId:'empresa',competencia:null},competencia:'2026-10'}),
+  ]})];
+  const fiscal = projetarPendenciasParcelamento({contratos:dados,mesOperacional:'2026-10',porCompetencia:true});
+  expect(fiscal.itens.map(i=>i.parcelaId).sort()).toEqual(['com-referencia','do-calendario']);
+  expect(fiscal.empresasComCoberturaInconclusiva).toEqual(['empresa']);
+});
+
+test('indicação ou contrato sem referência requer conferência apenas na empresa correspondente e sem criar guia', () => {
+  const indicacoes = [
+    {id:'i',status:'PENDENTE',portalClientId:'sem-forma',formaPagamento:null},
+    {id:'ia',status:'PENDENTE',portalClientId:'debito',formaPagamento:'DEBITO_AUTOMATICO'},
+  ];
+  const res=projetarPendenciasParcelamento({contratos:[contrato({parcelas:[]})],indicacoes,mesOperacional:'2026-10',porCompetencia:true});
+  expect(res.itens).toEqual([]);
+  expect(res.empresasComCoberturaInconclusiva.sort()).toEqual(['empresa','sem-forma']);
+});
+
+test('uma guia comprovada na competência cobre sua indicação, sem cobrir indicação homônima de outra empresa', () => {
+  const guia={id:'g',portalClientId:'empresa',competencia:'2026-10',vencimento:'2026-11-10',status:'PROCESSED',storageKey:'f',extracted:{indicacaoParcelamentoId:'i'}};
+  const i={id:'i',modalidade:'PARCSN',status:'PENDENTE',portalClientId:'empresa'};
+  const res=projetarPendenciasParcelamento({contratos:[contrato({parcelas:[parcela({guia})]})],indicacoes:[i,{...i,id:'outra-i',portalClientId:'outra'}],mesOperacional:'2026-10',porCompetencia:true});
+  expect(res.itens.map(p=>p.guideId)).toEqual(['g']);
+  expect(res.empresasComCoberturaInconclusiva).toEqual(['outra']);
+});
+
 test("aviso mensal desaparece com PDF mesmo sem envio ou baixa e preserva histórico", () => {
   const r = projetar([guiaAvulsa()], [indicioUpload({ parcelasEmAtraso: 3 })]);
   expect(guiasParcelamentoDoMes(r.itens, "2026-09")).toEqual([]);

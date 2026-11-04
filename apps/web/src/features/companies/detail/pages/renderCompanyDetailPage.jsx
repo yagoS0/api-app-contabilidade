@@ -7,6 +7,7 @@ import { useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao.shared.
 import { CONFIG_EMPRESA, secaoEmpresa } from "../../../configuracoes/catalogo";
 import { CompanyAutomation } from '../../../operacoes/CompanyAutomation';
 import { GuruConferenciaPanel } from '../../../notas/components/GuruConferenciaPanel';
+import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation.shared";
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
@@ -28,7 +29,7 @@ import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
 import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { PendenciasSuporte } from "../../../whatsapp/components/PendenciasSuporte";
 import { createApiClient } from "../../../../api/client";
-import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
+import { competenciaPadrao, deslocarCompetencia, formatCompetencia, competenciaDaQuery } from "../../../../lib/competencia";
 import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/liberacao";
 // ⚠ A regra de QUEM DEVE a DEFIS entra EAGER, ao contrário do `EspelhoDefis`: a decisão precisa
 // acontecer antes de qualquer chunk, e ela é uma função pura. Ela continua sendo a fonte de quem vê
@@ -411,6 +412,21 @@ function CompanyDetailContent({
   usuarioId = null, company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
+  const navigation = useWorkspaceNavigation();
+  const guideUrl = companyDetailTab === "guides" && Boolean(companyId) &&
+    navigation?.location?.pathname === companyTabPath(encodeURIComponent(companyId), "guides");
+  const query = new URLSearchParams(guideUrl ? navigation.location.search : "");
+  const requested = competenciaDaQuery(query);
+  const invalidGuidePeriod = query.has("competencia") && !requested;
+  const guidePeriod = requested || circularPanel?.competencia;
+  function changeGuidePeriod(period) {
+    circularPanel?.onCompetenciaChange?.(period);
+    setGuiaOrigemParcelamento(null);
+    if (guideUrl) {
+      query.set("competencia", period);
+      navigation.navigate(`${navigation.location.pathname}?${query}`, { replace: true });
+    }
+  }
   // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o
   // `buildFirmCompanyPayload` só o inclui dentro de `legacyCompany`. Ler do topo devolvia
   // `undefined` sempre, e três telas dependiam disso em silêncio: "+ Parcelamento Simples" nunca
@@ -540,8 +556,8 @@ function CompanyDetailContent({
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
-          competencia={circularPanel?.competencia}
-          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+          competencia={guidePeriod}
+          onCompetenciaChange={changeGuidePeriod}
         />
 
         <AppShell className="guides-page-shell">
@@ -551,12 +567,12 @@ function CompanyDetailContent({
               05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
           <PlanoContasAviso panel={accountingPanel} />
-          <CompanyGuidesTable
-            key={companyId}
+          {invalidGuidePeriod ? <p role="alert">Competência inválida. Selecione uma competência para consultar as guias.</p> : <CompanyGuidesTable
+            key={`${companyId}:${guidePeriod}`}
             guiaDeOrigem={guiaOrigemParcelamento?.companyId === companyId ? guiaOrigemParcelamento : null}
             onLimparGuiaDeOrigem={() => setGuiaOrigemParcelamento(null)}
             companyId={companyId}
-            competencia={circularPanel?.competencia}
+            competencia={guidePeriod}
             companyRegime={companyRegime}
             guides={guidesPanel.guides}
             loadingGuides={guidesPanel.loading}
@@ -585,7 +601,7 @@ function CompanyDetailContent({
                falta. ⚠ A aba de Apuração é a `cadastroFiscal` (segmento `cadastro-fiscal`) —
                `apuracao-v2` saiu do menu e virou sub-aba interna. */
             onIrParaApuracao={() => switchTab("cadastroFiscal")}
-          />
+          />}
           </Suspense>
 
           <Feedback message={feedback.message} error={feedback.error} />
@@ -1314,7 +1330,13 @@ function CompanyDetailContent({
                 onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
                 /* A guia é anexada na aba Guias (+ Subir Guia → PARCELAMENTO). O card leva até lá
                    em vez de mostrar um item desabilitado sem saída. */
-                onIrParaGuias={(item) => { setGuiaOrigemParcelamento(item?.guideId ? { companyId, id: item.guideId } : null); switchTab("guides"); }}
+                onIrParaGuias={(item) => {
+                  const documento = guidesPanel?.guides?.find(g => (g.guideId || g.id) === item?.guideId && (!g.companyId || g.companyId === companyId));
+                  const periodo = documento?.competencia || item?.competenciaDocumento;
+                  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) circularPanel?.onCompetenciaChange?.(periodo);
+                  setGuiaOrigemParcelamento(item?.guideId ? { companyId, id: item.guideId } : null);
+                  switchTab("guides");
+                }}
                 abrirWizardAoMontar={abrirWizardParcelamento}
                 onWizardAberto={() => setAbrirWizardParcelamento(false)}
               />

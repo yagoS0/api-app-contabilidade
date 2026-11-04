@@ -1,3 +1,4 @@
+import { coberturaFiscalParcelasMock } from "./parcelasGuiasRelatorioMock";
 import { conferirEnvioParcelaMock } from "./guiaParcelaEnvioMock";
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const stores = new Map();
@@ -189,11 +190,15 @@ export function criarMockAcompanhamentoParcelamentos({ empresas = [], guias = ne
     },
     complianceAcompanhamentoParcelamentos(id, original) {
       const out = snapshot(id);
+      if (original.competencia) {
+        out.itens = coberturaFiscalParcelasMock(id, original.competencia, guias.get(id) || [], out);
+        original = { ...original, coberturaParcelamentoMes: out.itens };
+      }
       if (!out.itens.length) return original;
       const pendentes = out.itens.filter(i => i.estado !== "RESOLVIDA");
       const faltante = out.itens.some(i => !i.pagamentoConfirmado && !i.guideId && i.formaPagamento !== "DEBITO_AUTOMATICO");
       const tratadas = out.itens.every(i => i.pagamentoConfirmado || i.enviada || i.formaPagamento === "DEBITO_AUTOMATICO");
-      return { ...original, hasPendenciasParcelamento: pendentes.length > 0, parcDas: { required: true, ok: !faltante, state: faltante ? "missing" : tratadas ? "enviada" : "gerada", itens: out.itens, quantidade: out.itens.length, pendencias: pendentes.length, atrasadas: out.resumo.atrasadas, atrasada: out.resumo.atrasadas > 0, pendenciaOperacional: pendentes.length > 0 }, ok: original.ok && !pendentes.length };
+      return { ...original, hasPendenciasParcelamento: pendentes.length > 0, parcDas: { required: true, ok: !faltante, state: faltante ? "missing" : tratadas ? "enviada" : "gerada", itens: out.itens, quantidade: out.itens.length, pendencias: pendentes.length, atrasadas: out.itens.filter(i => i.atrasada).length, atrasada: out.itens.some(i => i.atrasada), pendenciaOperacional: pendentes.length > 0 }, ok: original.ok && !pendentes.length };
     },
   };
 }

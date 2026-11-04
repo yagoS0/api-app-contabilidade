@@ -4,7 +4,7 @@
 // **só quando há vazio a explicar**, e se a falha da busca chega à tela como falha — nunca como
 // "não há guia". Era esse o defeito: a competência sem guia dizia *"Nenhuma guia encontrada para os
 // filtros atuais."* tanto quando não havia nada a pagar quanto quando o servidor não respondeu.
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { CompanyGuidesTable } from "../renderCompanyGuidesTable.jsx";
 
 const mockGetFechamento = jest.fn();
@@ -12,7 +12,7 @@ const mockGetFechamentoContabil = jest.fn();
 
 jest.mock("../../../../../api/client", () => ({
   createApiClient: () => ({
-    getExpectedGuides: jest.fn().mockResolvedValue({ compliance: {} }),
+    getExpectedGuides: jest.fn(async (_id, competencia) => ({ competencia, compliance: { coberturaParcelamentoMes: [] } })),
     getFechamento: (...a) => mockGetFechamento(...a),
     getFechamentoContabil: (...a) => mockGetFechamentoContabil(...a),
     markGuideVazio: jest.fn(),
@@ -33,8 +33,6 @@ function montar(props = {}) {
       {...props}
     />,
   );
-  fireEvent.click(screen.getByText("Outras consultas"));
-  fireEvent.click(screen.getByRole("button", { name: "Por competência fiscal" }));
   return result;
 }
 

@@ -76,7 +76,7 @@ it.each(['VIEWER','STAFF',undefined])('papel %s não oferece conferência gravá
   expect(screen.getByRole('link',{name:'Abrir apuração'})).toBeInTheDocument();
 });
 
-const parcela = (id, extra = {}) => ({ id, numeroParcela: id, tipo:'Simples', mesOperacional:'2026-11', documento:'disponivel', comunicacao:'pendente', pagamentoConfirmado:true, ...extra });
+const parcela = (id, extra = {}) => ({ id, numeroParcela: id, tipo:'Simples', portalClientId:'a', referenciaFiscal:'2026-10', documento:'disponivel', comunicacao:'pendente', pagamentoConfirmado:true, ...extra });
 const comParcelas = parcelas => ({ ...companies[0], fluxoCarteira:{...companies[0].fluxoCarteira,status:{chave:'guias'}}, guideCompliance:{ competencia:'2026-10', das:{required:true,state:'na'}, parcDas:{required:true,state:'enviada'}, coberturaParcelamentoMes:parcelas } });
 it.each([
  ['paga sem envio',[parcela('1')],true,false,true],
@@ -90,7 +90,7 @@ it.each([
  render(<OperationsPage api={{getCompanyGuides:async()=>[]}} companies={[company]} competencia="2026-10"/>);
  fireEvent.click(screen.getByRole('button',{name:/^Disponível [01]\/1 empresas$/}));
  const modal=within(screen.getByRole('dialog'));
- for(const p of parcelas) {expect(await modal.findByText(new RegExp(`Parcela ${p.numeroParcela} · 2026-11`))).toBeInTheDocument();expect(result.items[0].guideSummary.items.find(i=>i.key===p.id).pagamento).toBe(p.pagamentoConfirmado?'Confirmado':'Não confirmado');}
+ for(const p of parcelas) {expect(await modal.findByText(new RegExp(`Parcela ${p.numeroParcela} · 2026-10`))).toBeInTheDocument();expect(result.items[0].guideSummary.items.find(i=>i.key===p.id).pagamento).toBe(p.pagamentoConfirmado?'Confirmado':'Não confirmado');}
 });
 it('dispensa não confirma pagamento e cobertura de outra competência não comprova eixos',()=>{
  const company=comParcelas([]);
