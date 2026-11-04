@@ -94,3 +94,22 @@ test('alcance dos lembretes não usa empresas selecionadas para consulta de paga
  expect(await screen.findByText('1 de 3')).toBeVisible();
  expect(screen.queryByText(/Usa as empresas habilitadas em Pagamento/)).toBeNull();
 });
+
+test('acesso contextual abre configuração existente sem ligar agenda ou atualizar workers',async()=>{
+ const api={getRotinas:jest.fn(async()=>({rotinas:[{key:'simples_coleta_calculo',label:'Coleta e cálculo'},{key:'simples_envio_guias',label:'Envio de guias'},{key:'avisos_guias_whatsapp',label:'Lembretes'}],agenda:{},empresas:[]})),saveRotinas:jest.fn()};
+ const onRefreshWorkerStatus=jest.fn();
+ render(<MemoryRouter initialEntries={['/rotinas?aba=configuracao']}><RotinasPage api={api} onRefreshWorkerStatus={onRefreshWorkerStatus}/></MemoryRouter>);
+ expect(screen.getByRole('tab',{name:'Configuração'})).toHaveAttribute('aria-selected','true');
+ expect(await screen.findByLabelText('Ligar Coleta e cálculo')).not.toBeChecked();
+ expect(screen.getByLabelText('Ligar Envio de guias')).not.toBeChecked();
+ expect(screen.getByLabelText('Ligar Lembretes')).not.toBeChecked();
+ expect(api.getRotinas).toHaveBeenCalledTimes(1);expect(api.saveRotinas).not.toHaveBeenCalled();expect(onRefreshWorkerStatus).not.toHaveBeenCalled();
+});
+
+test('resposta de configuração inválida não se torna agenda desligada nem permite salvar',async()=>{
+ const api={getRotinas:jest.fn(async()=>({ok:false})),getPausaCicloFiscal:jest.fn(async()=>({ok:true,policy:{paused:false,version:0,legacy:true}})),saveRotinas:jest.fn()};
+ render(<MemoryRouter initialEntries={['/rotinas?aba=configuracao']}><RotinasPage api={api}/></MemoryRouter>);
+ expect(await screen.findByText('Configuração de rotinas indisponível. Atualize antes de salvar.')).toBeVisible();
+ expect(screen.getByRole('button',{name:'Salvar horários'})).toBeDisabled();
+ expect(api.saveRotinas).not.toHaveBeenCalled();
+});

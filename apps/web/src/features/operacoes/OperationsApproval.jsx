@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { operationsReadQueue } from './operationsReadQueue';
+import { useOperationsEvidence } from './useOperationsEvidence';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { InternalLink } from '../../components/ui/InternalLink';
@@ -15,12 +16,13 @@ function ApprovalDialog({ embedded, titulo, children, rodape, focusRef, ...props
   return embedded ? <section className="operacoes-conferencia-detalhe" aria-label={titulo}><h3 ref={focusRef} tabIndex={-1}>{titulo}</h3>{children}<div className="operacoes-acoes operacoes-destinos">{rodape}</div></section> : <Modal titulo={titulo} {...props} rodape={rodape}>{children}</Modal>;
 }
 
-export function OperationsApproval({ api, rows, competencia, onChanged, onBusyChange, embedded = false, stage = null }) {
+export function OperationsApproval({ api, rows, competencia, onChanged, onBusyChange, embedded = false, stage = null, evidence: suppliedEvidence = null }) {
   const [data, setData] = useState({}), [error, setError] = useState(''), [mutationBusy, setBusy] = useState(false);
   const [routineBusy, setRoutineBusy] = useState(false), [routineDetail, setRoutineDetail] = useState(false);
-  const busy = mutationBusy || routineBusy;
+  const [detailBusy, setDetailBusy] = useState(false);
+  const busy = mutationBusy || routineBusy || detailBusy;
   const [selected, setSelected] = useState(null), [schedule, setSchedule] = useState(''), [batch, setBatch] = useState(null);
-  const [version, setVersion] = useState(0), [message, setMessage] = useState('');
+  const [message, setMessage] = useState('');
   const [checked, setChecked] = useState({});
   const [stageFilter,setStageFilter] = useState('all');
   const [query, setQuery] = useState(''), [confirmPreview, setConfirmPreview] = useState(null);
@@ -52,39 +54,87 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   const [confirmCompetencia, setConfirmCompetencia] = useState('');
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
   const ids = rows.map(r => r.company.companyId).sort().join('|');
+  const grouped = true;
+  const localEvidence = useOperationsEvidence(api, competencia, ids, grouped && !suppliedEvidence);
+  const evidence = suppliedEvidence || localEvidence;
+  const readGeneration = useRef(0);
+  function refreshEvidence() {
+    evidence.reload();
+  }
+  // Selection of a summary only prepares inspection. Commands still require
+  // current operation, snapshot and audit, and the server revalidates revision.
+  const selectable = value => grouped && !value.details ? Boolean(value.calculation) : !approvalEvidenceError(value);
+  async function hydrate(items, open) {
+    if (lock.current || busy || reading) return;
+    const origin = context.current, generation = readGeneration.current;
+    const active = () => context.current === origin && readGeneration.current === generation;
+    lock.current = true; setDetailBusy(true); setError('');
+    const loaded = [];
+    try {
+      const results = await operationsReadQueue(items, async item => {
+        if (!active()) return;
+        const value = await api.getCompanyOperation(item.companyId, competencia);
+        if (!active()) return;
+        if (!value || value.ok === false || value.companyId !== item.companyId || value.competencia !== competencia || !value.revision || !Array.isArray(value.pending)) throw Error('Conferência indisponível.');
+        const details = await readCalculationDetails(api, item.companyId, competencia);
+        if (!active()) return;
+        loaded.push({ ...value, details });
+        if (api.getOperationsTransmissionDocuments && open === 'detail') {
+          const proof = await api.getOperationsTransmissionDocuments(item.companyId, competencia).catch(() => null);
+          if (!active()) return;
+          setConfirmation(old => ({ ...old, [item.companyId]: proof?.companyId === item.companyId && proof.competencia === competencia && proof.confirmation?.fingerprint === value.fingerprint ? proof.confirmation : null }));
+        }
+      }, { isActive: active });
+      if (!active()) return;
+      setData(old => ({ ...old, ...Object.fromEntries(loaded.map(value => [value.companyId, value])) }));
+      const failure = results.find(result => result?.status === 'rejected');
+      if (failure || loaded.length !== items.length) throw failure?.reason || Error('Leitura incompleta. Atualize antes de continuar.');
+      if (open === 'detail') {
+        setSelected(loaded[0].companyId); setSchedule(loaded[0].schedule || '');
+      } else {
+        if (loaded.some(value => value.revision !== items.find(item => item.companyId === value.companyId)?.revision || !writable.current.has(value.companyId) || approvalEvidenceError(value) || value.blocked || (value.execution && value.execution.status !== 'DONE') || (stage !== 'calculado' && value.status !== 'CONFIRMED'))) {
+          setChecked({});
+          throw Error('Revisão, acesso ou evidências mudaram. Confira os detalhes antes de preparar novamente.');
+        }
+        if (stage === 'calculado') setConfirmPreview(loaded);
+        else setBatch(loaded);
+      }
+    } catch (e) { if (active()) setError(e.message || 'Evidências indisponíveis. Atualize antes de continuar.'); }
+    finally { lock.current = false; setDetailBusy(false); }
+  }
+  function openDetail(id) {
+    returnTo.current = id;
+    if (grouped) void hydrate([data[id]], 'detail');
+    else { setSelected(id); setSchedule(data[id].schedule || ''); }
+  }
+  function prepareSelection(items) {
+    returnTo.current = 'batch';
+    if (grouped) void hydrate(items, 'preview');
+    else if (stage === 'calculado') setConfirmPreview(items.map(d => ({ ...d })));
+    else setBatch(items.map(d => ({ ...d })));
+  }
   useEffect(() => {
-    let active = true;
-    setData({}); setConfirmation({}); setConfirmPreview(null); setChecked({}); setBatch(null); setSelected(null); setConfirmCompetencia(''); setError(''); setReading(true);
-    if (!api?.getCompanyOperation) return;
-    // Três empresas por vez, sem reutilizar evidências entre contextos.
-    (async () => {
-      await operationsReadQueue(ids.split('|').filter(Boolean), async id => {
-        try {
-          const value = await api.getCompanyOperation(id, competencia);
-          if (!active) return;
-          if (!value || value.ok === false || value.companyId !== id || value.competencia !== competencia || !value.revision || !Array.isArray(value.pending)) throw Error('Conferência indisponível.');
-          const details = await readCalculationDetails(api, id, competencia);
-          if (!active) return;
-          setData(old => ({ ...old, [id]: { ...value, details } }));
-          if (stage && api.getOperationsTransmissionDocuments) {
-            const proof = await api.getOperationsTransmissionDocuments(id, competencia).catch(() => null);
-            if (!active) return;
-            if (proof?.companyId === id && proof.competencia === competencia) setConfirmation(old => ({ ...old, [id]: proof.confirmation?.fingerprint === value.fingerprint ? proof.confirmation : null }));
-          }
-        } catch { if (active) setError('Algumas empresas não puderam ser conferidas. Atualize antes de liberar.'); }
-      }, { isActive: () => active });
-      if (active) setReading(false);
-    })();
-    return () => { active = false; };
-  }, [api, ids, competencia, version, stage]);
-  if (!api?.getCompanyOperation) return <p role="alert">Conferência indisponível neste ambiente. Abra a apuração da empresa para conferir os dados.</p>;
+    if (!grouped) return;
+    readGeneration.current += 1;
+    setConfirmation({}); setConfirmPreview(null); setChecked({}); setBatch(null); setSelected(null); setConfirmCompetencia('');
+    setReading(evidence.loading); setError(evidence.error || '');
+    if (evidence.loading || evidence.error) { setData({}); return; }
+    const allowed = new Set(ids.split('|').filter(Boolean));
+    const scoped = evidence.items.filter(item => allowed.has(item.companyId));
+    if (scoped.length !== allowed.size || scoped.some(item => !Array.isArray(item.pending) || item.competencia !== competencia || !item.revision)) {
+      setData({}); setError('Lista incompleta. Atualize as conferências antes de continuar.'); return;
+    }
+    setData(Object.fromEntries(scoped.map(item => [item.companyId, item])));
+    return () => { readGeneration.current += 1; };
+  }, [grouped, evidence.items, evidence.loading, evidence.error, ids, competencia]);
+  if (!api?.getCompanyOperation || (!suppliedEvidence && !api?.getOperationEvidence)) return <p role="alert">Conferência agrupada indisponível neste ambiente. Abra a apuração da empresa para conferir os dados.</p>;
   const sorted = [...rows].sort((a, b) => (data[a.company.companyId]?.schedule || '9999').localeCompare(data[b.company.companyId]?.schedule || '9999'));
   const row = rows.find(r => r.company.companyId === selected);
   const current = data[selected];
   const canEditCurrent = writable.current.has(selected);
   const evidenceError = current ? approvalEvidenceError(current, { historical: true }) : null;
   const canReleaseBatch = batch?.every(item => writable.current.has(item.companyId) && item.competencia === competencia && data[item.companyId]?.revision === item.revision && !data[item.companyId]?.blocked && !approvalEvidenceError(data[item.companyId]));
-  const confirmed = Object.values(data).filter(v => v.status === 'CONFIRMED' && !approvalEvidenceError(v) && !v.blocked && (!v.execution || v.execution.status === 'DONE') && writable.current.has(v.companyId));
+  const confirmed = Object.values(data).filter(v => v.status === 'CONFIRMED' && selectable(v) && !v.blocked && (!v.execution || v.execution.status === 'DONE') && writable.current.has(v.companyId));
   const chosen = confirmed.filter(v => checked[v.companyId] === v.revision);
   async function change(items, action) {
     if (lock.current || reading || items.some(item => !writable.current.has(item.companyId) || item.competencia !== competencia || data[item.companyId]?.revision !== item.revision)) return;
@@ -122,7 +172,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
       setData({});
     } finally { lock.current = false; setBusy(false); if (context.current === origin) { setBatch(null); setSelected(null); setChecked({}); setConfirmCompetencia(''); } }
   }
-  const confirmable = Object.values(data).filter(v => !['CONFIRMED','RELEASED','EXECUTED'].includes(v.status) && !approvalEvidenceError(v) && !v.blocked && !v.execution && writable.current.has(v.companyId));
+  const confirmable = Object.values(data).filter(v => !['CONFIRMED','RELEASED','EXECUTED'].includes(v.status) && selectable(v) && !v.blocked && !v.execution && writable.current.has(v.companyId));
   const stageEligible = stage === 'calculado' ? confirmable : confirmed;
   const stageRows = sorted.filter(r => stage !== 'confirmado' || ['CONFIRMED','RELEASED','EXECUTED','ATTENTION','INVALIDATED'].includes(data[r.company.companyId]?.status))
     .filter(r => stageFilter === 'all' || (stageFilter === 'done' ? !!data[r.company.companyId]?.calculation : stageFilter === 'pending' ? !!data[r.company.companyId] && !data[r.company.companyId].calculation : stageFilter === 'error' ? !!data[r.company.companyId]?.blocked || !!data[r.company.companyId]?.execution && data[r.company.companyId].execution.status !== 'DONE' : !data[r.company.companyId]))
@@ -130,28 +180,33 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   const visibleEligible = stageEligible.filter(d => stageRows.some(r => r.company.companyId === d.companyId));
   const stageChosen = stageEligible.filter(d => checked[d.companyId] === d.revision);
   return <section aria-label="Conferência e programação de Operações">
-    {stage !== 'calculado' && api?.previewOperationsBatch && <OperationsBatch key={competencia} api={api} competencia={competencia} disabled={mutationBusy || Boolean(selected || batch)} onChanged={onChanged} embedded={embedded} onBusyChange={setRoutineBusy} onDetailChange={setRoutineDetail} />}
-    {!stage && !(embedded && ((row && current) || batch || routineDetail)) && <><div className="operacoes-cabecalho"><h3>Apurações da competência</h3><div className="operacoes-acoes"><Button ref={refreshRef} variant="secondary" disabled={busy || reading} onClick={() => setVersion(v => v + 1)}>Atualizar conferências</Button>{writable.current.size > 0 && <><Button variant="secondary" disabled={busy || reading || !confirmed.length || !!error} onClick={() => setChecked(Object.fromEntries(confirmed.map(v => [v.companyId, v.revision])))}>Selecionar elegíveis ({confirmed.length})</Button><Button ref={batchRef} variant="secondary" disabled={busy || reading || !chosen.length || !!error} onClick={() => { returnTo.current = 'batch'; setBatch(chosen.map(v => ({ ...v }))); }}>Transmitir selecionadas ({chosen.length})</Button></>}</div></div>
+    {stage !== 'calculado' && api?.previewOperationsBatch && <OperationsBatch key={competencia} api={api} competencia={competencia} disabled={mutationBusy || detailBusy || Boolean(selected || batch)} onChanged={onChanged} embedded={embedded} onBusyChange={setRoutineBusy} onDetailChange={setRoutineDetail} />}
+    {!stage && !(embedded && ((row && current) || batch || routineDetail)) && <><div className="operacoes-cabecalho"><h3>Apurações da competência</h3><div className="operacoes-acoes"><Button ref={refreshRef} variant="secondary" disabled={busy || reading} onClick={refreshEvidence}>Atualizar conferências</Button>{writable.current.size > 0 && <><Button variant="secondary" disabled={busy || reading || !confirmed.length || !!error} onClick={() => setChecked(Object.fromEntries(confirmed.map(v => [v.companyId, v.revision])))}>Selecionar elegíveis ({confirmed.length})</Button><Button ref={batchRef} variant="secondary" disabled={busy || reading || !chosen.length || !!error} onClick={() => prepareSelection(chosen)}>Transmitir selecionadas ({chosen.length})</Button></>}</div></div>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
-    <div className="operacoes-tabela-scroll" role="region" aria-label="Conferência das empresas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao">Selecionar</th><th>Empresa</th><th>Cálculo salvo</th><th>Faturamento salvo</th><th>Anexo do formulário</th><th>Conferência e pendências</th><th>Ação</th></tr></thead><tbody>{sorted.map(({ company }) => { const d = data[company.companyId], name = company.razao || company.razaoSocial || company.cnpj; return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} disabled={busy || reading || !confirmed.some(v => v.companyId === company.companyId)} checked={Boolean(d && checked[company.companyId] === d.revision)} onChange={e => setChecked(old => ({ ...old, [company.companyId]: e.target.checked ? d.revision : null }))} /></label></td><th scope="row">{name}</th><td>{money(d?.calculation?.dasValor)}</td><td>Interno: {money(d?.details?.snapshot?.value?.receitaInterna)}<br />Externo: {money(d?.details?.snapshot?.value?.receitaExterna)}</td><td>{d?.details?.snapshot?.value?.atividadesEscolhidas?.map(a => a.anexoImplicito ?? 'Não registrado').join(' · ') || 'Não disponível no snapshot'}</td><td>{d ? `${d.schedule ? operationDate(d.schedule) + ' · ' + d.schedule.slice(11,16) : 'Sem programação'} · ${labels[d.status] || 'A verificar'}${d.pending.length ? ` · ${d.pending.length} pendência(s) do período` : ''}` : reading ? 'Conferindo…' : 'Conferência indisponível'}{d?.blocked && <p>{d.blocked}</p>}{d && approvalEvidenceError(d, { historical: true }) && <p role="alert">{approvalEvidenceError(d, { historical: true })}. Atualize a conferência ou abra a empresa para verificar.</p>}<p>Auditoria: {d?.details?.auditoria?.value ? `${d.details.auditoria.value.totalAchados ?? 'A verificar'} achados` : 'Indisponível; não equivale a aprovação'}</p></td><td><Button ref={el => { if (el) triggerRefs.current.set(company.companyId, el); else triggerRefs.current.delete(company.companyId); }} size="sm" variant="secondary" disabled={!d || busy || reading} onClick={() => { returnTo.current = company.companyId; setSelected(company.companyId); setSchedule(d.schedule || ''); }}>Conferir</Button></td></tr>; })}</tbody></table></div></>}
+    <div className="operacoes-tabela-scroll" role="region" aria-label="Conferência das empresas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao">Selecionar</th><th>Empresa</th><th>Cálculo salvo</th><th>Faturamento salvo</th><th>Anexo do formulário</th><th>Conferência e pendências</th><th>Ação</th></tr></thead><tbody>{sorted.map(({ company }) => { const d = data[company.companyId], name = company.razao || company.razaoSocial || company.cnpj; return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} disabled={busy || reading || !confirmed.some(v => v.companyId === company.companyId)} checked={Boolean(d && checked[company.companyId] === d.revision)} onChange={e => setChecked(old => ({ ...old, [company.companyId]: e.target.checked ? d.revision : null }))} /></label></td><th scope="row">{name}</th><td>{money(d?.calculation?.dasValor)}</td><td>Interno: {money(d?.details?.snapshot?.value?.receitaInterna)}<br />Externo: {money(d?.details?.snapshot?.value?.receitaExterna)}</td><td>{d?.details?.snapshot?.value?.atividadesEscolhidas?.map(a => a.anexoImplicito ?? 'Não registrado').join(' · ') || 'Não disponível no snapshot'}</td><td>{d ? `${d.schedule ? operationDate(d.schedule) + ' · ' + d.schedule.slice(11,16) : 'Sem programação'} · ${labels[d.status] || 'A verificar'}${d.pending.length ? ` · ${d.pending.length} pendência(s) do período` : ''}` : reading ? 'Conferindo…' : 'Conferência indisponível'}{d?.blocked && <p>{d.blocked}</p>}{d && approvalEvidenceError(d, { historical: true }) && <p role="alert">{approvalEvidenceError(d, { historical: true })}. Atualize a conferência ou abra a empresa para verificar.</p>}<p>Auditoria: {d?.details?.auditoria?.value ? `${d.details.auditoria.value.totalAchados ?? 'A verificar'} achados` : 'Indisponível; não equivale a aprovação'}</p></td><td><Button ref={el => { if (el) triggerRefs.current.set(company.companyId, el); else triggerRefs.current.delete(company.companyId); }} size="sm" variant="secondary" disabled={!d || busy || reading} onClick={() => openDetail(company.companyId)}>Conferir</Button></td></tr>; })}</tbody></table></div></>}
     {stage && !row && !batch && !routineDetail && <>
       <p>Competência {competencia} · {stage === 'calculado' ? 'Conferir registra a revisão, sem transmitir.' : 'Fila não comprova transmissão. Liberar rotina inclui todas as confirmadas elegíveis, independentemente da seleção manual.'}</p>
       <label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
       {stage==='calculado'&&<label className="operacoes-rotinas-filtros">Situação da etapa<select aria-label="Situação da etapa" disabled={busy} value={stageFilter} onChange={e=>setStageFilter(e.target.value)}><option value="all">Todas as empresas deste conjunto</option><option value="done">Calculadas</option><option value="pending">Não calculadas</option><option value="error">Atenção ou bloqueio</option><option value="unknown">A verificar</option></select></label>}
-      {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}{reading && <p role="status">Lendo cálculos e evidências…</p>}
+      {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}{reading && <p role="status">Lendo cálculos e evidências…</p>}{detailBusy && <p role="status">Conferindo evidências selecionadas…</p>}
       <div className="operacoes-tabela-scroll" role="region" aria-label={stage === 'calculado' ? 'Cálculos para conferência' : 'Apurações confirmadas'} tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao"><input type="checkbox" aria-label="Selecionar elegíveis exibidas" disabled={busy||reading||!visibleEligible.length} checked={visibleEligible.length>0&&visibleEligible.every(d=>checked[d.companyId]===d.revision)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,...Object.fromEntries(visibleEligible.map(d=>[d.companyId,e.target.checked?d.revision:null]))}));}}/></th><th>Empresa</th><th>{stage==='calculado'?'Receita calculada':'Receita confirmada'}</th><th>Impostos</th>{stage==='calculado'?<><th>Avisos</th><th>Erros</th></>:<th>Confirmação</th>}<th>Situação / ações</th></tr></thead><tbody>{stageRows.map(({company})=>{
-        const d=data[company.companyId], c=calculationColumns(d), name=company.razao||company.razaoSocial||company.cnpj, proof=confirmation[company.companyId];
-        return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} checked={!!d&&checked[company.companyId]===d.revision} disabled={busy||reading||!stageEligible.some(v=>v.companyId===company.companyId)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,[company.companyId]:e.target.checked?d.revision:null}));}}/></label></td><th scope="row">{name}</th><td>{money(c.receita)}</td><td>{c.impostos.length?c.impostos.map(t=><div key={t.nome}>{t.nome}<strong className="operacoes-valor">{money(t.valor)}</strong></div>):'Impostos indisponíveis'}</td>{stage==='calculado'?<><td>{c.warnings.join(' · ')||'Nenhum aviso identificado nesta leitura'}</td><td>{c.errors.join(' · ')||'Nenhum erro impeditivo identificado'}</td></>:<td>{proof?.by || 'Autor não disponível'}<small>{operationInstant(proof?.at)}</small></td>}<td>{d?labels[d.status]||'A verificar':reading?'Lendo…':'Leitura indisponível'}{stage!=='calculado'&&c.errors.length>0&&<p>{c.errors.join(' · ')}</p>}<Button ref={el=>{if(el)triggerRefs.current.set(company.companyId,el);else triggerRefs.current.delete(company.companyId);}} size="sm" variant="secondary" disabled={!d||busy||reading} onClick={()=>{returnTo.current=company.companyId;setSelected(company.companyId);setSchedule(d.schedule||'');}}>Conferir detalhes</Button></td></tr>;
-      })}</tbody></table></div>{!stageRows.length&&!reading&&<p>Nenhuma empresa nesta etapa ou busca.</p>}
+        const d=data[company.companyId], c=calculationColumns(d), name=company.razao||company.razaoSocial||company.cnpj;
+        const summaryProof = d?.confirmationSummary?.status === 'AVAILABLE' ? d.confirmationSummary.confirmation : null;
+        const matchingSummary = typeof d?.fingerprint === 'string' && d.fingerprint.length > 0 && summaryProof?.fingerprint === d.fingerprint ? summaryProof : null;
+        // A fresh detail result, including null, supersedes a presentation summary.
+        const proof = Object.hasOwn(confirmation, company.companyId) ? confirmation[company.companyId] : matchingSummary;
+        return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} checked={!!d&&checked[company.companyId]===d.revision} disabled={busy||reading||!stageEligible.some(v=>v.companyId===company.companyId)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,[company.companyId]:e.target.checked?d.revision:null}));}}/></label></td><th scope="row">{name}</th><td>{money(c.receita)}</td><td>{c.impostos.length?c.impostos.map(t=><div key={t.nome}>{t.nome}<strong className="operacoes-valor">{money(t.valor)}</strong></div>):'Impostos indisponíveis'}</td>{stage==='calculado'?<><td>{c.warnings.join(' · ')||'Nenhum aviso identificado nesta leitura'}</td><td>{c.errors.join(' · ')||(grouped&&!d?.details?'Conferir evidências':'Nenhum erro impeditivo identificado')}</td></>:<td>{proof?.by || (d?.confirmationSummary?.status === 'INCOMPLETE' ? 'Histórico incompleto · conferir detalhe' : 'Autor não disponível')}<small>{operationInstant(proof?.at)}</small></td>}<td>{d?labels[d.status]||'A verificar':reading?'Lendo…':'Leitura indisponível'}{stage!=='calculado'&&c.errors.length>0&&<p>{c.errors.join(' · ')}</p>}<Button ref={el=>{if(el)triggerRefs.current.set(company.companyId,el);else triggerRefs.current.delete(company.companyId);}} size="sm" variant="secondary" disabled={!d||busy||reading} onClick={()=>openDetail(company.companyId)}>Conferir detalhes</Button></td></tr>;
+      })}</tbody></table></div>{!stageRows.length&&!reading&&!error&&<p>Nenhuma empresa nesta etapa ou busca.</p>}
       {confirmPreview && <div className="operacoes-previa"><h3 ref={previewHeading} tabIndex={-1}>Conferir liberação para transmissão</h3><p>Registrar conferência destas empresas na competência {competencia}, sem transmitir.</p><ul>{confirmPreview.map(d=><li key={d.companyId}>{rows.find(r=>r.company.companyId===d.companyId)?.company.razao||d.companyId}</li>)}</ul><Button disabled={busy||confirmPreview.some(d=>!confirmable.some(c=>c.companyId===d.companyId&&c.revision===d.revision))} onClick={()=>{const items=confirmPreview;setConfirmPreview(null);change(items,'confirm');}}>Confirmar cálculos selecionados</Button> <Button variant="secondary" disabled={busy} onClick={()=>{setConfirmPreview(null);batchRef.current?.focus();}}>Cancelar</Button></div>}
-      <div className="operacoes-stage-footer"><span>{stageChosen.length} selecionadas · {stageChosen.filter(d=>!stageRows.some(r=>r.company.companyId===d.companyId)).length} fora da busca</span><Button ref={refreshRef} variant="secondary" disabled={busy||reading} onClick={()=>setVersion(v=>v+1)}>Atualizar conferências</Button><Button ref={batchRef} disabled={busy||reading||!stageChosen.length||!!error||(stage==='confirmado'&&!api?.executeCompanyOperation)} onClick={()=>{returnTo.current='batch';if(stage==='calculado')setConfirmPreview(stageChosen.map(d=>({...d})));else setBatch(stageChosen.map(d=>({...d})));}}>{stage==='calculado'?'Liberar para transmissão':'Transmitir selecionadas'}</Button></div>
+      <div className="operacoes-stage-footer"><span>{stageChosen.length} selecionadas · {stageChosen.filter(d=>!stageRows.some(r=>r.company.companyId===d.companyId)).length} fora da busca</span><Button ref={refreshRef} variant="secondary" disabled={busy||reading} onClick={refreshEvidence}>Atualizar conferências</Button><Button ref={batchRef} disabled={busy||reading||!stageChosen.length||!!error||(stage==='confirmado'&&!api?.executeCompanyOperation)} onClick={()=>prepareSelection(stageChosen)}>{stage==='calculado'?'Liberar para transmissão':'Transmitir selecionadas'}</Button></div>
     </>}
     {row && current && <ApprovalDialog focusRef={detailRef} embedded={embedded} className="operacoes-dialogo" titulo={`Conferir ${row.company.razao || row.company.razaoSocial || row.company.cnpj}`} ocupado={busy} aoFechar={() => !busy && setSelected(null)} rodape={<Button disabled={busy} variant="secondary" onClick={() => setSelected(null)}>{embedded ? 'Voltar' : 'Fechar'}</Button>}>
       <p>Competência {competencia} · {labels[current.status]}</p>
+      {stage === 'confirmado' && <p>Confirmação: {confirmation[selected]?.by || 'Autor não disponível'} · {operationInstant(confirmation[selected]?.at)}</p>}
       <p>Imposto salvo: {money(current.calculation?.dasValor)}</p><CalculationEvidence details={current.details} />
       {current.blocked && <p role="alert">{current.blocked}</p>}
       {evidenceError && <p role="alert">{evidenceError}. Confirmar e liberar estão indisponíveis até atualizar as evidências.</p>}
-      <Button variant="secondary" disabled={busy || reading} onClick={() => setVersion(v => v + 1)}>Atualizar evidências</Button>
+      <Button variant="secondary" disabled={busy || reading} onClick={refreshEvidence}>Atualizar evidências</Button>
       {current.execution && <p role="status">{current.execution.message || 'Acompanhe os detalhes e documentos em Tarefas.'}</p>}
       {current.pending.map(p => <p key={p.id}>{p.observacoes || p.motivo}</p>)}
       {!busy && <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(selected, 'cadastroFiscal')}?competencia=${competencia}`}>Abrir central de apuração</InternalLink><InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(selected, 'auditoria')}?competencia=${competencia}`}>Revisar notas da competência</InternalLink></div>}

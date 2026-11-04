@@ -1,0 +1,27 @@
+{
+  "summary": "Compartilha a leitura agrupada do Confirmado, carrega detalhes somente sob demanda e oferece acesso contextual à configuração existente de automações.",
+  "risk": "high",
+  "domains": ["accounting", "api", "commercial", "communication", "fiscal", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Sem mudança de regra operacional. Preserva R01/R02/R19–R22 e seção 32: resumo não autoriza confirmação ou transmissão; identidade, competência, revisão e evidências detalhadas continuam obrigatórias. Não ativa agendas, altera dados reais ou realiza consultas fiscais. Configuração ausente é apresentada desligada; estados existentes não são silenciosamente modificados.",
+  "tests": [
+    "Controlador inicial 2026-11-04T01-47-50-960Z-d5a3f77a consumiu duas chamadas e terminou escalado. Retomada 2026-11-04T02-14-21-610Z-30e953f0 consumiu quatro chamadas e foi interrompida após reprovação web, preservando estado, fontes e logs originais. Nenhum desses resultados foi convertido artificialmente em aprovação.",
+    "Na mesma versão do produto: governança 85 testes, API 12353 aprovados e 6 ignorados, portal 1610 aprovados e os dois builds passaram. Evidências reaproveitadas por hashes; não são novas execuções após os ajustes exclusivos de testes.",
+    "Complemento autorizado: OperationsPage.test.jsx aplicado e aprovado em 30 testes; OperationsStageModal.test.jsx aplicado e aprovado em 9 testes. Repetição intacta de Planejamento passou em 24 testes, preservando a falha original. União conferida de 25 relatórios: 574 suítes, 6787 testes web aprovados, sem omissões ou duplicações. Logs originais permanecem preservados.",
+    "Chrome local: 11 cenários, 7 capturas desktop/celular, 149 fontes idênticas antes/depois, zero escritas, erros JavaScript ou requisições bloqueadas. Lista usa um lote sem consultas individuais; detalhe consulta somente a empresa escolhida. Não comprova latência produtiva.",
+    "Lint dos 13 arquivos web alterados com a versão do workspace: zero erros, um aviso de ref no cleanup. Tentativa anterior com ESLint da raiz falhou por incompatibilidade de plugin e não é declarada aprovada.",
+    "CI integral obrigatório no SHA final antes do merge. Inspeção pós-deploy somente leitura ainda necessária para medir Confirmado e conferir agendas desativadas. Nenhum teste local homologa atos fiscais ou envio real."
+  ],
+  "humanDecisions": [
+    "Usuário autorizou reduzir os 19 segundos do Confirmado, publicar após revisões e CI e disponibilizar a configuração sem ativar automações ou alterar dados reais.",
+    "Usuário autorizou aplicar separadamente os testes OperationsPage e OperationsStageModal e concluir com registro complementar, reaproveitando provas compatíveis, preservando falhas e teto de 40 chamadas.",
+    "Guru permanece em conferência, eNotas ativo, benefício pendente e Sintropia fora de ativação. Demais pendências do plano são preservadas."
+  ],
+  "rollback": "Reverter somente o commit deste incremento. Sem migração, alteração de dados, variáveis ou agendas; verificar saúde após eventual reversão.",
+  "validationMode": "user_authorized_complementary_record_with_compatible_evidence_and_required_final_ci",
+  "evidenceDirectory": "output/confirmado-desempenho-automacao-20261103",
+  "limitations": [
+    "Latência real será medida após publicação; redução de chamadas não equivale a tempo produtivo comprovado.",
+    "Histórico agrupado limitado a 1000 registros fica explicitamente incompleto quando excedido, sem inventar autoria ou ausência de confirmação.",
+    "Seis testes ignorados da API permanecem registrados. Requisições já iniciadas não são abortadas; respostas de contexto antigo são descartadas."
+  ]
+}

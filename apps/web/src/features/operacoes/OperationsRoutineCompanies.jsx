@@ -76,7 +76,8 @@ export function OperationsRoutineCompanies({ api, companies = EMPTY_COMPANIES, c
   return <section className="operacoes-rotinas-unico" aria-label="Rotinas">
     <h3>Rotinas</h3><div className="operacoes-rotinas-contadores">{[['enabled','Habilitadas',unavailable ? null : count(true)],['disabled','Desabilitadas',unavailable ? null : count(false)],['errors','Com erro',consultaItems ? new Set(consultaItems.map(i => i.companyId)).size : null]].map(([key,label,total]) => <button type="button" className="operacoes-quadro" aria-haspopup="dialog" key={key} onClick={() => { setGroup(key); setQuery(''); }}><span>{label}</span><strong>{total ?? '—'}</strong></button>)}</div>
     {!unavailable && unknown.length > 0 && <small>{unknown.length} a verificar</small>}
-    <small>Seleção por empresa. Agenda global e pausa SERPRO permanecem independentes.</small>
+    <small>Seleção por empresa. Agenda global, pausa do ciclo e pausa SERPRO permanecem independentes.</small>
+    <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href="/rotinas?aba=configuracao">Configurar agendas e automações</InternalLink></div>
     {pending && <p role="status">Carregando rotinas…</p>}
     {(error || companyError) && <p role="alert">{error || companyError} {retryButton}</p>}
     {consultaError && <p role="alert">{consultaError} <Button size="sm" variant="secondary" onClick={() => setConsultaRetry(n => n + 1)}>Atualizar erros de consultas</Button></p>}

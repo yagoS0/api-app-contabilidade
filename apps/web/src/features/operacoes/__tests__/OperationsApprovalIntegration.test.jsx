@@ -66,9 +66,12 @@ test('acompanhamento integrado anuncia falha de atualização sem perder o últi
 test('a conferência da empresa usa uma só camada de diálogo e não executa ao abrir', async () => {
   const { api } = fixture('PENDING');
   await openApprovals('Calculado');
+  expect(api.getOperationEvidence).toHaveBeenCalledTimes(1);
+  expect(api.getCompanyOperation).not.toHaveBeenCalled();
+  expect(api.getAuditoriaNotas).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  expect(screen.getByRole('region', { name: 'Conferir CDA' })).toHaveTextContent('Imposto salvo');
+  expect(await screen.findByRole('region', { name: 'Conferir CDA' })).toHaveTextContent('Imposto salvo');
   fireEvent.click(within(screen.getByRole('region', { name: 'Conferir CDA' })).getByRole('button', { name: 'Voltar' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled();
@@ -113,7 +116,7 @@ test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupa
   expect(screen.getByRole('checkbox', { name: 'Selecionar CDA' })).toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas' }));
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  const execute = screen.getByRole('button', { name: 'Liberar e executar' });
+  const execute = await screen.findByRole('button', { name: 'Liberar e executar' });
   expect(execute).toBeDisabled();
   expect(task.api.saveCompanyOperation).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'), { target: { value: '2026-09' } });

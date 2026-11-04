@@ -61,11 +61,16 @@ it('recusa mês inválido antes de consultar e não transforma erro em zero', as
 
 import { listarEvidenciasOperacoes, destinoErroConsulta } from '../OperationsConsultas.js';
 import { lerOperacao } from '../OperationsService.js';
+const withoutSummary = ({ calculationSummary, confirmationSummary, ...operation }) => operation;
 function evidenceDb(ids, overrides = {}) {
  const records={portalClient:ids.map(id=>({id,cnpj:'12345678000190',companyId:null})),cadastroFiscal:[],company:[],portalInvoice:[],rbtExtratoCache:[],accountingEntry:[],apuracaoSnapshot:[],pendenciaPosFechamento:[],appSetting:[],...overrides};
  const select=(row,fields)=>!row?null:!fields?row:Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v===true?row[k]:row[k]?.map(r=>select(r,v.select))]));
  const matches=(row,where={})=>Object.entries(where).every(([k,v])=>{
+  if(k==='AND') return v.every(clause=>matches(row,clause));
+  if(k==='OR') return v.some(clause=>matches(row,clause));
   if(v && typeof v==='object' && !(v instanceof Date)) {
+   if(v.path) return v.path.reduce((value,part)=>value?.[part],row[k])===v.equals;
+   if(v.startsWith) return typeof row[k]==='string' && row[k].startsWith(v.startsWith);
    if(v.in) return v.in.includes(row[k]);
    if(v.gte || v.lt) return (!v.gte || row[k]>=v.gte) && (!v.lt || row[k]<v.lt);
    return matches(row,v);
@@ -73,7 +78,7 @@ function evidenceDb(ids, overrides = {}) {
   return row[k]===v;
  });
  return Object.fromEntries(Object.entries(records).map(([table,rows])=>[table,{
-  findMany:jest.fn(async({where,select:fields})=>rows.filter(r=>matches(r,where)).map(r=>select(r,fields))),
+  findMany:jest.fn(async({where,select:fields,take})=>rows.filter(r=>matches(r,where)).slice(0,take).map(r=>select(r,fields))),
   findUnique:jest.fn(async({where,select:fields})=>select(rows.find(r=>matches(r,where)),fields)),
  }]));
 }
@@ -82,8 +87,8 @@ test('lote fornece exatamente revisões do serviço existente sem consultas por 
  const individual=await lerOperacao(db,'a','2026-10');
  for(const model of Object.values(db)) { model.findMany.mockClear(); model.findUnique.mockClear(); }
  const result=await listarEvidenciasOperacoes(db,['a','b'],'2026-10');
- expect(result.items[0]).toEqual(individual);expect(result.total).toBe(2);expect(result.items.map(i=>i.companyId)).toEqual(['a','b']);
- for(const model of Object.values(db)) {expect(model.findUnique).not.toHaveBeenCalled();expect(model.findMany.mock.calls.length).toBeLessThanOrEqual(1);}
+ expect(withoutSummary(result.items[0])).toEqual(individual);expect(result.total).toBe(2);expect(result.items.map(i=>i.companyId)).toEqual(['a','b']);
+ for(const [name,model] of Object.entries(db)) {expect(model.findUnique).not.toHaveBeenCalled();expect(model.findMany.mock.calls.length).toBeLessThanOrEqual(name==='appSetting'?2:1);}
  expect(db.portalInvoice.findMany.mock.calls[0][0].where.clientId).toEqual({in:['a','b']});
  expect(db.apuracaoSnapshot.findMany.mock.calls[0][0].where.competencia).toBe('2026-10');
 });
@@ -110,7 +115,7 @@ test('lote mantém fingerprint, revisão e bloqueios com cálculos, confirmaçã
  const compare=async competencia=>{
   const individual=await Promise.all(['a','b'].map(id=>lerOperacao(db,id,competencia)));
   const batch=await listarEvidenciasOperacoes(db,['a','b'],competencia);
-  expect(batch.items).toEqual(individual);return batch.items;
+  expect(batch.items.map(withoutSummary)).toEqual(individual);return batch.items;
  };
  const initial=await compare('2026-10');expect(initial.map(i=>i.status)).toEqual(['CONFIRMED','EXECUTED']);
  sources.portalInvoice[0].total=200;
@@ -157,7 +162,7 @@ test('correção por código desconhecido é conservadora',()=>{
    const compare = async competencia => {
     const batch = await listarEvidenciasOperacoes(tx,ids,competencia);
     const individual = await Promise.all(ids.map(id=>lerOperacao(tx,id,competencia)));
-    expect(batch.items).toEqual(individual);
+    expect(batch.items.map(withoutSummary)).toEqual(individual);
     expect(batch.total).toBe(2);
     for(const item of batch.items) { expect(item.fingerprint).toMatch(/^[a-f0-9]{64}$/); expect(item.revision).toMatch(/^[a-f0-9]{64}$/); }
     return batch.items;
@@ -188,4 +193,38 @@ test('projeção agregada não promove snapshot automático sem raiz/prova a cá
   expect(result.items[0].blocked).toMatch(/prova/);
   expect(result.items[0].calculation).toBeNull();
   expect(result.items[0].status).toBe('PENDING');
+});
+
+test('39 empresas mantêm dez leituras agrupadas e resumo monetário sem auditoria ou histórico por empresa',async()=>{
+ const ids=Array.from({length:39},(_,i)=>`empresa-${i}`);
+ const db=evidenceDb(ids,{apuracaoSnapshot:[{portalClientId:ids[0],competencia:'2026-10',receitaInterna:'123.45',receitaExterna:0}]});
+ const result=await listarEvidenciasOperacoes(db,ids,'2026-10');
+ expect(result.total).toBe(39);
+ expect(result.items[0].calculationSummary).toEqual({receitaInterna:'123.45',receitaExterna:0});
+ expect(result.items[1].calculationSummary).toBeNull();
+ expect(Object.values(db).reduce((n,model)=>n+model.findMany.mock.calls.length,0)).toBe(10);
+ for(const model of Object.values(db)) expect(model.findUnique).not.toHaveBeenCalled();
+});
+
+
+test('confirmação agrupada preserva empresa, competência e fingerprint sem usar programação como autoria',async()=>{
+ const records=[];const db=evidenceDb(['a','b'],{appSetting:records});
+ const {items}=await listarEvidenciasOperacoes(db,['a','b'],'2026-10');
+ const proof=(companyId,fingerprint,action='confirm',competencia='2026-10')=>({key:`operations_request:u:${records.length}`,value:{companyId,competencia,action,userId:'contador-confirmou',result:{companyId,competencia,status:'CONFIRMED',fingerprint,changedAt:'2026-11-01T12:00:00Z'}}});
+ records.push(proof('a',items[0].fingerprint,'schedule'),proof('a','revisao-antiga'),proof('b',items[1].fingerprint,'confirm','2026-09'),proof('fora',items[0].fingerprint));
+ records.push(proof('a',items[0].fingerprint));
+ const result=await listarEvidenciasOperacoes(db,['a','b'],'2026-10');
+ expect(result.items[0].confirmationSummary).toEqual({status:'AVAILABLE',confirmation:{by:'contador-confirmou',at:'2026-11-01T12:00:00Z',fingerprint:items[0].fingerprint}});
+ expect(result.items[1].confirmationSummary).toEqual({status:'NOT_FOUND',confirmation:null});
+ const query=db.appSetting.findMany.mock.calls.filter(([arg])=>arg.where.key.startsWith).at(-1)[0];
+ expect(query.where).toEqual({key:{startsWith:'operations_request:'},AND:[{value:{path:['competencia'],equals:'2026-10'}},{value:{path:['action'],equals:'confirm'}}],OR:[{value:{path:['companyId'],equals:'a'}},{value:{path:['companyId'],equals:'b'}}]});
+ expect(query.take).toBe(1001);
+});
+
+test('limite de confirmações deixa ausência e autoria inconclusivas, sem consultas individuais',async()=>{
+ const records=Array.from({length:1001},(_,i)=>({key:`operations_request:u:${i}`,value:{companyId:'a',competencia:'2026-10',action:'confirm'}}));
+ const db=evidenceDb(['a','b'],{appSetting:records});
+ const result=await listarEvidenciasOperacoes(db,['a','b'],'2026-10');
+ expect(result.items.map(item=>item.confirmationSummary)).toEqual([{status:'INCOMPLETE',confirmation:null},{status:'INCOMPLETE',confirmation:null}]);
+ expect(db.appSetting.findMany).toHaveBeenCalledTimes(2);expect(db.appSetting.findUnique).not.toHaveBeenCalled();
 });

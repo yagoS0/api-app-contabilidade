@@ -13,3 +13,16 @@ test.each([{items:[],total:1,competencia:'2026-10'}, {...data('2026-10'),items:[
 test('sem capacidade não simula aprovações',async()=>{
  const {result}=renderHook(()=>useOperationsEvidence(null,'2026-10',companies));await waitFor(()=>expect(result.current.error).toMatch(/indisponíveis/));expect(result.current.items).toEqual([]);
 });
+
+test('lista agrupada omitida para empresa conhecida é indisponível, nunca zero', async()=>{
+ const api={getOperationEvidence:async()=>({items:[],total:0,competencia:'2026-10'})};
+ const {result}=renderHook(()=>useOperationsEvidence(api,'2026-10',companies));
+ await waitFor(()=>expect(result.current.error).toBeTruthy());
+});
+
+test('consumidor de evidência compartilhada não repete a leitura',async()=>{
+ const api={getOperationEvidence:jest.fn()};
+ renderHook(()=>useOperationsEvidence(api,'2026-10',companies,false));
+ await act(async()=>{});
+ expect(api.getOperationEvidence).not.toHaveBeenCalled();
+});

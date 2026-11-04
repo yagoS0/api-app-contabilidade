@@ -20,6 +20,15 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
   ]);
   const executionKeys = settings.filter(s => s.value?.releaseId).map(s => `operations_execution:${s.key.slice('operations:v1:'.length, -(competencia.length + 1))}:${competencia}:${s.value.releaseId}`);
   const executions = executionKeys.length ? await db.appSetting.findMany({ where: { key: { in: executionKeys } } }) : [];
+  // One scoped read, never a per-company query. A capped result cannot establish
+  // absence: expose that uncertainty instead of borrowing mutable operation dates.
+  const confirmationLimit = 1000;
+  const confirmationRecords = await db.appSetting.findMany({ where: {
+    key: { startsWith: 'operations_request:' },
+    AND: [{ value: { path: ['competencia'], equals: competencia } }, { value: { path: ['action'], equals: 'confirm' } }],
+    OR: companyIds.map(companyId => ({ value: { path: ['companyId'], equals: companyId } })),
+  }, select: { key: true, value: true }, orderBy: [{ createdAt: 'desc' }, { key: 'desc' }], take: confirmationLimit + 1 });
+  const confirmationTruncated = confirmationRecords.length > confirmationLimit;
   const select = (row, fields) => !row ? null : !fields ? row : Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, value === true ? row[key] : Array.isArray(row[key]) ? row[key].map(r => select(r, value.select)) : select(row[key], value.select)]));
   const items = [];
   for (const companyId of companyIds) {
@@ -32,7 +41,22 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
       pendenciaPosFechamento: many(pendencias.filter(p => p.portalClientId === companyId)),
     };
     const evidence = await lerOperacao(adapter, companyId, competencia, { rootDb });
-    items.push(evidence);
+    const snapshot = snapshots.find(row => row.portalClientId === companyId && row.competencia === competencia);
+    // Presentation only, from the same snapshot used by the revision verifier.
+    // This compact projection is deliberately not a substitute for the audit,
+    // current detail read, or server-side command validation.
+    const confirmed = confirmationRecords.slice(0, confirmationLimit).map(record => record.value).find(value =>
+      value?.companyId === companyId && value.competencia === competencia && value.action === 'confirm'
+      && value.result?.companyId === companyId && value.result?.competencia === competencia
+      && value.result?.status === 'CONFIRMED' && value.result?.fingerprint === evidence.fingerprint
+      && typeof value.userId === 'string' && value.userId && typeof value.result.changedAt === 'string'
+      && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value.result.changedAt) && Number.isFinite(Date.parse(value.result.changedAt)));
+    const confirmationSummary = { status: confirmationTruncated ? 'INCOMPLETE' : confirmed ? 'AVAILABLE' : 'NOT_FOUND',
+      confirmation: !confirmationTruncated && confirmed ? { at: confirmed.result.changedAt, by: confirmed.userId, fingerprint: confirmed.result.fingerprint } : null };
+    items.push({ ...evidence, confirmationSummary, calculationSummary: snapshot ? {
+      receitaInterna: snapshot.receitaInterna ?? null,
+      receitaExterna: snapshot.receitaExterna ?? null,
+    } : null });
   }
   return { items, total: items.length, competencia };
 }
