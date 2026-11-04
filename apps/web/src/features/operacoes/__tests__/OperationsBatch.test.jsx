@@ -154,3 +154,20 @@ test('trocar competência durante aceite libera o contexto novo e ignora o resul
   expect(await screen.findByRole('dialog')).toHaveTextContent('Competência 2026-09');
   expect(api.previewOperationsBatch).toHaveBeenLastCalledWith('2026-09', null);
 });
+
+
+test('Batch embedded porta confirmação para o rodapé sem alterar aceite/competência',async()=>{
+ const {api}=fixture();const footer=document.createElement('div');footer.setAttribute('aria-label','Rodapé externo');document.body.appendChild(footer);
+ const view=render(<OperationsBatch api={api} competencia={pa} embedded footerTarget={footer}/>);
+ try {
+  const trigger=await screen.findByRole('button',{name:'Liberar rotina'});trigger.focus();fireEvent.click(trigger);
+  const detail=await screen.findByRole('region',{name:'Liberar rotina de transmissão'});
+  expect(within(detail).queryByRole('button',{name:'Cancelar'})).not.toBeInTheDocument();expect(within(footer).getByRole('button',{name:'Liberar rotina'})).toBeDisabled();
+  expect(api.acceptOperationsBatch).not.toHaveBeenCalled();fireEvent.click(within(footer).getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Liberar rotina'})).toHaveFocus();
+  expect(api.acceptOperationsBatch).not.toHaveBeenCalled();
+ } finally {view.unmount();footer.remove();}
+});
+
+test('condições e custos preservam competência digitada e retorno sem aceitar lote',async()=>{
+ const {api}=fixture();render(<OperationsBatch api={api} competencia={pa}/>);await screen.findByText(/Nenhuma liberação registrada/);fireEvent.click(screen.getByRole('button',{name:'Liberar rotina'}));const dialog=await screen.findByRole('dialog');fireEvent.change(within(dialog).getByLabelText(`Digite a competência ${pa}`),{target:{value:pa}});const trigger=within(dialog).getByRole('button',{name:'Condições e custos'});fireEvent.click(trigger);expect(within(dialog).getByRole('heading',{name:'Condições e custos'})).toHaveFocus();expect(within(dialog).getByText(/pode consultar documentos faltantes, com custo externo/)).toBeVisible();expect(within(dialog).getByText(/Resultados incertos exigem conferência e não serão repetidos/)).toBeVisible();expect(within(dialog).queryByRole('button',{name:'Liberar rotina'})).not.toBeInTheDocument();fireEvent.click(within(dialog).getByRole('button',{name:'Voltar às empresas'}));await waitFor(()=>expect(trigger).toHaveFocus());expect(within(dialog).getByLabelText(`Digite a competência ${pa}`)).toHaveValue(pa);expect(api.acceptOperationsBatch).not.toHaveBeenCalled();
+});

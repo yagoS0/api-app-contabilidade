@@ -51,10 +51,14 @@ test('GET registrado retorna label e empresas opt-in do ciclo sem duplicar sele√
  const start = source.indexOf('router.get("/rotinas"');
  const finish = source.indexOf('router.put("/rotinas"', start);
  let handler;
- new Function('router', 'requireAccountType', 'listCompanyRotinas', 'getSerproRuntimeSettings', 'AGENDA_KEYS', 'ROTINA_LABELS', 'getRoutineExecutionStatus', source.slice(start, finish))({ get: (_p, _g, h) => { handler = h; } }, () => null, listCompanyRotinas, async () => ({ rotinas: {} }), AGENDA_KEYS, ROTINA_LABELS, async () => ({}));
+ const agendaEventos = { schemaVersion: 1, revision: 'agenda-r1', executionMode: 'LEGADO', relativeConsumerReady: false };
+ const lerAgendaEventosGlobal = jest.fn(async () => agendaEventos);
+ new Function('router', 'requireAccountType', 'listCompanyRotinas', 'getSerproRuntimeSettings', 'AGENDA_KEYS', 'ROTINA_LABELS', 'getRoutineExecutionStatus', 'lerAgendaEventosGlobal', 'prisma', source.slice(start, finish))({ get: (_p, _g, h) => { handler = h; } }, () => null, listCompanyRotinas, async () => ({ rotinas: {} }), AGENDA_KEYS, ROTINA_LABELS, async () => ({}), lerAgendaEventosGlobal, prisma);
  const res = { json: jest.fn() };
  await handler({ auth: { user: { role: 'contador' } } }, res);
  const payload = res.json.mock.calls[0][0];
+ expect(lerAgendaEventosGlobal).toHaveBeenCalledWith(prisma);
+ expect(payload.agendaEventos).toBe(agendaEventos);
  expect(payload.rotinas.find(r => r.key === 'simples_coleta_calculo')).toEqual({ key: 'simples_coleta_calculo', label: 'Coleta e c√°lculo do Simples' });
  expect(payload.empresas[0].cicloSimples).toEqual({ enabled: true, fontes: ['NFSE'], applicableCurrentRegime: true, configurationValid: true });
  expect(payload.empresas[0].rotinas.simples_coleta_calculo).toBeUndefined();

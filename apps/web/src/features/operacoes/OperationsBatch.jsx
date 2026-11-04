@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -6,17 +7,20 @@ import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { taskStatuses } from '../tasks/taskLabels';
 
 const labels = { WAITING: 'Não iniciada', STARTED: 'Em processamento', ATTENTION: 'Resultado a conferir', DONE: 'Processada' };
-function BatchDialog({ embedded, titulo, children, rodape, ...props }) {
+function BatchDialog({ footerTarget, embedded, titulo, children, rodape, ...props }) {
   const heading = useRef(null);
   useEffect(() => { if (embedded) heading.current?.focus(); }, [embedded]);
-  return embedded ? <section className="operacoes-conferencia-detalhe" aria-label={titulo}><h3 ref={heading} tabIndex={-1}>{titulo}</h3>{children}<div className="operacoes-acoes operacoes-destinos">{rodape}</div></section>
+  return embedded ? <section className="operacoes-conferencia-detalhe" aria-label={titulo}><h3 ref={heading} tabIndex={-1}>{titulo}</h3>{children}{footerTarget ? createPortal(<div className="operacoes-acoes operacoes-destinos">{rodape}</div>,footerTarget) : <div className="operacoes-acoes operacoes-destinos">{rodape}</div>}</section>
     : <Modal titulo={titulo} rodape={rodape} {...props}>{children}</Modal>;
 }
-export function OperationsBatch({ api, competencia, disabled = false, onChanged, embedded = false, onBusyChange, onDetailChange }) {
+export function OperationsBatch({ api, competencia, disabled = false, onChanged, embedded = false, onBusyChange, onDetailChange, footerTarget }) {
   const [preview, setPreview] = useState(null), [batches, setBatches] = useState([]), [error, setError] = useState('');
   const [busy, setBusy] = useState(false), [reading, setReading] = useState(true), [confirmation, setConfirmation] = useState('');
   const [task, setTask] = useState(null), [taskError, setTaskError] = useState('');
   const context = useRef(null), pending = useRef(false), sequence = useRef(0);
+  const [conditions,setConditions]=useState(false);
+  const conditionsTrigger=useRef(null),conditionsHeading=useRef(null);
+  useEffect(()=>{if(conditions)conditionsHeading.current?.focus();},[conditions]);
   const trigger = useRef(null), wasDetail = useRef(false);
   const taskRequest = useRef(0);
   const detail = Boolean(preview || task);
@@ -53,7 +57,7 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
       if (context.current !== origin) return;
       const p = response?.preview;
       if (response?.ok !== true || !p?.id || p.competencia !== competencia || !Array.isArray(p.items) || !Array.isArray(p.blocked)) throw Error('Prévia não confirmada. Atualize antes de liberar.');
-      setPreview(p); setConfirmation('');
+      setConditions(false);setPreview(p); setConfirmation('');
     } catch (e) { if (context.current === origin) setError(e.message || 'Não foi possível preparar a liberação.'); }
     finally { if (context.current === origin) { pending.current = false; setBusy(false); } }
   }
@@ -102,16 +106,20 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
         {batch.canResume && <Button variant="secondary" disabled={disabled || busy} onClick={() => prepare(batch.id)}>Conferir não iniciadas</Button>}</div>
     </details>)}
     </>}
-    {preview && <BatchDialog embedded={embedded} titulo={preview.batchId ? 'Retomar não iniciadas' : 'Liberar rotina de transmissão'} ocupado={busy} aoFechar={() => !busy && setPreview(null)} className="operacoes-dialogo"
-      rodape={<><Button variant="secondary" disabled={busy} onClick={() => setPreview(null)}>Cancelar</Button><Button disabled={busy || disabled || !preview.items.length || confirmation !== competencia} onClick={accept}>{preview.batchId ? 'Retomar não iniciadas' : 'Liberar rotina'}</Button></>}>
-      <p>Competência {competencia} · {preview.items.length} empresa(s) elegível(is) · {preview.blocked.length} bloqueada(s).</p>
-      <p>O servidor confere todas as empresas do seu acesso. Esta liberação transmite as apurações confirmadas da prévia e pode consultar documentos faltantes, com custo externo. Confirmações posteriores ficam fora deste lote.</p>
+    {preview && <BatchDialog footerTarget={footerTarget} embedded={embedded} titulo={preview.batchId ? 'Retomar não iniciadas' : 'Liberar rotina de transmissão'} ocupado={busy} aoFechar={() => !busy && setPreview(null)} className="operacoes-dialogo"
+      rodape={conditions ? <Button variant="secondary" onClick={()=>{setConditions(false);requestAnimationFrame(()=>conditionsTrigger.current?.focus({preventScroll:true}));}}>Voltar às empresas</Button> : <><Button variant="secondary" disabled={busy} onClick={() => setPreview(null)}>Cancelar</Button><Button disabled={busy || disabled || !preview.items.length || confirmation !== competencia} onClick={accept}>{preview.batchId ? 'Retomar não iniciadas' : 'Liberar rotina'}</Button></>}>
+      <div className="operacoes-acoes"><span>Competência {competencia} · {preview.items.length} elegível(is) · {preview.blocked.length} bloqueada(s)</span><Button ref={conditionsTrigger} variant="secondary" size="sm" onClick={()=>setConditions(true)}>Condições e custos</Button></div>
+      <p>Transmite confirmadas; consultas podem ter custo.</p>
+      {conditions && <section aria-label="Condições e custos"><h3 tabIndex={-1} ref={conditionsHeading}>Condições e custos</h3>      <p>O servidor confere todas as empresas do seu acesso. Esta liberação transmite as apurações confirmadas da prévia e pode consultar documentos faltantes, com custo externo. Confirmações posteriores ficam fora deste lote.</p>
       <p>O trabalho aceito continua após fechar o navegador. Não envia guias ao cliente, não contabiliza nem retifica automaticamente. Resultados incertos exigem conferência e não serão repetidos.</p>
+</section>}
+      <div hidden={conditions}>
       {!preview.items.length && <p>Nenhuma empresa elegível para esta liberação.</p>}
-      <ul>{preview.items.map(i => <li key={i.companyId}>{i.name} · Elegível</li>)}{preview.blocked.map(i => <li key={i.companyId}>{i.name} · {i.reason}</li>)}</ul>
+      <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas da prévia de liberação" tabIndex={0}><table className="operacoes-tabela operacoes-liberacao-tabela"><thead><tr><th>Empresa</th><th>Situação</th></tr></thead><tbody>{preview.items.map(i => <tr key={i.companyId}><th scope="row">{i.name}</th><td>Elegível</td></tr>)}{preview.blocked.map(i => <tr key={i.companyId}><th scope="row">{i.name}</th><td>{i.reason}</td></tr>)}</tbody></table></div>
       <div className="operacoes-programacao"><label>Digite a competência {competencia}<input value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={busy} placeholder="AAAA-MM" /></label></div>
+      </div>
     </BatchDialog>}
-    {task && <BatchDialog embedded={embedded} titulo="Acompanhamento da tarefa" aoFechar={closeTask} rodape={<Button variant="secondary" onClick={closeTask}>{embedded ? 'Voltar' : 'Fechar'}</Button>}>
+    {task && <BatchDialog footerTarget={footerTarget} embedded={embedded} titulo="Acompanhamento da tarefa" aoFechar={closeTask} rodape={<Button variant="secondary" onClick={closeTask}>{embedded ? 'Voltar' : 'Fechar'}</Button>}>
       {taskError && <p role="alert">{taskError} Os últimos dados da tarefa foram preservados.</p>}
       <p>{task.descricao || 'Transmissão de apurações'} · {taskStatuses[task.status] || 'A verificar'}</p><p>{task.processadas ?? 0}/{task.total ?? '—'} itens processados</p>
       {task.erroMensagem && <p role="alert">{task.erroMensagem}</p>}<Button variant="secondary" onClick={() => openTask(task.jobId)}>Atualizar tarefa</Button>

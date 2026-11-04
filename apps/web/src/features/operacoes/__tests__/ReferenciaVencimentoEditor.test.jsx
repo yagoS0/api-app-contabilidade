@@ -1,0 +1,30 @@
+import React from 'react';
+import { fireEvent,render,screen,waitFor } from '@testing-library/react';
+import { ReferenciaVencimentoEditor } from '../ReferenciaVencimentoEditor';
+import { criarReferenciaVencimentoMock } from '../../../api/mock/referenciaVencimentoMock';
+jest.mock('../../configuracoes/ProtecaoEdicao.shared',()=>({useEdicaoPendente:jest.fn()}));
+const identity={tributo:'DAS',tipoPeriodo:'MENSAL',competencia:'2026-10'};
+function setup(overrides={},canEdit=true){const api={...criarReferenciaVencimentoMock({canWrite:id=>id==='empresa-teste'}),...overrides};render(<ReferenciaVencimentoEditor api={api} companyId="empresa-teste" companyName="Empresa fictícia" tributo="DAS" canEdit={canEdit}/>);return api;}
+async function selectPeriod(){fireEvent.change(screen.getByLabelText('Tipo do período'),{target:{value:'MENSAL'}});fireEvent.change(screen.getByLabelText('Período da referência'),{target:{value:'2026-10'}});fireEvent.click(screen.getByText('Consultar referência salva'));await screen.findByText('Sem referência');}
+async function fill(){await selectPeriod();fireEvent.click(screen.getByText('Informar vencimento'));fireEvent.change(screen.getByLabelText('Vencimento'),{target:{value:'2026-11-20'}});fireEvent.change(screen.getByLabelText('Fonte / observação'),{target:{value:'Conferência fictícia'}});fireEvent.click(screen.getByLabelText(/Conferi esta data/));fireEvent.click(screen.getByText('Revisar referência'));}
+test('período exige escolha e readonly não grava',async()=>{setup({},false);expect(screen.getByText('Consultar referência salva')).toBeDisabled();await selectPeriod();expect(screen.queryByText('Informar vencimento')).not.toBeInTheDocument();});
+test('prévia explícita salva identidade, origem e revisão sem habilitar busca',async()=>{const a=setup();const save=jest.spyOn(a,'saveDueDateReference');await fill();expect(save).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar referência'));await screen.findByText(/Referência salva somente/);expect(save).toHaveBeenCalledTimes(1);expect(save.mock.calls[0]).toEqual(['empresa-teste',expect.objectContaining({identidade:identity,expectedRevision:0,origem:'CONFIRMADA_CONTADOR',confirmacao:true,dataCivil:'2026-11-20'})]);expect(screen.getByText(/Busca automática indisponível/)).toBeInTheDocument();await waitFor(()=>expect(screen.getByRole('status')).toHaveFocus());});
+test('resposta incerta preserva pedido e não permite descarte via leitura',async()=>{const base=criarReferenciaVencimentoMock({canWrite:()=>true});let first=true;const save=jest.fn(async(...args)=>{const response=await base.saveDueDateReference(...args);if(first){first=false;throw Error('503');}return response;});setup({...base,saveDueDateReference:save});await fill();fireEvent.click(screen.getByText('Confirmar referência'));await screen.findByText(/Resultado incerto/);expect(screen.getByText('Voltar à edição')).toBeDisabled();fireEvent.click(screen.getByText('Conferir leitura salva'));await screen.findByText(/Leitura conferida/);expect(save).toHaveBeenCalledTimes(1);fireEvent.click(screen.getByText('Conferir com a mesma solicitação'));await screen.findByText(/Referência salva somente/);expect(save.mock.calls[1][1]).toEqual(save.mock.calls[0][1]);});
+test('erro de GET não equivale a ausência',async()=>{setup({getDueDateReference:jest.fn().mockRejectedValue(Error('Leitura indisponível'))});fireEvent.change(screen.getByLabelText('Tipo do período'),{target:{value:'MENSAL'}});fireEvent.change(screen.getByLabelText('Período da referência'),{target:{value:'2026-10'}});fireEvent.click(screen.getByText('Consultar referência salva'));await screen.findByRole('alert');expect(screen.queryByText('Informar vencimento')).not.toBeInTheDocument();});
+test('conflito preserva edição mas exige descarte e nova leitura',async()=>{setup({saveDueDateReference:jest.fn().mockRejectedValue(Object.assign(Error('Mudou'),{code:'REFERENCE_CHANGED'}))});await fill();fireEvent.click(screen.getByText('Confirmar referência'));await screen.findByText(/Descarte a edição/);expect(screen.getByText('Confirmar referência')).toBeDisabled();expect(screen.getByText('20/11/2026')).toBeInTheDocument();fireEvent.click(screen.getByText('Descartar edição'));await waitFor(()=>expect(screen.queryByText('Conferir referência')).not.toBeInTheDocument());});
+
+test('revisão sinaliza etapa própria e volta preservando referência sem escrita',async()=>{const api=criarReferenciaVencimentoMock({canWrite:()=>true}),save=jest.spyOn(api,'saveDueDateReference'),onReview=jest.fn();render(<ReferenciaVencimentoEditor api={api} companyId="empresa-teste" companyName="Empresa fictícia" tributo="DAS" canEdit onReview={onReview}/>);await fill();expect(onReview).toHaveBeenLastCalledWith(true);expect(screen.getByRole('heading',{name:'Conferir referência'})).toHaveFocus();fireEvent.click(screen.getByText('Voltar à edição'));expect(onReview).toHaveBeenLastCalledWith(false);expect(screen.getByLabelText('Vencimento')).toHaveValue('2026-11-20');expect(screen.getByLabelText('Fonte / observação')).toHaveValue('Conferência fictícia');expect(save).not.toHaveBeenCalled();});
+
+test('409 restaura foco no tipo do período após descartar sem nova escrita',async()=>{
+ const save=jest.fn().mockRejectedValue(Object.assign(Error('Revisão mudou'),{status:409,code:'REFERENCE_CHANGED'}));
+ const api=setup({saveDueDateReference:save});
+ await fill();fireEvent.click(screen.getByRole('button',{name:'Confirmar referência',exact:true}));
+ await screen.findByText(/Descarte a edição e releia/);
+ expect(screen.getByRole('button',{name:'Confirmar referência',exact:true})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Descartar edição',exact:true}));
+ const period=await screen.findByRole('combobox',{name:/Tipo do período/});
+ await waitFor(()=>expect(period).toHaveFocus());
+ expect(period).toHaveValue('MENSAL');expect(screen.getByLabelText('Período da referência')).toHaveValue('2026-10');
+ expect(screen.getByRole('button',{name:'Consultar referência salva',exact:true})).toBeEnabled();
+ expect(save).toHaveBeenCalledTimes(1);expect(api.saveDueDateReference).toBe(save);
+});

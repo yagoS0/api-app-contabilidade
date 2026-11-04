@@ -1,3 +1,4 @@
+import { AgendaEventosEditor } from './AgendaEventosEditor';
 import { CompanyGuideTracking } from './CompanyGuideTracking';
 import { CompanyGuideDelivery } from './CompanyGuideDelivery';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -93,6 +94,8 @@ export function CompanySimplesCycle({ api, companyId, canEdit, configurationPend
 
 export function CompanyAutomation({ api, companyId, canEdit }) {
   const [data, setData] = useState(null), [values, setValues] = useState({});
+  const [eventReview,setEventReview]=useState(false);
+  const [eventDirty,setEventDirty]=useState(false),[area,setArea]=useState('configuracao'),[opened,setOpened]=useState({});
   const [error, setError] = useState(''), [saved, setSaved] = useState('');
   const [busy, setBusy] = useState(false), [preview, setPreview] = useState(false);
   const [paused, setPaused] = useState(false), [reason, setReason] = useState('');
@@ -127,8 +130,8 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
   const cicloChanged = cicloSimples.enabled !== (data?.cicloSimples?.enabled === true) || JSON.stringify([...cicloSimples.fontes].sort()) !== JSON.stringify([...(data?.cicloSimples?.fontes || [])].sort());
   const cicloInvalid = cicloSimples.enabled && !cicloSimples.fontes.length;
   const hasChanges = !!data && (changes.length > 0 || policyChanged || remindersChanged || automationChanged || cicloChanged || envioChanged || trackingChanged);
-  const locked = !canEdit || busy || preview || !!pending.current || reloadRequired;
-  useEdicaoPendente(hasChanges);
+  const locked = !canEdit || busy || preview || !!pending.current || reloadRequired || eventDirty;
+  useEdicaoPendente(hasChanges || eventDirty);
   const load = useCallback(async (event) => {
     const current = ++generation.current;
     focusRequest.current = event?.type ? { target: 'loaded', generation: current, origin: document.activeElement } : null;
@@ -146,6 +149,19 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
     finally { if (generation.current === current) setBusy(false); }
   }, [api, companyId]);
   useEffect(() => { const generationDaExecucao = generation; setData(null); setSaved(''); load(); return () => { generationDaExecucao.current++; }; }, [load, companyId, api]);
+  function acceptEventPolicy(result) {
+    // Exclusive parameters save returns the complete company snapshot. Keep the editor
+    // mounted so its confirmation and focus remain available after the successful save.
+    if(result?.companyId!==companyId||!result.revision||!Array.isArray(result.rotinas)) {
+      setError('Parâmetros conferidos; recarregue para conferir as demais configurações da empresa.');
+      setReloadRequired(true);return;
+    }
+    setData(result);setValues(Object.fromEntries(result.rotinas.map(r=>[r.key,r.enabled])));
+    setPaused(result.serproPolicy?.paused===true);setReason('');
+    setReminders(result.lembretes?.enabled===true);setTracking(result.acompanhamentoGuias?.enabled===true);setEnvioGuias(result.envioGuias?.enabled===true);
+    setAutomationPaused(result.automationPolicy?.paused===true);setAutomationReason('');
+    setCicloSimples({enabled:result.cicloSimples?.enabled===true,fontes:result.cicloSimples?.fontes||[]});
+  }
   async function save() {
     if (!canEdit || busy || reloadRequired || !preview || !hasChanges || cicloInvalid || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())) return;
     const current = generation.current;
@@ -179,15 +195,18 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
     } }
     finally { if (generation.current === current) setBusy(false); }
   }
+  const areas=[['configuracao','Configuração'],['envios','Envio de guias'],['acompanhamento','Acompanhamento'],['ciclo','Ciclo do Simples'],['inss','INSS manual']];
   return <section className="operacoes" aria-label="Automação da empresa">
+    <nav hidden={eventReview} className="automation-section-nav" aria-label="Áreas de automação">{areas.filter(([key])=>key!=='ciclo'||cicloApplicable||data?.cicloSimples).map(([key,label])=><Button key={key} variant={area===key?'primary':'secondary'} disabled={busy||preview||Boolean(pending.current)||hasChanges||eventDirty} aria-pressed={area===key} onClick={()=>{setArea(key);setOpened(old=>({...old,[key]:true}));}}>{label}</Button>)}</nav>
+    <div hidden={area!=='configuracao'}>
     <h2 ref={headingRef} tabIndex={-1}>Automação</h2>
     <p>Configure os lembretes de guias e as consultas automáticas desta empresa.</p>
-    {error && <p role="alert" ref={errorRef} tabIndex={-1}>{error} <Button variant="secondary" onClick={load} disabled={busy}>Recarregar configuração</Button></p>}
+    {error && <p role="alert" ref={errorRef} tabIndex={-1}>{error} <Button variant="secondary" onClick={load} disabled={busy||eventDirty||(Boolean(pending.current)&&!reloadRequired)}>Recarregar configuração</Button></p>}
     {saved && <p role="status" ref={savedRef} tabIndex={-1}>{saved}</p>}
     {!data && !error && <p role="status">Carregando configuração…</p>}
     {data && <>
-      <section className="operacoes-previa" aria-label="Pausa das automações" style={{ marginBlock: 20 }}>
-        <h3>Ciclo fiscal e guias</h3>
+      <div hidden={eventReview}>
+      <table className="automation-settings-table"><tbody><tr><th scope="row">Pausa das automações</th><td>
         <p>{!data.automationPolicy || !data.globalAutomationPolicy ? 'Estado das pausas indisponível. Recarregue para conferir.'
           : data.globalAutomationPolicy.paused ? 'Automações bloqueadas pela pausa geral.'
             : data.automationPolicy.paused ? 'Automações pausadas nesta empresa.' : 'Sem pausa: execução depende das seleções e agendas salvas.'}</p>
@@ -202,48 +221,46 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         {automationChanged && <label style={{ display: 'grid', gap: 8 }}>Motivo da alteração das automações
           <textarea value={automationReason} maxLength={300} rows={2} disabled={locked} onChange={e => setAutomationReason(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', font: 'inherit' }} />
         </label>}
-      </section>
-      <section className="operacoes-previa" aria-label="Coleta e cálculo do Simples" style={{ marginBlock: 20 }}>
-        <h3>Coleta e cálculo do Simples</h3>
+      </td></tr>
+      <tr><th scope="row">Coleta e cálculo do Simples</th><td>
         {!cicloApplicable && <p>O cadastro atual não confirma Simples Nacional. A seleção salva é preservada: o histórico fiscal determina se uma competência passada pode executar. Você pode desativar a seleção; nova ativação e alteração das fontes exigem conferência do cadastro atual.</p>}
           <label className="operacoes-rotina"><input type="checkbox" checked={cicloSimples.enabled} disabled={locked || !data.cicloSimples || (!cicloApplicable && !data.cicloSimples.enabled)} onChange={e => { setCicloSimples(v => ({ ...v, enabled: e.target.checked })); setSaved(''); }} /><span>Selecionar empresa para coleta e cálculo</span></label>
           {!data.cicloSimples && <p>Configuração indisponível. Recarregue antes de alterar.</p>}
           <fieldset disabled={locked || !data.cicloSimples || !cicloApplicable}><legend>Fontes de notas</legend>{[['NFE', 'NF-e'], ['NFSE', 'NFS-e']].map(([key, label]) => <label className="operacoes-rotina" key={key}><input type="checkbox" checked={cicloSimples.fontes.includes(key)} onChange={e => { setCicloSimples(v => ({ ...v, fontes: e.target.checked ? [...v.fontes, key] : v.fontes.filter(f => f !== key) })); setSaved(''); }} /><span>{label}</span></label>)}</fieldset>
           {cicloInvalid && <p role="alert">Selecione ao menos uma fonte para ativar.</p>}
-          <p>Coleta matinal do dia 1 ao dia 8. Após a coleta final completa, um cálculo por revisão fica aguardando conferência do contador. Dados incompletos ou erros exigem revisão; não há transmissão nesta etapa.</p>
+          <p>Coleta matinal até o dia 8 do mês. Após a coleta final completa, um cálculo por revisão fica aguardando conferência do contador. Dados incompletos ou erros exigem revisão; não há transmissão nesta etapa.</p>
           <p>Agenda compartilhada em Rotinas → Configuração. Selecionar esta empresa não liga a agenda nem remove as pausas.</p>
-      </section>
-      <section className="operacoes-previa" aria-label="Envio automático de guias" style={{ marginBlock: 20 }}>
-        <h3>Envio automático de guias</h3>
+      </td></tr>
+      <tr><th scope="row">Envio automático de guias</th><td>
         <label className="operacoes-rotina"><input type="checkbox" checked={envioGuias} disabled={locked || !data.envioGuias || (!data.envioGuias.applicableCurrentRegime && !data.envioGuias.enabled)} onChange={e => { setEnvioGuias(e.target.checked); setSaved(''); }} /><span>Selecionar empresa para envio automático de guias</span></label>
         {!data.envioGuias && <p>Configuração indisponível. Recarregue antes de alterar.</p>}
         <p>Envia quando as guias esperadas estão disponíveis. No dia 13, antecipado ao dia útil anterior, envia as válidas e registra as faltantes. Guias com vencimento anterior podem sair dois dias úteis antes.</p>
         <p>A agenda é independente em Rotinas → Configuração. Salvar não envia documentos nem ativa a agenda. Pausas gerais e desta empresa continuam valendo; erros e resultados incertos exigem conferência.</p>
-      </section>
-      <section className="operacoes-previa" aria-label="Lembretes de guias" style={{ marginBlock: 20 }}>
-        <h3>Lembretes de guias</h3>
+      </td></tr>
+      <tr><th scope="row">Lembretes de guias</th><td>
         <label className="operacoes-rotina">
           <input type="checkbox" checked={reminders} disabled={locked || !data.lembretes} onChange={e => { setReminders(e.target.checked); setSaved(''); }} />
           <span>Selecionar empresa para lembretes no WhatsApp</span>
         </label>
         <label className="operacoes-rotina"><input type="checkbox" checked={tracking} disabled={locked || !data.acompanhamentoGuias} onChange={e => { setTracking(e.target.checked); setSaved(''); }} /><span>Adotar acompanhamento em dois dias úteis</span></label>
-        <p>{tracking ? 'Confirmação dois dias úteis antes e no dia de comunicação do vencimento. Dois dias úteis depois, uma consulta fiscal por guia ainda não confirmada nem recalculada e oferta de atualização quando elegível.' : data.acompanhamentoGuias?.politica ? 'Novo acompanhamento desligado nesta empresa.' : 'Fluxo anterior: um dia útil antes, no dia útil do vencimento e um dia útil depois.'} O vencimento nominal do documento é preservado.</p>
+        <p>{data.agendaEventos?.executionMode === 'RELATIVO_V1' ? 'Calendário salvo dos lembretes: dias úteis e horários por imposto, conforme participação. Consulta de pagamento em D+2 úteis é independente do aviso posterior e continua sujeita à adesão e às pausas.' : tracking ? 'Confirmação dois dias úteis antes e no dia de comunicação do vencimento. Dois dias úteis depois, uma consulta fiscal por guia ainda não confirmada nem recalculada e oferta de atualização quando elegível.' : data.acompanhamentoGuias?.politica ? 'Novo acompanhamento desligado nesta empresa.' : 'Fluxo anterior: um dia útil antes, no dia útil do vencimento e um dia útil depois.'} O vencimento nominal do documento é preservado.</p>
         <p>O novo acompanhamento autoriza no máximo uma consulta automática por guia, sujeita aos limites e custos SERPRO existentes. Falha ou resultado inconclusivo exige conferência, sem repetição. A adesão não seleciona a empresa para WhatsApp nem liga a agenda global.</p>
         <p>{!data.lembretes ? 'Configuração de lembretes indisponível. Recarregue antes de alterar.' : data.lembretes.agenda?.enabled
-          ? `Agenda global: diariamente às ${String(data.lembretes.agenda.hour).padStart(2, '0')}:00 · Brasília.`
+          ? data.agendaEventos?.executionMode === 'RELATIVO_V1' ? 'Agenda de lembretes habilitada; horários dos marcos definidos por imposto. Pausas e elegibilidade continuam valendo.' : `Marcos de vencimento às ${String(data.lembretes.agenda.hour).padStart(2, '0')}:00 · Brasília, conforme adesão salva.`
           : 'Agenda global desligada ou incompleta. Selecionar esta empresa não ativa a agenda.'}</p>
         <p>Horário em Rotinas → Configuração → Agenda. O envio exige guia válida, entrega comprovada e contato autorizado; pagamento confirmado e débito automático impedem lembretes incompatíveis.</p>
-      </section>
+      </td></tr>
+</tbody></table>
       {data.regime && <p>Regime: {({ SIMPLES: 'Simples Nacional', LUCRO_PRESUMIDO: 'Lucro Presumido', LUCRO_REAL: 'Lucro Real' })[data.regime] || data.regime}</p>}
       {data.unavailableReason && <p role="alert">{data.unavailableReason}</p>}
-      <div className="operacoes-lista">{data.rotinas.filter(r => r.applicable !== false).map(r => <label className="operacoes-rotina" key={r.key}>
+      <table className="automation-settings-table" aria-label="Adesões às rotinas"><thead><tr><th>Rotina</th><th>Participação e agenda</th></tr></thead><tbody>{data.rotinas.filter(r => r.applicable !== false).map(r => <tr key={r.key}><th scope="row">{r.label}</th><td><label className="operacoes-rotina">
         <input type="checkbox" checked={values[r.key] === true} disabled={locked} onChange={e => { setSaved(''); setValues(v => ({ ...v, [r.key]: e.target.checked })); }} />
         <span><strong>{r.label}</strong><small>{r.agenda?.enabled && r.agenda.hour != null && r.agenda.day != null
-          ? `${r.agenda.frequency === 'DAILY' ? 'Diariamente' : `Dia ${r.agenda.day}`} às ${String(r.agenda.hour).padStart(2, '0')}:00 · Brasília`
+          ? `${r.agenda.frequency === 'DAILY' ? 'Execução por elegibilidade'  : `Dia ${r.agenda.day}`} às ${String(r.agenda.hour).padStart(2, '0')}:00 · Brasília`
           : 'Agenda da rotina não habilitada ou incompleta'}</small></span>
-      </label>)}</div>
+      </label></td></tr>)}</tbody></table>
       <p>Ativar não dispensa procuração válida nem os limites da integração. Documentos já disponíveis continuam sendo reaproveitados pelas rotinas atuais.</p>
-      {data.serproPolicy && <section className="operacoes-previa" aria-label="Pausa SERPRO" style={{ marginBlock: 20 }}>
+      {data.serproPolicy && <table className="automation-settings-table" aria-label="Pausa SERPRO"><tbody><tr><th scope="row">Operações SERPRO</th><td>
         <label className="operacoes-rotina">
           <input type="checkbox" checked={paused} disabled={locked} onChange={e => { setPaused(e.target.checked); setReason(''); setSaved(''); }} />
           <span>Pausar operações SERPRO</span>
@@ -254,7 +271,7 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
           Motivo da {paused ? 'pausa' : 'retomada'}
           <textarea value={reason} maxLength={300} rows={2} disabled={locked} onChange={e => setReason(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', font: 'inherit' }} />
         </label>}
-      </section>}
+      </td></tr></tbody></table>}
       {!canEdit ? <p>Seu acesso permite visualizar esta configuração.</p> : preview ? <div className="operacoes-previa">
         <h3 ref={previewRef} tabIndex={-1}>Conferir alteração</h3>
         {automationChanged && <p>{automationPaused ? 'Pausar automações desta empresa.' : 'Retomar automações desta empresa conforme pausa geral, seleções e agendas salvas.'} Motivo: {automationReason.trim()}</p>}
@@ -268,10 +285,13 @@ export function CompanyAutomation({ api, companyId, canEdit }) {
         <Button onClick={save} disabled={busy || reloadRequired}>{busy ? 'Salvando…' : 'Salvar configuração'}</Button>{' '}
         <Button variant="secondary" disabled={busy || !!pending.current} onClick={() => { requestFocus('review'); setPreview(false); }}>Voltar à edição</Button>
       </div> : <Button ref={reviewRef} disabled={busy || reloadRequired || !hasChanges || cicloInvalid || (policyChanged && !reason.trim()) || (automationChanged && !automationReason.trim())} onClick={() => { requestFocus('preview'); setPreview(true); }}>Conferir alterações</Button>}
-      {api?.getCompanyGuideTracking && <CompanyGuideTracking key={companyId} api={api} companyId={companyId} />}
-      {api?.getCompanyGuideDelivery && <CompanyGuideDelivery api={api} companyId={companyId} />}
-      {(data.cicloSimples || data.regime === 'SIMPLES') && <CompanySimplesCycle key={companyId} api={api} companyId={companyId} canEdit={canEdit} configurationPending={hasChanges || busy} />}
+      </div>
+      <AgendaEventosEditor onReview={setEventReview} key={companyId} snapshot={data} api={api} companyId={companyId} canEdit={canEdit} disabled={hasChanges||busy||preview||Boolean(pending.current)} onDirty={setEventDirty} onSaved={acceptEventPolicy}/>
     </>}
-    <CompanyManualInss key={companyId} api={api} companyId={companyId} canEdit={canEdit} />
+    </div>
+    <div hidden={area!=='envios'}>{opened.envios&&(api?.getCompanyGuideDelivery?<CompanyGuideDelivery api={api} companyId={companyId}/>:<p role="status">Envio de guias indisponível nesta conexão.</p>)}</div>
+    <div hidden={area!=='acompanhamento'}>{opened.acompanhamento&&(api?.getCompanyGuideTracking?<CompanyGuideTracking key={companyId} api={api} companyId={companyId}/>:<p role="status">Acompanhamento indisponível nesta conexão.</p>)}</div>
+    <div hidden={area!=='ciclo'}>{opened.ciclo&&<CompanySimplesCycle key={companyId} api={api} companyId={companyId} canEdit={canEdit} configurationPending={hasChanges||busy||eventDirty}/>}</div>
+    <div hidden={area!=='inss'}>{opened.inss&&<CompanyManualInss key={companyId} api={api} companyId={companyId} canEdit={canEdit}/>}</div>
   </section>;
 }

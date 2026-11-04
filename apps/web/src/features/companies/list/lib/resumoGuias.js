@@ -3,7 +3,7 @@ import { getComplianceTags } from '../components/renderCompanyCard';
 // Counts coverage nodes, not PDFs: one consolidated document can cover several
 // obligations. Parcel agreements have their own projection and remain separate.
 export function resumirGuias(compliance) {
-  const tags = getComplianceTags(compliance).filter(tag => tag.key !== 'parcDas');
+  const tags = getComplianceTags(compliance).filter(tag => tag.key !== 'parcDas' && !(tag.key === 'inss' && tag.state === 'na'));
   const known = compliance && !compliance.erro && !compliance.error
     && ['das', 'inss', 'irpj', 'csll', 'pisCofins', 'iss'].some(key => typeof compliance[key]?.required === 'boolean');
   const items = tags.map(tag => {
@@ -11,6 +11,7 @@ export function resumirGuias(compliance) {
     const state = node && !node.state && typeof node.ok !== 'boolean' ? 'unknown' : tag.state;
     const paga = String(node?.paymentStatus || '').toUpperCase() === 'PAID';
     const dispensada = ['vazio', 'na'].includes(state);
+    const dispensaManual = state === 'vazio' && Boolean(node?.vazioPor && node?.vazioEm);
     const disponivel = ['gerada', 'enviada', 'falhou'].includes(state);
     const enviada = (node?.communicationState || state) === 'enviada';
     const falha = (node?.communicationState || state) === 'falhou';
@@ -18,7 +19,8 @@ export function resumirGuias(compliance) {
     return { ...tag, state, paga, pagamento: paga ? 'Confirmado' : 'Não confirmado', grupo: paga ? 'paga' : enviada ? 'enviada' : disponivel ? 'disponivel' : state === 'missing' ? 'pendente' : 'verificar', dispensada, disponivel, enviada, falha, revisar,
       faltante: state === 'missing',
       envioPendente: disponivel && !enviada,
-      documento: dispensada ? 'Dispensado' : disponivel ? 'Disponível' : state === 'missing' ? 'Faltante' : 'A conferir',
+      dispensaManual,
+      documento: dispensada ? (state === 'na' ? 'Não aplicável' : dispensaManual ? 'Dispensado' : 'Ausência registrada') : disponivel ? 'Disponível' : state === 'missing' ? 'Faltante' : 'A conferir',
       comunicacao: enviada ? 'Enviada' : falha ? 'Falhou' : disponivel ? 'Pendente' : '—',
     };
   });

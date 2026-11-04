@@ -1,3 +1,4 @@
+import { lerAgendaEventosEmpresa, validarPatchAgendaEmpresa, gravarAgendaEventosEmpresaNoTx } from './AgendaEventosService.js';
 import { POLITICA_ACOMPANHAMENTO_GUIAS } from '../../guides/calendarioAvisosGuia.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lerPoliticaAutomacao, chavePoliticaAutomacao } from './CompanyAutomationPolicy.js';
@@ -17,7 +18,12 @@ export function identidadeSelecaoCicloSimples(value) {
   return `legacy:${createHash('sha256').update(JSON.stringify(projecaoSelecao(value))).digest('hex')}`;
 }
 export async function lerAutomacaoEmpresa(db, companyId) {
-  const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { id: true, companyId: true } });
+  // All projection inputs, including inherited settings, belong to one snapshot.
+  // No provider call or write is performed inside this read transaction.
+  return db.$transaction(tx => lerAutomacaoEmpresaNoTx(tx, companyId), { isolationLevel: 'RepeatableRead' });
+}
+async function lerAutomacaoEmpresaNoTx(db, companyId) {
+  const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { id: true, companyId: true, razao: true } });
   if (!company) throw fail('COMPANY_NOT_FOUND', 'Empresa não encontrada.', 404);
   const legacy = company.companyId ? await db.company.findUnique({ where: { id: company.companyId }, select: { regimeTributario: true, tipoTributario: true } }) : null;
   const applicability = aplicarRegimeRotinas(legacy);
@@ -51,14 +57,16 @@ export async function lerAutomacaoEmpresa(db, companyId) {
   const trackingSaved = (await db.appSetting.findUnique({ where: { key: `acompanhamento_guias_config:${companyId}` } }))?.value;
   const acompanhamentoGuias = { enabled: trackingSaved?.enabled === true, politica: trackingSaved?.politica || null,
     limiteConsultas: trackingSaved?.limiteConsultas === 1 ? 1 : 0 };
-  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes, automationPolicy, globalAutomationPolicy, cicloSaved ?? null, envioSaved ?? null, trackingSaved ?? null])).digest('hex');
-  return { companyId, revision, serproPolicy, automationPolicy, globalAutomationPolicy,
+  const agendaEventos = await lerAgendaEventosEmpresa(db, companyId);
+  const revision = createHash('sha256').update(JSON.stringify([companyId, rows.map(r => [r.rotina, r.enabled, r.updatedAt]), agenda, serproPolicy, applicability, lembretes, automationPolicy, globalAutomationPolicy, cicloSaved ?? null, envioSaved ?? null, trackingSaved ?? null, ...(agendaEventos.configured || agendaEventos.globalConfigured || agendaEventos.modeConfigured ? [agendaEventos] : [])])).digest('hex');
+  return { companyId, companyName: company.razao || null, revision, agendaEventos, serproPolicy, automationPolicy, globalAutomationPolicy,
     effectiveAutomationState: globalAutomationPolicy.paused ? 'GLOBAL_PAUSED' : automationPolicy.paused ? 'COMPANY_PAUSED' : 'SUBJECT_TO_SCHEDULE',
     acompanhamentoGuias, lembretes, cicloSimples, envioGuias, ...applicability, rotinas: ROTINA_KEYS.map(key => ({ key, label: labelRotinaAplicavel(key, ROTINA_LABELS), applicable: applicability.applicableKeys.includes(key), enabled: rows.some(r => r.rotina === key && r.enabled), agenda: agenda[key] })) };
 }
 
 export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isAdmin = false } = {}) {
-  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes, automationPolicy, cicloSimples, envioGuias, acompanhamentoGuias } = input || {};
+  const { expectedRevision, requestId, rotinas, serproPolicy, lembretes, automationPolicy, cicloSimples, envioGuias, acompanhamentoGuias, agendaEventos } = input || {};
+  const eventPatch = agendaEventos === undefined ? null : validarPatchAgendaEmpresa(agendaEventos);
   const validTracking = acompanhamentoGuias === undefined || acompanhamentoGuias && !Array.isArray(acompanhamentoGuias)
     && typeof acompanhamentoGuias.enabled === 'boolean' && acompanhamentoGuias.politica === POLITICA_ACOMPANHAMENTO_GUIAS
     && acompanhamentoGuias.limiteConsultas === 1 && Object.keys(acompanhamentoGuias).every(k => ['enabled', 'politica', 'limiteConsultas'].includes(k));
@@ -80,28 +88,35 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
     && automationPolicy.reason.trim().length > 0 && automationPolicy.reason.trim().length <= 300
     && Object.keys(automationPolicy).every(k => ['paused', 'reason'].includes(k));
   if (!/^[a-f0-9]{64}$/.test(expectedRevision || '') || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId || '')
-    || !validTracking || !validEnvio || !validCiclo || !validRoutines || !validPolicy || !validReminders || !validAutomationPolicy || rotinas === undefined && serproPolicy === undefined && lembretes === undefined && automationPolicy === undefined && cicloSimples === undefined && envioGuias === undefined && acompanhamentoGuias === undefined) {
+    || !validTracking || !validEnvio || !validCiclo || !validRoutines || !validPolicy || !validReminders || !validAutomationPolicy || rotinas === undefined && serproPolicy === undefined && lembretes === undefined && automationPolicy === undefined && cicloSimples === undefined && envioGuias === undefined && acompanhamentoGuias === undefined && agendaEventos === undefined) {
     throw fail('INVALID_AUTOMATION', 'Revise as rotinas selecionadas e atualize a configuração antes de salvar.', 422);
   }
   const key = `company_automation_request:${userId}:${requestId}`;
   const policyInput = serproPolicy === undefined ? null : { paused: serproPolicy.paused, reason: serproPolicy.reason.trim() };
   const automationInput = automationPolicy === undefined ? null : { paused: automationPolicy.paused, reason: automationPolicy.reason.trim() };
   const cicloInput = cicloSimples === undefined ? null : { enabled: cicloSimples.enabled, fontes: [...cicloSimples.fontes].sort() };
-  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null, automationInput, cicloInput, envioGuias ?? null, acompanhamentoGuias ?? null])).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify([companyId, expectedRevision, Object.entries(rotinas || {}).sort(), policyInput, lembretes ?? null, automationInput, cicloInput, envioGuias ?? null, acompanhamentoGuias ?? null, ...(agendaEventos === undefined ? [] : [eventPatch, ...(Object.hasOwn(agendaEventos, 'executionMode') ? [agendaEventos.executionMode] : [])])])).digest('hex');
   return db.$transaction(async tx => {
     await bloquearPoliticaEmpresa(tx, companyId);
-    if (!isAdmin) {
+    let currentAdmin = isAdmin;
+    if (agendaEventos !== undefined) {
+      const actor = await tx.user.findUnique({ where: { id: String(userId) }, select: { role: true, status: true, accountType: true } });
+      if (!actor || String(actor.status).toLowerCase() !== 'active') throw fail('ACCESS_CHANGED', 'Seu acesso precisa ser conferido.', 403);
+      currentAdmin = String(actor.role).toLowerCase() === 'admin';
+      if (!currentAdmin && actor.accountType !== 'FIRM') throw fail('ACCESS_CHANGED', 'Acesso interno necessário.', 403);
+    }
+    if (!currentAdmin) {
       const access = await tx.companyFirmAccess.findUnique({ where: { companyId_userId: { companyId, userId: String(userId) } } });
       if (access?.status !== 'ACTIVE' || !['ACCOUNTANT', 'FIRM_ADMIN'].includes(access.role)) throw fail('ACCESS_CHANGED', 'Seu acesso não permite alterar as consultas desta empresa.', 403);
     }
     const saved = await tx.appSetting.findUnique({ where: { key } });
     if (saved) {
       if (saved.value.hash !== hash) throw fail('IDEMPOTENCY_CONFLICT', 'Esta solicitação pertence a outra alteração. Recarregue a configuração.');
-      const current = await lerAutomacaoEmpresa(tx, companyId);
+      const current = await lerAutomacaoEmpresaNoTx(tx, companyId);
       if (current.revision !== saved.value.result?.revision) throw fail('AUTOMATION_CHANGED', 'A configuração mudou após este salvamento. Recarregue para conferir o estado atual.');
       return saved.value.result;
     }
-    const before = await lerAutomacaoEmpresa(tx, companyId);
+    const before = await lerAutomacaoEmpresaNoTx(tx, companyId);
     if (before.revision !== expectedRevision) throw fail('AUTOMATION_CHANGED', 'A configuração mudou em outra sessão. Recarregue antes de salvar.');
     if (Object.entries(rotinas || {}).some(([key, enabled]) => enabled && !before.applicableKeys.includes(key))) {
       throw fail('ROUTINE_NOT_APPLICABLE', before.unavailableReason || 'Esta rotina não se aplica ao regime cadastrado da empresa. Recarregue a configuração.', 422);
@@ -152,8 +167,9 @@ export async function salvarAutomacaoEmpresa(db, companyId, userId, input, { isA
       const policyKey = chavePoliticaAutomacao(companyId);
       await tx.appSetting.upsert({ where: { key: policyKey }, create: { key: policyKey, value }, update: { value } });
     }
-    const result = { ...await lerAutomacaoEmpresa(tx, companyId), savedAt: new Date().toISOString() };
-    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeAcompanhamentoGuias: before.acompanhamentoGuias, beforeEnvioGuias: before.envioGuias, beforeLembretes: before.lembretes, beforeCicloSimples: before.cicloSimples, beforeSerproPolicy: before.serproPolicy, beforeAutomationPolicy: before.automationPolicy, result, eventId: randomUUID() } } });
+    if (agendaEventos !== undefined) await gravarAgendaEventosEmpresaNoTx(tx, companyId, userId, { ...(Object.hasOwn(agendaEventos, 'patch') ? { patch: eventPatch } : {}), ...(Object.hasOwn(agendaEventos, 'executionMode') ? { executionMode: agendaEventos.executionMode } : {}) }, before.agendaEventos);
+    const result = { ...await lerAutomacaoEmpresaNoTx(tx, companyId), savedAt: new Date().toISOString() };
+    await tx.appSetting.create({ data: { key, value: { hash, companyId, userId, before: before.rotinas.map(r => ({ key: r.key, enabled: r.enabled })), beforeAgendaEventos: before.agendaEventos, beforeAcompanhamentoGuias: before.acompanhamentoGuias, beforeEnvioGuias: before.envioGuias, beforeLembretes: before.lembretes, beforeCicloSimples: before.cicloSimples, beforeSerproPolicy: before.serproPolicy, beforeAutomationPolicy: before.automationPolicy, result, eventId: randomUUID() } } });
     return result;
   }, { isolationLevel: 'Serializable' });
 }

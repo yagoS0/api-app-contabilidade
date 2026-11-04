@@ -9,6 +9,29 @@ function timestampValido(valor) {
   return new Date(valor).getTime();
 }
 
+// Documentary classification only. The operational marker below deliberately
+// retains the provider's 24-hour revalidation guard.
+export function classificacaoDocumentalProcuracao(dados = {}, agora = Date.now()) {
+  dados = dados || {};
+  const status = dados.procurationStatus || dados.status;
+  const consulta = timestampValido(dados.checkedAt);
+  const validade = timestampValido(dados.validUntil);
+  const tentativa = dados.ultimaTentativa;
+  if (['ERRO', 'ERROR'].includes(status) || (tentativa?.vinculoConfirmado === true && tentativa.status === 'ERRO')) return { chave: 'unknown', rotulo: 'Erro na verificação' };
+  if (tentativa?.vinculoConfirmado === true && tentativa.status === 'CONSULTANDO') return { chave: 'unknown', rotulo: 'Verificação pendente' };
+  if (dados.vinculoConfirmado !== true || !Number.isFinite(consulta) || consulta > agora) return { chave: 'unknown', rotulo: 'Não verificada' };
+  if (status === 'ATIVA' && Number.isFinite(validade) && /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(dados.validUntil)) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(agora)).map(p => [p.type, p.value]));
+    const hoje = `${parts.year}-${parts.month}-${parts.day}`;
+    const diaFinal = String(dados.validUntil).slice(0, 10);
+    const civil = /^\d{4}-\d{2}-\d{2}$/.test(dados.validUntil);
+    const vigente = civil ? diaFinal >= hoje : validade > agora;
+    return vigente ? { chave: 'positive', rotulo: `Ativa até ${dataProcuracao(dados.validUntil)}` } : { chave: 'negative', rotulo: 'Vencida' };
+  }
+  if (status === 'AUSENTE' && agora - consulta < 86400000) return { chave: 'negative', rotulo: 'Sem procuração ativa' };
+  return { chave: 'unknown', rotulo: 'A verificar' };
+}
+
 export function marcadorProcuracao(dados = {}, agora = Date.now()) {
   dados = dados || {};
   const status = dados.procurationStatus || dados.status;

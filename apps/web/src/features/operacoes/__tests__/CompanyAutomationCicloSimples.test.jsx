@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { SEGMENT_TO_TAB, companyTabPath } from '../../companies/detail/lib/rotasDaEmpresa';
 jest.mock('../OperationsManualInss', () => ({ CompanyManualInss: () => null }));
 beforeAll(() => { global.structuredClone ??= value => JSON.parse(JSON.stringify(value)); });
-const config = { companyId: 'a', revision: 'r1', regime: 'SIMPLES', rotinas: [], cicloSimples: { enabled: false, fontes: [] } };
+const config = { agendaEventos: { schemaVersion: 1, revision: 'policy-r1', version: 0, executionMode: 'LEGADO', relativeConsumerReady: false, overrides: {}, effective: {}, origins: {} }, companyId: 'a', revision: 'r1', regime: 'SIMPLES', rotinas: [], cicloSimples: { enabled: false, fontes: [] } };
 const state = (period, extra = {}) => ({ portalClientId: 'a', competencia: period, revision: 1, status: 'REVISAO_NECESSARIA', reason: 'Confira as receitas.', coleta: null, calculo: null, canRevise: true, ...extra });
 const apiFor = (extra = {}) => ({ getCompanyAutomation: jest.fn(async () => config), getCompanySimplesCycle: jest.fn(async (_, period) => state(period)), reviseCompanySimplesCycle: jest.fn(async (_, period) => state(period, { revision: 2, status: 'AGUARDANDO_COLETA_FINAL', canRevise: false })), saveCompanyAutomation: jest.fn(async (_, body) => ({ ...config, revision: 'r2', cicloSimples: body.cicloSimples })), ...extra });
 beforeEach(() => Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => 'ciclo-request' }));
@@ -38,7 +38,10 @@ test('seleção histórica fora do Simples atual permanece visível e permite de
   const selection = await screen.findByLabelText('Selecionar empresa para coleta e cálculo');
   expect(selection).toBeChecked(); expect(selection).toBeEnabled();
   expect(screen.getByLabelText('NFS-e')).toBeChecked(); expect(screen.getByLabelText('NFS-e')).toBeDisabled(); expect(screen.getByLabelText('NF-e')).toBeDisabled();
+  expect(api.getCompanySimplesCycle).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Ciclo do Simples' }));
   expect(await screen.findByText('Confira as receitas.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Configuração', exact: true }));
   fireEvent.click(selection); fireEvent.click(screen.getByText('Conferir alterações'));
   expect(api.saveCompanyAutomation).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Salvar configuração'));
@@ -52,7 +55,10 @@ test('fora do Simples atual não permite nova ativação nem ampliar fontes, mas
   render(<CompanyAutomation api={api} companyId="a" canEdit />);
   expect(await screen.findByLabelText('Selecionar empresa para coleta e cálculo')).toBeDisabled();
   expect(screen.getByLabelText('NF-e')).toBeDisabled(); expect(screen.getByLabelText('NFS-e')).toBeDisabled();
+  expect(api.getCompanySimplesCycle).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Ciclo do Simples' }));
   expect(await screen.findByText('Confira as receitas.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Configuração', exact: true }));
   expect(api.saveCompanyAutomation).not.toHaveBeenCalled();
 });
 test('cancelar prévia fora do Simples preserva seleção original e rascunho sem reativação fiscal', async () => {

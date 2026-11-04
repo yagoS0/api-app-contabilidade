@@ -1,5 +1,13 @@
+import { criarReferenciaVencimentoMock } from './referenciaVencimentoMock';
+import { mockLerAgendaEventos, mockSalvarAgendaEventos } from './agendaEventosMock';
 import { mockCarregarRotinas, mockSalvarRotinas, mockLerPausaCicloFiscal } from './rotinasMock';
+const copy = value => JSON.parse(JSON.stringify(value));
 
+// Deterministic demo token, not a security hash. Production revisions are SHA256.
+function demoRevision(value) {
+  const text=JSON.stringify(value);
+  return Array.from({length:8},(_,seed)=>{let n=2166136261+seed;for(let i=0;i<text.length;i++)n=Math.imul(n^text.charCodeAt(i),16777619);return (n>>>0).toString(16).padStart(8,'0');}).join('');
+}
 export function aplicabilidadeRotinasMock(company) {
   const regime = String(company?.regimeTributario || company?.tipoTributario || company?.legacyCompany?.regimeTributario || company?.legacyCompany?.tipoTributario || '').trim().toUpperCase();
   const keys = { SIMPLES: ['das', 'extrato', 'parcelamento'], LUCRO_PRESUMIDO: ['presumido'], LUCRO_REAL: [] };
@@ -9,7 +17,8 @@ export function aplicabilidadeRotinasMock(company) {
 
 export function criarCompanyAutomationMock(companies) {
   const policies = new Map(), requests = new Map();
-  const automationPolicies = new Map();
+  const referenceApi=criarReferenciaVencimentoMock({canRead:id=>companies.some(c=>c.companyId===id),canWrite:id=>companies.some(c=>c.companyId===id&&['ACCOUNTANT','FIRM_ADMIN'].includes(c.myRole))});
+  const automationPolicies = new Map(), modes = new Map();
   const ciclos = new Map(), tracking = new Map();
   const fail = (message, status = 409) => Object.assign(new Error(message), { status });
   async function getCompanyAutomation(companyId) {
@@ -25,13 +34,15 @@ export function criarCompanyAutomationMock(companies) {
     const cicloSimples = company.cicloSimples || { enabled: false, fontes: [] };
     const acompanhamentoGuias = tracking.get(companyId) || { enabled: false, politica: null, limiteConsultas: 0 };
     const lembretes = { enabled: company.rotinas.avisos_guias_whatsapp === true, agenda: data.agenda.avisos_guias_whatsapp };
-    return structuredClone({ companyId, revision: JSON.stringify([rotinas, serproPolicy, lembretes, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias, acompanhamentoGuias]), acompanhamentoGuias, rotinas, serproPolicy, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias,
+    const mode=modes.get(companyId)||{executionMode:'LEGADO',modeVersion:0};
+    const agendaEventos={...mockLerAgendaEventos(companyId),...mode,modeRevision:demoRevision(mode),modeConfigured:modes.has(companyId)};
+    return copy({ companyId, companyName:company.razao||null, agendaEventos, revision: demoRevision([agendaEventos, rotinas, serproPolicy, lembretes, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias, acompanhamentoGuias]), acompanhamentoGuias, rotinas, serproPolicy, automationPolicy, globalAutomationPolicy, cicloSimples, envioGuias,
       effectiveAutomationState: globalAutomationPolicy.paused ? 'GLOBAL_PAUSED' : automationPolicy.paused ? 'COMPANY_PAUSED' : 'SUBJECT_TO_SCHEDULE', lembretes, ...applicability });
   }
   async function getCompanySimplesCycle(companyId, competencia) {
     await getCompanyAutomation(companyId);
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) throw fail('Competência inválida.', 422);
-    return structuredClone(ciclos.get(`${companyId}:${competencia}`) || { portalClientId: companyId, competencia, revision: 0, status: 'NAO_INICIADO', reason: null, coleta: null, calculo: null, updatedAt: null, canRevise: false });
+    return copy(ciclos.get(`${companyId}:${competencia}`) || { portalClientId: companyId, competencia, revision: 0, status: 'NAO_INICIADO', reason: null, coleta: null, calculo: null, updatedAt: null, canRevise: false });
   }
   async function getCompanyGuideDelivery(companyId, competencia) {
     const data = await getCompanyAutomation(companyId);
@@ -44,24 +55,34 @@ export function criarCompanyAutomationMock(companies) {
     return { ok: true, portalClientId: companyId, competencia, ...data.acompanhamentoGuias, paused: data.automationPolicy.paused || data.globalAutomationPolicy.paused,
       items: [], template: { status: 'A_CONFERIR', mensagem: 'Demonstração: modelos e entregas não comprovados; nenhuma saída real.' } };
   }
-  return { getCompanyGuideTracking, getCompanyAutomation, getCompanyGuideDelivery, getCompanySimplesCycle, async reviseCompanySimplesCycle(companyId, competencia, input) {
+  return { ...referenceApi, getCompanyGuideTracking, getCompanyAutomation, getCompanyGuideDelivery, getCompanySimplesCycle, async reviseCompanySimplesCycle(companyId, competencia, input) {
     const current = await getCompanySimplesCycle(companyId, competencia);
     if (input.expectedRevision !== current.revision || !current.canRevise) throw fail('Confira a tentativa antes de registrar nova revisão.');
     if (typeof input.motivo !== 'string' || input.motivo.trim().length < 3 || input.motivo.trim().length > 500) throw fail('Informe o motivo da revisão.', 422);
     const next = { ...current, revision: current.revision + 1, status: 'AGUARDANDO_COLETA_FINAL', canRevise: false, reason: 'Correção registrada. Aguarda próximo horário elegível.', coleta: null, calculo: null, updatedAt: new Date().toISOString() };
     ciclos.set(`${companyId}:${competencia}`, next);
-    return structuredClone(next);
+    return copy(next);
   }, async saveCompanyAutomation(companyId, input) {
+    const member=companies.find(c=>c.companyId===companyId);
+    if(input?.agendaEventos&&(!member||!['ACCOUNTANT','FIRM_ADMIN'].includes(member.myRole)))throw fail('Acesso não permite alterar esta empresa.',403);
     const identity = JSON.stringify([companyId, input]);
     if (requests.has(input.requestId)) {
       const saved = requests.get(input.requestId);
       if (identity !== saved.identity) throw fail('Esta solicitação pertence a outra alteração. Recarregue a configuração.');
       const current = await getCompanyAutomation(companyId);
       if (current.revision !== saved.result.revision) throw fail('A configuração mudou após este salvamento. Recarregue para conferir o estado atual.');
-      return structuredClone(saved.result);
+      return copy(saved.result);
     }
     const current = await getCompanyAutomation(companyId);
     if (current.revision !== input.expectedRevision) throw fail('A configuração mudou em outra sessão. Recarregue antes de salvar.');
+    if(input.agendaEventos!==undefined){
+      if(Object.keys(input).some(key=>!['expectedRevision','requestId','agendaEventos'].includes(key))||!input.agendaEventos||Object.keys(input.agendaEventos).length!==1||Object.keys(input.agendaEventos).some(key=>!['patch','executionMode'].includes(key)))throw fail('Na demonstração, salve parâmetros separadamente das adesões.',422);
+      if(Object.hasOwn(input.agendaEventos,'executionMode')){
+        if(input.agendaEventos.executionMode!=='RELATIVO_V1')throw fail('Calendário inválido.',422);
+        if(current.agendaEventos.executionMode!=='RELATIVO_V1')modes.set(companyId,{executionMode:'RELATIVO_V1',modeVersion:current.agendaEventos.modeVersion+1});
+      }else mockSalvarAgendaEventos(companyId,{expectedRevision:current.agendaEventos.revision,requestId:input.requestId,patch:input.agendaEventos.patch});
+      const result=await getCompanyAutomation(companyId);requests.set(input.requestId,{identity,result});return copy(result);
+    }
     if (input.acompanhamentoGuias !== undefined && (!input.acompanhamentoGuias || Array.isArray(input.acompanhamentoGuias)
       || typeof input.acompanhamentoGuias.enabled !== 'boolean' || input.acompanhamentoGuias.politica !== 'D2_D0_D2_V1' || input.acompanhamentoGuias.limiteConsultas !== 1
       || Object.keys(input.acompanhamentoGuias).some(k => !['enabled', 'politica', 'limiteConsultas'].includes(k)))) throw fail('Revise o contrato e limite de consulta do acompanhamento.', 422);
@@ -86,20 +107,20 @@ export function criarCompanyAutomationMock(companies) {
     if (input.serproPolicy) policies.set(companyId, { paused: input.serproPolicy.paused, reason: input.serproPolicy.reason.trim(), updatedAt: new Date().toISOString(), updatedBy: 'mock-user' });
     if (input.envioGuias !== undefined) {
       const data = mockCarregarRotinas(companies);
-      mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, envioGuias: structuredClone(input.envioGuias) } : c) });
+      mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, envioGuias: copy(input.envioGuias) } : c) });
     }
     if (input.cicloSimples !== undefined) {
       const data = mockCarregarRotinas(companies);
-      mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, cicloSimples: structuredClone(input.cicloSimples) } : c) });
+      mockSalvarRotinas({ empresas: data.empresas.map(c => c.companyId === companyId ? { ...c, cicloSimples: copy(input.cicloSimples) } : c) });
     }
     if (input.automationPolicy) {
       const updatedAt = new Date().toISOString();
       automationPolicies.set(companyId, { ...input.automationPolicy, reason: input.automationPolicy.reason.trim(), version: current.automationPolicy.version + 1,
         updatedAt, updatedBy: 'mock-user', resumedAt: !input.automationPolicy.paused && current.automationPolicy.paused ? updatedAt : current.automationPolicy.resumedAt });
     }
-    if (input.acompanhamentoGuias !== undefined) tracking.set(companyId, structuredClone(input.acompanhamentoGuias));
+    if (input.acompanhamentoGuias !== undefined) tracking.set(companyId, copy(input.acompanhamentoGuias));
     const result = await getCompanyAutomation(companyId);
     requests.set(input.requestId, { identity, result });
-    return structuredClone(result);
+    return copy(result);
   } };
 }

@@ -10,11 +10,11 @@ test('consulta explicitamente somente OPEN da competência e empresa selecionada
 });
 test('envio preserva token, ordem, revisão conferida e recusa sem chamada no mount',async()=>{
  const api={listarContatosWhatsapp:jest.fn(async()=>({canalPadraoEnvio:'EMAIL',contatos:[]})),previewOperationsGuideSend:jest.fn(async()=>({preview:{companyId:'a',competencia:'2026-10',token:'signed',items:[{guideId:'g',revisao:'v2',reenviarConfirmado:false,canais:['EMAIL'],destinatarios:{emails:['fixture@example.invalid'],telefones:[]}}],refused:[]}})),sendGuidesTask:jest.fn(async()=>[{guideId:'g',ok:false,texto:'WhatsApp: solicitação aceita',email:{sent:true,message:'Aceito'},whatsapp:{ok:true,parcial:true,aceitas:1,falhas:1,resultados:[{ok:false,destino:'fixture@example.invalid',message:'Falha local'}]}}])};
- render(<OperationsGuideActions api={api} rows={[row]} selected={{a:true}} data={{a:{guides:[{companyId:'a',competencia:'2026-10',guideId:'g',paymentStatus:'OPEN'}]}}} competencia="2026-10" stage="enviado"/>);
+ render(<OperationsGuideActions api={api} rows={[row]} selected={{a:true}} data={{a:{guides:[{companyId:'a',competencia:'2026-10',guideId:'g',paymentStatus:'OPEN',status:'PROCESSED'}]}}} competencia="2026-10" stage="enviado"/>);
  expect(api.previewOperationsGuideSend).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/fixture@example.invalid/);expect(api.sendGuidesTask).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar ação nos itens listados'));await waitFor(()=>expect(api.sendGuidesTask).toHaveBeenCalledWith('a',{items:[{guideId:'g',reenviarConfirmado:false}],competencia:'2026-10',operationsPreviewToken:'signed',whatsappRequested:false}));await screen.findByText(/WhatsApp parcialmente aceito/);
 });
 
-const guide={companyId:'a',competencia:'2026-10',guideId:'g',paymentStatus:'OPEN'};
+const guide={companyId:'a',competencia:'2026-10',guideId:'g',paymentStatus:'OPEN',status:'PROCESSED'};
 function sendFixture(canalPadraoEnvio='EMAIL',contatos=[]) {
  return {listarContatosWhatsapp:jest.fn(async()=>({canalPadraoEnvio,contatos})),previewOperationsGuideSend:jest.fn(async(companyId,competencia,body)=>({preview:{companyId,competencia,token:'token-'+companyId,items:body.items.map(i=>({...i,revisao:'v2',canais:['EMAIL',...(body.whatsappRequested?['WHATSAPP']:[])],destinatarios:{emails:['fixture@example.invalid'],telefones:[]}})),refused:[]}})),sendGuidesTask:jest.fn(async()=>[{guideId:'g',ok:true,texto:'E-mail aceito, confira a entrega.'}])};
 }
@@ -23,7 +23,7 @@ test.each([['EMAIL',[],false],['WHATSAPP',[],true],['EMAIL',[{ativo:true,telefon
  const api=sendFixture(canal,contatos);mount(api);fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/fixture@example.invalid/);expect(api.previewOperationsGuideSend.mock.calls[0][2].whatsappRequested).toBe(expected);expect(api.sendGuidesTask).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar ação nos itens listados'));await waitFor(()=>expect(api.sendGuidesTask).toHaveBeenCalledTimes(1));expect(api.sendGuidesTask.mock.calls[0][1].whatsappRequested).toBe(expected);
 });
 test('PERGUNTAR permite decisão explícita e conserva token por empresa',async()=>{
- const api=sendFixture('PERGUNTAR');mount(api);fireEvent.click(screen.getByLabelText('Para preferência PERGUNTAR: incluir WhatsApp'));fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/fixture@example.invalid/);expect(api.previewOperationsGuideSend.mock.calls[0][2].whatsappRequested).toBe(true);
+ const api=sendFixture('PERGUNTAR');mount(api);fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/fixture@example.invalid/);fireEvent.click(screen.getByLabelText('Incluir WhatsApp nas empresas que pedem confirmação'));await waitFor(()=>expect(api.previewOperationsGuideSend).toHaveBeenCalledTimes(2));expect(api.previewOperationsGuideSend.mock.calls[1][2].whatsappRequested).toBe(true);expect(api.sendGuidesTask).not.toHaveBeenCalled();
 });
 test('destinatário alterado recusa a saída e resultado incerto não repete automaticamente',async()=>{
  const api=sendFixture();api.sendGuidesTask.mockRejectedValue(Error('Destinatário alterado; nova conferência necessária'));mount(api);fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/fixture@example.invalid/);fireEvent.click(screen.getByText('Confirmar ação nos itens listados'));await screen.findByText(/Destinatário alterado/);expect(api.sendGuidesTask).toHaveBeenCalledTimes(1);expect(screen.queryByText('Confirmar ação nos itens listados')).not.toBeInTheDocument();
@@ -39,4 +39,19 @@ test('prévia não pode acrescentar guia fora da seleção',async()=>{
 import { Modal } from '../../../components/ui/Modal';
 test('cancelar prévia de Guias devolve foco no Modal real sem enviar',async()=>{
  const api=sendFixture();render(<Modal titulo="Guias" aoFechar={()=>{}}><OperationsGuideActions api={api} rows={[row]} selected={{a:true}} data={{a:{guides:[guide]}}} competencia="2026-10" stage="enviado"/></Modal>);const trigger=screen.getByText('Conferir envio / reenvio');trigger.focus();fireEvent.click(trigger);await screen.findByText(/fixture@example.invalid/);expect(screen.getByRole('heading',{name:'Conferir ação · 2026-10'})).toHaveFocus();const cancel=screen.getByText('Cancelar');cancel.focus();fireEvent.click(cancel);expect(trigger).toHaveFocus();expect(api.sendGuidesTask).not.toHaveBeenCalled();
+});
+
+
+test('preferência EMAIL não mostra decisão WhatsApp e prévia mantém identificação técnica em detalhe',async()=>{
+ const api=sendFixture('EMAIL');mount(api);fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/fixture@example.invalid/);
+ expect(screen.queryByLabelText(/Incluir WhatsApp/)).not.toBeInTheDocument();expect(screen.queryByLabelText(/Reenviar documentos/)).not.toBeInTheDocument();
+ expect(screen.getByText('Documento g · Revisão v2').closest('details')).not.toHaveAttribute('open');
+ expect(screen.getByRole('rowheader',{name:'Alfa'})).toBeInTheDocument();expect(api.sendGuidesTask).not.toHaveBeenCalled();
+});
+
+test('reenvio recusado inicialmente conserva opção contextual e exige nova prévia',async()=>{
+ const api=sendFixture();const accepted=api.previewOperationsGuideSend.getMockImplementation();api.previewOperationsGuideSend.mockImplementation((id,comp,body)=>body.items[0].reenviarConfirmado?accepted(id,comp,body):Promise.resolve({preview:{companyId:id,competencia:comp,items:[],refused:[{guideId:'g',motivo:'Já enviado'}]}}));
+ mount(api,{data:{a:{guides:[{...guide,emailStatus:'SENT'}]}}});fireEvent.click(screen.getByText('Conferir envio / reenvio'));await screen.findByText(/Já enviado/);
+ expect(screen.getByText('Confirmar ação nos itens listados')).toBeDisabled();fireEvent.click(screen.getByLabelText('Reenviar documentos já enviados'));
+ await screen.findByText(/fixture@example.invalid/);expect(api.previewOperationsGuideSend).toHaveBeenCalledTimes(2);expect(api.previewOperationsGuideSend.mock.calls[1][2].items).toEqual([{guideId:'g',reenviarConfirmado:true}]);expect(api.sendGuidesTask).not.toHaveBeenCalled();
 });

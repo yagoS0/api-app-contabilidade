@@ -1,3 +1,4 @@
+import { classificacaoDocumentalProcuracao } from '../fiscal/serpro/lib/procuracao';
 import { situacaoFiscalDaLinha } from '../companies/list/lib/situacaoFiscal';
 import { fluxoDaEmpresa, ETAPAS_CARTEIRA, statusApresentacao } from '@contabilidade/shared/fluxo-carteira';
 import { getComplianceTags } from '../companies/list/components/renderCompanyCard';
@@ -121,7 +122,7 @@ export function resumirEtapasOperacoes(rows, evidence = [], manualInss = []) {
     // parcDas is an operational aggregate, never a document or payment receipt.
     const coverage = periodMatches && Array.isArray(compliance.coberturaParcelamentoMes) ? compliance.coberturaParcelamentoMes : null;
     const parcelas = (coverage || []).map(p => ({
-      key: p.id, label: `${p.tipo || 'Parcelamento'} ${p.numeroParcelamento || ''} · Parcela ${p.numeroParcela ?? 'a identificar'} · ${p.mesOperacional}`,
+      key: p.id, guideId: p.guideId, parcelaId: p.parcelaId, parcelamentoId: p.parcelamentoId, numeroParcela: p.numeroParcela, label: `${p.tipo || 'Parcelamento'} ${p.numeroParcelamento || ''} · Parcela ${p.numeroParcela ?? 'a identificar'} · ${p.mesOperacional}`,
       dispensada: p.documento === 'nao_exigido', disponivel: p.documento === 'disponivel',
       enviada: p.comunicacao === 'enviada', comunicacaoDispensada: p.comunicacao === 'nao_exigida',
       paga: p.pagamentoConfirmado === true, revisar: !['disponivel', 'faltante', 'nao_exigido'].includes(p.documento),
@@ -196,13 +197,7 @@ export function distribuicoesCadastrais(rows, now = Date.now()) {
     const cert = c.legacyCompany;
     const expires = vigente(cert?.certExpiresAt);
     add('certificado', !cert || !Object.hasOwn(cert, 'certStorageKey') ? 'unknown' : !cert.certStorageKey ? 'negative' : expires === null ? 'unknown' : expires ? 'positive' : 'negative', row);
-    const p = c.serproStatus;
-    const status = p?.procurationStatus || p?.status;
-    const date = vigente(p?.validUntil), check = timestamp(p?.checkedAt);
-    // Document validity and the provider's 24h operational eligibility are separate.
-    const state = p?.vinculoConfirmado !== true || !Number.isFinite(check) || check > now ? 'unknown'
-      : status === 'ATIVA' && date !== null ? date ? 'positive' : 'negative'
-        : status === 'AUSENTE' && now - check < 86400000 ? 'negative' : 'unknown';
+    const state = classificacaoDocumentalProcuracao(c.serproStatus, now).chave;
     add('procuracao', state, row);
   }
   return result;

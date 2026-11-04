@@ -1,0 +1,12 @@
+.referencia-vencimento { border:1px solid var(--border); border-radius:8px; padding:16px; margin-block:12px; }
+.referencia-vencimento h4 { margin:0 0 12px; }
+.referencia-campos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.referencia-campos label { display:grid; gap:6px; }
+.referencia-vencimento input:not([type=checkbox]),.referencia-vencimento select { min-height:44px; width:100%; box-sizing:border-box; color:var(--text); background:var(--bg-subtle); border:1px solid var(--border); border-radius:6px; padding:8px; }
+.referencia-vencimento dl { display:grid; grid-template-columns:minmax(100px,1fr) minmax(0,2fr); gap:8px 16px; }
+.referencia-vencimento dd { margin:0; overflow-wrap:anywhere; }
+.referencia-vencimento dt,.referencia-limite { color:var(--text-muted); }
+.referencia-acoes { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+.referencia-acoes .btn { min-height:44px; }
+.referencia-vencimento [tabindex='-1']:focus-visible { outline:2px solid var(--accent-purple); outline-offset:4px; }
+@media(max-width:600px) { .referencia-campos { grid-template-columns:1fr; } .referencia-acoes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .referencia-acoes .btn { white-space:normal; } }

@@ -69,3 +69,19 @@ test('vínculo não informado não comprova autorização; erro não equivale a 
  expect(marcadorProcuracao(null, agora).chave).toBe('nao_verificada');
  expect(marcadorProcuracao({...ativa, checkedAt:'inválida'}, agora).chave).toBe('revalidar');
 });
+
+import { classificacaoDocumentalProcuracao } from '../procuracao';
+test('classificação documental preserva vigência inclusiva sem renovar autorização operacional', () => {
+ const dados={...ativa,checkedAt:'2026-10-10T18:00:00Z',validUntil:'2026-10-14'};
+ expect(classificacaoDocumentalProcuracao(dados,agora)).toEqual({chave:'positive',rotulo:'Ativa até 14/10/2026'});
+ expect(classificacaoDocumentalProcuracao(dados,Date.parse('2026-10-15T03:00:00Z')).chave).toBe('negative');
+ expect(marcadorProcuracao({...dados,validUntil:'2027-01-01'},agora).chave).toBe('revalidar');
+ expect(classificacaoDocumentalProcuracao({...dados,status:'ERRO',procurationStatus:'ERRO'},agora).chave).toBe('unknown');
+});
+
+
+test('vigência com instante explícito não é prorrogada até o fim do dia',()=>{
+ const dados={...ativa,checkedAt:'2026-10-13T15:00:00Z',validUntil:'2026-10-14T15:00:00Z'};
+ expect(classificacaoDocumentalProcuracao(dados,Date.parse('2026-10-14T14:59:59Z')).chave).toBe('positive');
+ expect(classificacaoDocumentalProcuracao(dados,Date.parse('2026-10-14T15:00:00Z')).chave).toBe('negative');
+});

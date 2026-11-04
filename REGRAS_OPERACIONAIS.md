@@ -687,3 +687,50 @@ Acompanhamento por guia/revisão: D−2 úteis e D0 oferecem confirmar pagamento
 | T105 | Confirmação em mês fechado ou retorno fiscal inconclusivo | Preservar evidência e exigir tratamento explícito, sem alteração contábil silenciosa |
 
 Impacto: complementa R01/R02/R06/R19–R22/R25/R26 e substitui os pontos expressamente identificados nas seções 27/28/30 para o novo fluxo. Cenários são critérios de aceite; registrar separadamente os que foram executados. Histórico: decisões do usuário no planejamento e autorização de continuação pelo Orquestrador em 01/11/2026. Nenhum gate, limite da governança, operação fiscal real ou publicação é autorizado por este registro.
+
+## 33. Revisão de Operações e configuração por vencimento — decisões de 04/11/2026
+
+O usuário confirmou continuar todo o escopo; as correções de procuração complementam a revisão de Operações, guias e configurações. Este registro consolida decisões, não declara implementação ou aprovação técnica. Desenvolvimento local, sem publicação, ativação, consultas pagas, mensagens ou alteração de dados reais. Preservar Guru em conferência, eNotas ativo, benefício pendente e Sintropia fora da ativação de lembretes.
+
+**Procuração documental.** Evidência identificada e ativa com validade vigente mostra “Procuração ativa até DD/MM/AAAA”. Consulta com mais de 24 horas não apaga a vigência. Data civil inclui o dia inteiro em Brasília; instante explícito respeita seu instante. Timestamp à meia-noite não prova origem civil. Ausência de identidade/validade conclusiva exige conferência. Cartão, filtros e tabela compartilham classificador e universo autorizado; “Todas” não fica limitado à categoria inicialmente aberta. Revalidação operacional por serviço permanece separada, com as travas existentes; validade documental não comprova todos os poderes.
+
+**Aplicabilidade e dispensa.** INSS comprovadamente não aplicável não gera linha fictícia, “Dispensado” ou ação manual genérica. Documento excepcional real e erro/estado desconhecido permanecem visíveis. “Dispensado” identifica somente decisão explícita e auditada do contador no período; ausência automática comprovada conserva sua origem própria. Isto esclarece o vocabulário de R14 sem eliminar regras comprovadas de ausência ou inventar autoria histórica. Ação de dispensa reutiliza o contexto de Guias/obrigações e suas permissões/evidências. Tributo aplicável sem documento usa texto curto, como “IRPJ — Indisponível”, sem esconder erro ou conflito.
+
+**Identidade e lotes.** Preservar empresa, competência, acordo, parcela, documento e revisão nas projeções. Expectativa e documento correspondente não contam duas vezes; não fundir acordos por nome/valor. Resumo antigo não deve esconder uma substituição documental mais recente. O caso Alessandro exige conferir identidades reais antes de afirmar sua causa completa; não autoriza excluir registros.
+
+Disponível separa disponibilidade e valor por guia. Ações individuais: Enviar guia e Abrir Guias da empresa/competência. Registro de entrega externa fica em Enviado, preserva data civil, meio, autor, revisão e pagamento independente; documento pago não equivale a envio já registrado. Preservar bloqueios de documento inválido, revisão antiga, tentativa concorrente/incerta e permissão. Rodapé fixo reúne envio/consulta e alcance da seleção. Selecionar todas alcança as elegíveis do filtro em todas as páginas; carregamento parcial não pode ser apresentado como conjunto completo. Empresas sem guia enviável não entram no envio, mas continuam consultáveis. Prévia, confirmação de custos/destinatários e revalidação do servidor continuam obrigatórias. Reduzir legendas técnicas não remove erros, incertezas ou consequências.
+
+**Configuração e execução.** Apresentar o gatilho de negócio, não chamar mensagem, cálculo ou envio de ação diária indiscriminada. Dia/hora, inclusive ADN, são editáveis com rotina desligada; salvar não ativa, seleciona empresas, supera pausas ou executa imediatamente. Tabelas/grupos claros distinguem padrão geral, personalização empresarial e estado efetivo. Histórico e diagnóstico operacional não ficam misturados como textos soltos no formulário.
+
+Busca de guia SERPRO e lembretes têm parâmetros independentes por imposto, em dias úteis relativos ao vencimento e com seus horários. Vencimento-base vem de documento, regra vigente validada ou configuração explícita autorizada; prazo de obrigação acessória e fallback genérico não bastam. Falta de fonte/capacidade impede a ação dependente e aparece na configuração. Não presumir integração fiscal inexistente nem transformar valores ilustrativos do desenho em padrões ativos.
+
+DARF com vários impostos recebe um aviso por documento/marco, no instante mais antecipado aplicável a cada marco (antes, no vencimento, depois). Não duplicar documento por imposto, colapsar marcos ou antecipar aviso posterior para antes do vencimento. Composição desconhecida exige conferência. Busca agregada não vira várias chamadas por imposto. Revalidar configurações, pausas, contato e documento antes do efeito; mudar parâmetros não autoriza repetir fase enviada ou incerta.
+
+**Contratos preservados.** Coleta matinal até dia 8, cálculo após coleta final válida e uma tentativa por revisão; editar agenda não autoriza catchup ou cálculo diário. Confirmar e Liberar rotina continuam distintos. Envio completo quando pronto; parcial no dia 13 antecipado ao útil anterior ou D−2 úteis para vencimento anterior; complemento sem duplicação. Lembretes usam D−2/D0/D+2 até personalização explícita, com confirmação antes/no vencimento e recálculo posterior quando elegível. Consulta de pagamento permanece única em D+2 úteis, independente do offset do aviso posterior, sem execução se cliente confirmou ou guia foi recalculada. R25/R26, feriados, vencimento fiscal, pausas cumulativas, auditoria e tratamento de resultados incertos permanecem intactos. Nova configuração não migra silenciosamente agendas legadas nem fabrica prova de envio.
+
+Critérios de aceite a vincular aos testes de cada incremento, sem declarar aprovação antecipada:
+
+| ID | Cenário | Resultado obrigatório |
+| --- | --- | --- |
+| T106 | Doze procurações válidas com consulta antiga; Todas e categorias | Mesmo total/lista; data civil/instante respeitados e trava operacional separada |
+| T107 | INSS não aplicável, desconhecido, dispensa manual e documento excepcional | Distinção de origem, sem linha fictícia nem ocultação de erro/documento |
+| T108 | Parcela, substituição, resumo antigo e acordos distintos | Identidade preservada, sem duplicação ou descarte da versão atual |
+| T109 | Mais de uma página, carregamento parcial e empresa sem guia | Seleção completa explícita, envio vazio bloqueado e consulta disponível |
+| T110 | Envio individual, troca de revisão/contato e entrega externa de guia paga | Prévia correta, guardas e pagamento separado, sem transporte indevido |
+| T111 | Dia/hora editados com agenda desligada | Persistência sem ativação/execução; versão, permissões e pausas preservadas |
+| T112 | Busca e lembretes por imposto; feriado e fonte ausente | Parâmetros independentes; ausência bloqueia, sem inventar vencimento |
+| T113 | DARF misto com offsets distintos e repetição do verificador | Mais antecipado por marco, sem mensagem/consulta duplicada |
+| T114 | Aviso posterior personalizado, confirmação e guia recalculada | Consulta única continua D+2 com suas guardas; R25/R26 preservadas |
+| T115 | Desktop/celular, prévia, erro e retorno | Rodapé/foco/hover acessíveis, hierarquia clara, sem esconder consequências |
+
+Impacto: complementa R01/R02/R07–R11/R14/R19–R22 e seções 26–28/32. Não aprova matriz fiscal pendente nem muda gates. Histórico: decisões expressas do usuário nesta revisão, inclusive busca/lembretes separados por imposto, DARF mais antecipado sem duplicação e uso da validade da procuração. Minuta revisada independentemente antes da consolidação pelo Principal. Modais/projeções e configuração/execução são incrementos distintos; registrar resultados reais separadamente.
+
+### Referência de vencimento confirmada por competência — decisão de 04/11/2026
+
+O usuário aprovou expressamente “Permitir referência confirmada por competência”. Antes da primeira obtenção documental, o contador pode confirmar uma data civil para empresa, imposto e período explicitamente identificados, com autoria autenticada, data do registro e histórico. A referência não comprova exigibilidade, pagamento, transmissão nem capacidade de consulta do provedor; não é replicada automaticamente em competências futuras. Mensal e trimestral são identidades distintas, sem converter trimestre em um mês por inferência.
+
+Alteração ou revogação exige permissão e revisão atual, preservando o registro anterior e os eventos; falha de auditoria desfaz a alteração. Uma nova revisão da referência não autoriza repetir consulta já concluída ou de resultado incerto. O vencimento comprovado no documento recebido prevalece no acompanhamento; divergência fica identificada sem reescrever silenciosamente a referência histórica. Ausência de referência válida ou de integração comprovada bloqueia a primeira busca dependente, mantendo os lembretes dos documentos já existentes independentes.
+
+Critérios adicionais: registro/recarga isolados por empresa e período; concorrência/replay e revogação auditados; referência trimestral não concede capacidade mensal; confirmação sem ativação, consulta ou alteração de pausas; documento vigente impede recaptura; recuperação de conflito lê a revisão atual e não reinstala snapshot antigo. Estes critérios acompanham os testes do incremento e não declaram aprovação ou homologação externa.
+
+Impacto: explicita a fonte autorizada da seção33 e preserva R01/R02/R07/R19–R22. Não altera matriz tributária, autoriza dados reais ou modifica governança. Implementação da primeira busca permanece etapa própria até validação completa.

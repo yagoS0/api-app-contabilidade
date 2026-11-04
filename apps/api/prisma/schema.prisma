@@ -355,6 +355,9 @@ model RegimeHistorico {
 }
 
 model User {
+  referenciasConfirmadas ReferenciaVencimentoFiscal[] @relation("ReferenciaConfirmador")
+  referenciasAtualizadas ReferenciaVencimentoFiscal[] @relation("ReferenciaAtualizador")
+  referenciaEventos ReferenciaVencimentoFiscalEvento[]
   basesSociosGerenciais BaseSociosGerencial[]
   laboratorioCenarios LaboratorioCenario[]
   id           String   @id @default(uuid())
@@ -940,6 +943,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  referenciasVencimento ReferenciaVencimentoFiscal[]
   solicitacoes EncaminhamentoSuporte[]
   implantacaoTarefas ImplantacaoTarefa[]
   reformaRevisoes ReformaFiscalRevisao[]
@@ -3269,6 +3273,7 @@ model AccountingFunctionLine {
 // + 1 entry opcional de RESCISÃO (quando rescindido).
 // Guides são linkadas opcionalmente quando contador sobe DARF mensal do parcelamento.
 model Parcelamento {
+  referenciasVencimento ReferenciaVencimentoFiscal[]
   debitosOrigem ParcelamentoDebitoOrigem[]
   id             String @id @default(uuid())
   portalClientId String
@@ -6332,4 +6337,65 @@ model SyncDocumentoEntrega {
   resultado Json
   createdAt DateTime @default(now())
   @@unique([clientId, origem, nsu])
+}
+
+
+// Referência declarada, não documento fiscal nem autorização de captura.
+enum ReferenciaTipoPeriodo {
+  MENSAL
+  TRIMESTRAL
+}
+enum ReferenciaVencimentoStatus {
+  ATIVA
+  REVOGADA
+}
+enum ReferenciaVencimentoOrigem {
+  CONFIRMADA_CONTADOR
+}
+model ReferenciaVencimentoFiscal {
+  id String @id @default(uuid())
+  portalClientId String
+  tributo String
+  tipoPeriodo ReferenciaTipoPeriodo
+  competencia String
+  // Gerado pelo servidor. TRIBUTO ou futura identidade PARCELAMENTO:<id>:<numero>.
+  targetKey String
+  parcelamentoId String?
+  numeroParcela Int?
+  dataCivil DateTime @db.Date
+  origem ReferenciaVencimentoOrigem
+  descricaoFonte String
+  status ReferenciaVencimentoStatus
+  revision Int
+  confirmedBy String
+  confirmedAt DateTime
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  empresa PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
+  parcelamento Parcelamento? @relation(fields: [parcelamentoId], references: [id], onDelete: Restrict)
+  confirmador User @relation("ReferenciaConfirmador", fields: [confirmedBy], references: [id], onDelete: Restrict)
+  atualizador User @relation("ReferenciaAtualizador", fields: [updatedBy], references: [id], onDelete: Restrict)
+  eventos ReferenciaVencimentoFiscalEvento[]
+  @@unique([portalClientId, tributo, tipoPeriodo, competencia, targetKey], map: "ref_vencimento_ocorrencia_key")
+  @@index([portalClientId, competencia, status], map: "ref_vencimento_empresa_periodo_idx")
+  @@map("referencias_vencimento_fiscal")
+}
+model ReferenciaVencimentoFiscalEvento {
+  id String @id @default(uuid())
+  referenceId String
+  actorId String
+  requestId String
+  requestHash String
+  revision Int
+  acao String
+  motivo String
+  before Json
+  after Json
+  createdAt DateTime @default(now())
+  referencia ReferenciaVencimentoFiscal @relation(fields: [referenceId], references: [id], onDelete: Restrict)
+  autor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@unique([actorId, requestId], map: "ref_vencimento_evento_request_key")
+  @@unique([referenceId, revision], map: "ref_vencimento_evento_revision_key")
+  @@map("referencias_vencimento_fiscal_eventos")
 }

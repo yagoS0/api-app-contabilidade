@@ -1,3 +1,4 @@
+import { lerReferenciaVencimento, salvarReferenciaVencimento } from '../../application/guides/ReferenciaVencimentoService.js';
 import { lerAcompanhamentoGuias } from '../../application/guides/CicloAcompanhamentoGuiasService.js';
 import { lerCicloEnvioGuias } from '../../application/guides/CicloEnvioGuiasService.js';
 import { lerCicloSimples, revisarCicloSimples } from '../../application/notas/apuracao/v2/CicloSimplesService.js';
@@ -17,6 +18,20 @@ export function createCompanyAutomationRouter({ prisma, requireFirmCompanyAccess
         message: conflict ? 'Houve outra alteração simultânea. Recarregue a configuração antes de continuar.' : e.status ? e.message : 'Não foi possível confirmar o resultado. Recarregue para conferir o que foi salvo; nenhuma consulta é iniciada ao salvar.' });
     }
   };
+  // Endpoint novo; contratos e mensagens das rotas legadas permanecem intactos.
+  const referenceRun = action => async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try { res.json({ ok: true, ...await action(req) }); }
+    catch (e) {
+      const conflict = ['P2034', 'P2002'].includes(e.code);
+      res.status(conflict ? 409 : e.status || 503).json({ ok: false,
+        error: conflict ? 'REFERENCE_CHANGED' : e.status ? e.code : 'REFERENCE_UNAVAILABLE',
+        message: conflict ? 'Houve alteração simultânea. Recarregue a referência.' : e.status ? e.message : 'Não foi possível confirmar o resultado. Recarregue antes de repetir.' });
+    }
+  };
+  const referenceBase = '/companies/:companyId/automacao/referencia-vencimento';
+  router.get(referenceBase, requireFirmCompanyAccess(), referenceRun(req => lerReferenciaVencimento(prisma, req.params.companyId, req.auth.user.id, req.query)));
+  router.put(referenceBase, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), referenceRun(req => salvarReferenciaVencimento(prisma, req.params.companyId, req.auth.user.id, req.body)));
   const base = '/companies/:companyId/automacao';
   router.get('/operacoes/rotinas', run(async req => listarRotinasOperacoes(prisma, await empresasVisiveis(req))));
   router.get(base, requireFirmCompanyAccess(), run(req => lerAutomacaoEmpresa(prisma, req.params.companyId)));

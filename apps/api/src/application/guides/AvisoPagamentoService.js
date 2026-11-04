@@ -1,3 +1,5 @@
+import { lerModoEventos } from '../fiscal/serpro/AgendaEventosModo.js';
+import { conferirEventoAcompanhamento } from './AgendaEventosExecucao.js';
 import { canGuideRecalculate } from './lib/recalculoDaGuia.js';
 import { lerRegistroRecalculo } from './RegistroRecalculoGuia.js';
 import { travarGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
@@ -43,7 +45,7 @@ export async function transportePadrao() {
 }
 
 /** Retorno negativo concluído é aviso de ausência de confirmação, nunca ordem para pagar novamente. */
-export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId = null, scheduledAt, assertActive = () => {}, agora = new Date(), politica = null }, deps = {}) {
+export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId = null, scheduledAt, assertActive = () => {}, agora = new Date(), politica = null, eventoRelativo = null }, deps = {}) {
   if (!scheduledAt) return { status: "IGNORADO", motivo: "CONSULTA_MANUAL" };
   const db = deps.db || prisma;
   const policy = await conferirAutomacaoCicloFiscal({ db, scheduledAt });
@@ -53,7 +55,7 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
   };
   const feriados = deps.feriados ?? await db.feriado.findMany({});
   const carregar = async () => {
-    const vinculosDaGuia = { parcela: { include: { parcelamento: true } }, parcelamento: true };
+    const vinculosDaGuia = { parcela: { include: { parcelamento: true } }, parcelamento: true, tributosParcela: true };
     const informada = parcelaId ? await db.parcela.findUnique({ where: { id: parcelaId }, include: { guia: { include: vinculosDaGuia }, parcelamento: true } }) : null;
     if (parcelaId && !informada) throw erro('DOCUMENTO_NAO_ENCONTRADO', 'Parcela não encontrada.');
     const g = informada?.guia || (!parcelaId && guideId ? await db.guide.findUnique({ where: { id: guideId }, include: vinculosDaGuia }) : null);
@@ -74,13 +76,18 @@ export async function avisarPagamentoNaoConfirmado({ guideId = null, parcelaId =
     if (!p && !g) throw erro("DOCUMENTO_NAO_ENCONTRADO", "Documento não encontrado.");
     if (p?.origemBaixa || p?.baixadaEm || p?.pagamentoStatus === "CONFIRMADO" || g?.baixada || g?.paymentStatus === "PAID" || g?.clienteConfirmouEm || g?.paymentConfirmedAt) throw erro("PAGAMENTO_JA_CONFIRMADO", "Pagamento já confirmado; aviso cancelado.");
 
-    if (politica && lerRegistroRecalculo(g)) throw erro('GUIA_RECALCULADA', 'A guia já foi recalculada; confira o histórico.');
+    const mode = await lerModoEventos(db, g?.portalClientId || p?.portalClientId);
+    const relativo = mode.executionMode === 'RELATIVO_V1';
+    if (relativo !== Boolean(eventoRelativo)) throw erro('EVENT_MODE_CHANGED', 'A estratégia de acompanhamento mudou.');
+    if (politica && !relativo && lerRegistroRecalculo(g)) throw erro('GUIA_RECALCULADA', 'A guia já foi recalculada; confira o histórico.');
     if (!g?.liberadaCliente) throw erro("GUIA_NAO_LIBERADA", "Obtenha e libere a guia no portal antes de avisar o cliente.");
     if (g.status !== 'PROCESSED') throw erro('GUIA_NAO_PROCESSADA', 'A guia precisa de revisão antes de avisar o cliente.');
     const companyId = p?.portalClientId || g.portalClientId;
     const company = await db.portalClient.findUnique({ where: { id: companyId }, select: { razao: true, municipio: true } });
     if (!calendarioAvisosGuia(g.vencimento, feriados, company?.municipio, politica)) throw erro('VENCIMENTO_INVALIDO', 'Confira o vencimento da guia antes de avisar o cliente.');
-    const fase = faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio, politica);
+    const event = relativo ? await conferirEventoAcompanhamento(db, { ...g, portalClient: company }, agora, eventoRelativo) : null;
+    if (event && event.tipo !== 'LEMBRETE') throw erro('EVENT_MODE_CHANGED', 'Evento não corresponde a um lembrete.');
+    const fase = event?.fase || faseAvisoGuia(g.vencimento, agora, feriados, company?.municipio, politica);
     if (!fase) throw erro('FORA_DO_DIA_DO_AVISO', 'Hoje não é o dia útil anterior, o vencimento ajustado ou o dia útil posterior.');
     return { p: p ? { ...p, parcelamento: contrato } : null, g, companyId, company, fase };
   };

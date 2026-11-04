@@ -1,8 +1,10 @@
+import { mockLerAgendaEventos, mockSalvarAgendaEventos } from './agendaEventosMock';
+const copy = value => JSON.parse(JSON.stringify(value));
 const keys = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia", "avisos_guias_whatsapp", "simples_coleta_calculo", "simples_envio_guias"];
 const labels = ["DAS", "INSS", "Extrato", "Presumido", "Parcelamento", "Pagamento", "Conferência ADN", "Lembretes de guias no WhatsApp", "Coleta e cálculo do Simples", "Envio automático de guias"];
 let savedCompanies = null;
 let pausa = { paused: false, version: 0, legacy: true, reason: null, actor: null, changedAt: null, resumedAt: null };
-export function mockLerPausaCicloFiscal() { return { ok: true, policy: structuredClone(pausa) }; }
+export function mockLerPausaCicloFiscal() { return { ok: true, policy: copy(pausa) }; }
 export function mockSalvarPausaCicloFiscal(input) {
   if (input.version !== pausa.version) throw new Error('A configuração mudou. Atualize antes de confirmar.');
   if (typeof input.paused !== 'boolean' || !input.reason?.trim() || input.reason.trim().length > 1000) throw new Error('Informe motivo válido.');
@@ -42,7 +44,7 @@ export function mockExecucoesRotinas() {
 }
 
 export function mockCarregarRotinas(companies) {
-  return { ok: true, rotinas: keys.map((key, i) => ({ key, label: labels[i] })), agenda: structuredClone(agenda),
+  return { ok: true, agendaEventos:mockLerAgendaEventos(), rotinas: keys.map((key, i) => ({ key, label: labels[i] })), agenda: copy(agenda),
     executions: mockExecucoesRotinas(), empresas: companies.map(c => {
       const regime = c.regimeTributario || c.tipoTributario || c.legacyCompany?.regimeTributario || null;
       return { companyId: c.companyId, razao: c.razao, cnpj: c.cnpj,
@@ -53,11 +55,15 @@ export function mockCarregarRotinas(companies) {
 }
 
 export function mockSalvarRotinas(input) {
+  if(input.agendaEventos!==undefined){
+    if(Object.keys(input).some(key=>!['requestId','agendaEventos'].includes(key))||!input.agendaEventos||Object.keys(input.agendaEventos).some(key=>!['expectedRevision','patch'].includes(key)))throw Object.assign(new Error('Salve os parâmetros separadamente da agenda.'),{status:422});
+    return {ok:true,agendaEventos:mockSalvarAgendaEventos(null,{requestId:input.requestId,...input.agendaEventos})};
+  }
   const envio = input.agenda?.simples_envio_guias;
   if (envio && (typeof envio.enabled !== 'boolean' || envio.frequency !== 'DAILY' || !Number.isInteger(envio.hour) || envio.hour < 0 || envio.hour > 23)) throw new Error('Envio de guias exige agenda diária válida.');
   const ciclo = input.agenda?.simples_coleta_calculo;
-  if (ciclo && (typeof ciclo.enabled !== 'boolean' || ciclo.frequency !== 'DAILY_UNTIL_DAY' || ciclo.day !== 8 || !Number.isInteger(ciclo.hour) || ciclo.hour < 0 || ciclo.hour > 11)) throw new Error('Coleta do Simples exige dias 1 a 8 e horário matinal.');
-  agenda = { ...agenda, ...structuredClone(input.agenda || {}) };
-  if (Array.isArray(input.empresas)) savedCompanies = structuredClone(input.empresas);
-  return { ok: true, atualizadas: savedCompanies?.length || 0, agenda: structuredClone(agenda) };
+  if (ciclo && (typeof ciclo.enabled !== 'boolean' || ciclo.frequency !== 'DAILY_UNTIL_DAY' || ciclo.day !== 8 || !Number.isInteger(ciclo.hour) || ciclo.hour < 0 || ciclo.hour > 11)) throw new Error('Coleta do Simples exige coleta até o dia 8 e horário matinal.');
+  agenda = { ...agenda, ...copy(input.agenda || {}) };
+  if (Array.isArray(input.empresas)) savedCompanies = copy(input.empresas);
+  return { ok: true, atualizadas: savedCompanies?.length || 0, agenda: copy(agenda) };
 }

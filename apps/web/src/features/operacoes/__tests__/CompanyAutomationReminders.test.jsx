@@ -1,15 +1,15 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CompanyAutomation } from '../CompanyAutomation';
 jest.mock('../OperationsManualInss', () => ({ CompanyManualInss: () => null }));
-const initial = { companyId: 'a', revision: 'r1', rotinas: [{ key: 'pagamento', label: 'Pagamento', enabled: true }], lembretes: { enabled: false, agenda: { enabled: false, hour: null } } };
+const initial = { agendaEventos: { schemaVersion: 1, revision: 'policy-r1', version: 0, executionMode: 'LEGADO', relativeConsumerReady: false, overrides: {}, effective: {}, origins: {} }, companyId: 'a', revision: 'r1', rotinas: [{ key: 'pagamento', label: 'Pagamento', enabled: true }], lembretes: { enabled: false, agenda: { enabled: false, hour: null } } };
 beforeEach(() => Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => 'reminder-request' }));
 const checkbox = () => screen.getByRole('checkbox', { name: 'Selecionar empresa para lembretes no WhatsApp' });
-async function prepare() { await screen.findByRole('region', { name: 'Lembretes de guias' }); fireEvent.click(checkbox()); fireEvent.click(screen.getByText('Conferir alterações')); }
+async function prepare() { await screen.findByRole('rowheader', { name: 'Lembretes de guias' }); fireEvent.click(checkbox()); fireEvent.click(screen.getByText('Conferir alterações')); }
 
 test('lembretes desligados por padrão; salva somente seleção e mantém agenda global OFF', async () => {
  const api={getCompanyAutomation:jest.fn(async()=>initial),saveCompanyAutomation:jest.fn(async()=>({...initial,revision:'r2',lembretes:{...initial.lembretes,enabled:true}}))};
  render(<CompanyAutomation api={api} companyId="a" canEdit />);
- await screen.findByRole('region',{name:'Lembretes de guias'});
+ await screen.findByRole('rowheader',{name:'Lembretes de guias'});
  expect(checkbox()).not.toBeChecked();expect(screen.getByText(/Agenda global desligada/)).toBeVisible();
  expect(api.saveCompanyAutomation).not.toHaveBeenCalled();
  await prepare();fireEvent.click(screen.getByText('Salvar configuração'));
@@ -21,7 +21,7 @@ test('lembretes desligados por padrão; salva somente seleção e mantém agenda
 test('somente leitura e falha de carga não permitem alterar lembretes', async () => {
  const api={getCompanyAutomation:jest.fn(async()=>initial),saveCompanyAutomation:jest.fn()};
  const view=render(<CompanyAutomation api={api} companyId="a" canEdit={false}/>);
- await screen.findByRole('region',{name:'Lembretes de guias'});expect(checkbox()).toBeDisabled();
+ await screen.findByRole('rowheader',{name:'Lembretes de guias'});expect(checkbox()).toBeDisabled();
  api.getCompanyAutomation.mockRejectedValue(new Error('Configuração indisponível'));
  view.rerender(<CompanyAutomation api={api} companyId="b" canEdit/>);
  expect(await screen.findByRole('alert')).toHaveTextContent('Configuração indisponível');
