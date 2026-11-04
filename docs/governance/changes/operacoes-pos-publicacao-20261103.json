@@ -1,0 +1,23 @@
+{
+  "summary": "Alinha a projeção de procuração entre carteira e detalhe e reduz a carga inicial dos modais de Operações, preservando identidade, competência e revisão.",
+  "risk": "high",
+  "domains": ["accounting", "api", "commercial", "communication", "documentation", "fiscal", "governance", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Sem mudança de regra operacional. Preserva R01/R02/R19–R22 e seção32: vínculo documental depende do CNPJ e procurador atuais; evidência ausente/divergente não se torna ativa. Não consulta SERPRO nem altera dados. Guias sem competência permanecem fora da reconciliação e das ações do mês. Nenhuma automação ou integração é ativada.",
+  "tests": [
+    "Controlador 2026-11-03T23-07-51-207Z-9b1c8f83 executou seis gates na fonte440a0d8a05025526dda8e032b9fafb86ea8e986fcd932f277234981ab92e6de0: governança85, API12350 aprovados e6pendentes em722suítes, web6766, portal1610, buildsweb/portal. Todos os gates code0. Resultados e estado originais preservados; run interrompido no início dos pareceres, não promovido a ready_for_human.",
+    "Correção complementar somente em OperationsGuides.jsx e seu teste após os gates: aceitar competência nullable sem incluir a guia no mês ou nas ações. API, portal, dependências e governança intactos; suas provas reutilizadas por comparação de fontes. Web6766 é execução anterior, não uma nova bateria da fonte final.",
+    "Fonte final:63testes em4suítes focais da interface passaram; novo buildweb passou. Inclui fila limitada, fechamento, identidade, leitura sob demanda e guia nullable excluída da seleção. Evidências output/operacoes-pos-publicacao-20261103/DELTA-WEB.json e BUILD-WEB.log.",
+    "Visual local final:6casos/6capturas em1440/390 com39empresas fictícias; limites3empresas/até9leituras internas por montagem, nenhuma gravação/rede externa, foco e respostas tardias verificados. Fontes antes/depois iguais. Falhas anteriores do roteiro (entrada virtual esbuild e rótulo) preservadas; não foram falhas aprovadas do produto.",
+    "CI integral obrigatório no SHA final antes do merge. Inspeção pós-deploy somente leitura de Confirmado/procuração; ainda não realizada neste registro. Nenhuma prova local homologa execução fiscal ou envio real."
+  ],
+  "rollback": "Reverter somente o commit deste incremento, preservando main e demais trabalhos. Sem migração ou atualização de dados; nenhuma flag ou agenda deve ser alterada. Confirmar saúde dos serviços após reversão.",
+  "humanDecisions": [
+    "Pedido atual autoriza corrigir procurações, lentidão e Confirmado, reaproveitar testes válidos e publicar após revisões/CI, sem ativar automações nem alterar dados reais.",
+    "Principal adotou registro complementar delimitado com parecer independente para reaproveitar provas intactas. Isto não é fechamento novo do runtime nem alteração de gates/política. Históricos, limites e resultados pendentes são preservados.",
+    "Guru permanece em conferência, eNotas ativo, benefício pendente e Sintropia fora de ativação. Backlog anterior permanece preservado, sem inclusão silenciosa neste incremento."
+  ],
+  "validationMode": "complementary_record_with_compatible_evidence_and_required_final_ci",
+  "originalRun": "2026-11-03T23-07-51-207Z-9b1c8f83",
+  "evidenceDirectory": "output/operacoes-pos-publicacao-20261103",
+  "limitations": ["Fila limita empresas por montagem; requisições já iniciadas não são abortadas.", "Seis testes API pendentes permanecem registrados, sem alegação de cobertura concluída.", "Inspeção visual fictícia não mede latência real da produção."]
+}

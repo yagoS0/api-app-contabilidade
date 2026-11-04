@@ -192,7 +192,7 @@ import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitir
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED, INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 import { capturarLpDaCompetencia, reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
-import { getStoredProcurationStatus, SerproProcurationService, PROCURATION_ATTEMPT_PREFIX, projetarProcuracaoSalva } from "../../application/fiscal/serpro/SerproProcurationService.js";
+import { getStoredProcurationProjection, SerproProcurationService, PROCURATION_ATTEMPT_PREFIX, projetarProcuracaoSalva } from "../../application/fiscal/serpro/SerproProcurationService.js";
 // Q40: confirmação de pagamento (PAGTOWEB) + SITFIS.
 import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { runSerproPaymentConfirmationWorkerOnce } from "../../workers/serproPaymentConfirmationWorker.js";
@@ -553,7 +553,6 @@ async function attachSerproStatusToCompaniesList(data) {
         checkedAt: procuration.checkedAt || null,
         validUntil: procuration.validUntil || null,
         systems: Array.isArray(procuration.systems) ? procuration.systems : [],
-        vinculoConfirmado: procuration.cnpj === cnpj && procuration.procuradorCnpj === normalizarDocumento(settings.certificate?.document),
         reasons,
       },
     };
@@ -5176,8 +5175,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (!portalCompanyId) {
         return res.status(400).json({ ok: false, error: "company_id_required" });
       }
-      const result = await getStoredProcurationStatus(portalCompanyId);
-      return res.json({ ok: true, result });
+      try {
+        const result = await getStoredProcurationProjection(portalCompanyId);
+        return res.json({ ok: true, result });
+      } catch {
+        return res.status(503).json({ ok: false, error: "procuration_read_unavailable" });
+      }
     }
   );
 

@@ -1,4 +1,5 @@
 import { OperationsGuideActions } from './OperationsGuideActions';
+import { operationsReadQueue } from './operationsReadQueue';
 import { CompanyGuideDelivery } from './CompanyGuideDelivery';
 import { Button } from '../../components/ui/Button';
 import { useEffect, useState } from 'react';
@@ -13,12 +14,13 @@ export function OperationsGuides({ api, rows, visibleRows = rows, competencia, s
   useEffect(() => {
     let active = true; setData({});
     (async () => {
-      for (const id of ids.split('|').filter(Boolean)) {
+      await operationsReadQueue(ids.split('|').filter(Boolean), async id => {
         let value;
         try {
           if (!api?.getCompanyGuides) throw Error('Leitura de documentos indisponível');
           const guides = await api.getCompanyGuides(id);
-          if (!Array.isArray(guides)) throw Error('Resposta de documentos inválida');
+          if (!active) return;
+          if (!Array.isArray(guides) || guides.some(g => !g || g.companyId !== id || !g.guideId)) throw Error('Resposta de documentos inválida');
           value = { guides };
           if(api.getOperationsGuideEvidence) {
             try { const evidence = await api.getOperationsGuideEvidence(id,competencia); if(evidence?.companyId!==id || evidence.competencia!==competencia || !Array.isArray(evidence.items)) throw Error('Resposta de evidências inválida'); value.evidence=evidence; }
@@ -27,7 +29,7 @@ export function OperationsGuides({ api, rows, visibleRows = rows, competencia, s
         } catch (e) { value = { error: e.message }; }
         if (!active) return;
         setData(old => ({ ...old, [id]: value }));
-      }
+      }, { isActive: () => active });
     })();
     return () => { active = false; };
   }, [api, ids, competencia, version]);
@@ -57,8 +59,14 @@ export function OperationsGuides({ api, rows, visibleRows = rows, competencia, s
           <details><summary>Documento {g.guideId}</summary><p>{g.competencia} · Vencimento {operationDate(g.vencimento)}</p>{expected&&<p>Expectativa: {expected.documento} · Envio: {expected.comunicacao} · Pagamento: {expected.pagamento}</p>}{stage!=='pago'&&<p>{g.paymentStatus==='PAID'?({CLIENTE:'Confirmada pelo cliente — declaração, não comprovante bancário',SERPRO:'Confirmada na Receita',MANUAL:'Confirmada pelo contador'})[g.paymentStatusSource]||'Origem não informada':'Pagamento não confirmado'}{g.paymentStatus!=='PAID'&&` · ${{CLIENTE:'Origem: informação do cliente',SERPRO:'Origem: consulta SERPRO',MANUAL:'Origem: registro manual'}[g.paymentStatusSource]||'Origem não informada'}`}</p>}<p>Revisão: {proof?.revisao||g.versaoPagamento||'Não informada'}</p>{proof?.tentativas?.map(t=><p key={t.id}>Tentativa {t.id} · {t.canal} · {t.destino} · {t.status} · {operationInstant(t.criadoEm)} · Revisão {t.revisaoCompativel===true?'compatível':t.revisaoCompativel===false?'histórica':'não comprovada'}{t.causa&&` · ${t.causa}`}</p>)}{proof?.historicoLimitado&&<p>Histórico limitado; confira a empresa.</p>}{stage!=='enviado'&&(proof?.envios||g.envio?.canais||[]).map((c,i)=><p key={c.id||i}>{c.canal} · {c.destino||'Destino não registrado'} · {c.status}{(c.causa||c.erroMensagem)&&<span>Falha: {c.causa||c.erroMensagem}</span>}</p>)}{(proof?.envios||g.envio?.canais||[]).some(c=>['indeterminado','enviando','INCERTO','EM_PROCESSAMENTO'].includes(c.status))&&<p>Resultado incerto ou em processamento exige conciliação antes de repetir envio.</p>}</details>
         </div></div>;})}
         {result&&!documents.length&&<p>{stage==='pago'?'Nenhuma guia paga identificada neste retorno.':'Nenhum documento identificado nesta competência.'} Isso não dispensa obrigações.</p>}{result?.missing.length>0&&<p>Sem documento reconciliado por identidade: {result.missing.map(i=>i.label||i.key).join(', ')}. Confira vigência e débito automático.</p>}
-      </td><td>{source?.evidenceError&&<p role="alert">Evidências: {source.evidenceError}</p>}{source?.evidence?.nextOffset!=null&&<div><p>Este retorno é limitado; há mais evidências.</p><Button variant="secondary" size="sm" disabled={busy} onClick={()=>moreEvidence(id)}>Carregar mais evidências</Button></div>}{api?.getCompanyGuideDelivery&&<details><summary>Comunicação da empresa</summary><CompanyGuideDelivery api={api} companyId={id} competencia={competencia}/></details>}<InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(id,'guides')}?competencia=${encodeURIComponent(competencia)}`}>Abrir Guias — conferir canais e reenvio</InternalLink></td></tr>;
+      </td><td>{source?.evidenceError&&<p role="alert">Evidências: {source.evidenceError}</p>}{source?.evidence?.nextOffset!=null&&<div><p>Este retorno é limitado; há mais evidências.</p><Button variant="secondary" size="sm" disabled={busy} onClick={()=>moreEvidence(id)}>Carregar mais evidências</Button></div>}{api?.getCompanyGuideDelivery&&<GuideDeliveryDetails key={`${id}:${competencia}`} api={api} companyId={id} competencia={competencia}/>}<InternalLink className="btn btn-secondary btn-sm" href={`${companyTabPath(id,'guides')}?competencia=${encodeURIComponent(competencia)}`}>Abrir Guias — conferir canais e reenvio</InternalLink></td></tr>;
     })}</tbody></table></div>
     <OperationsGuideActions api={api} rows={rows} data={data} selected={selected} competencia={competencia} stage={stage} onChanged={()=>setVersion(v=>v+1)} onBusyChange={setBusy}/>
   </>;
+}
+
+// A seção recolhida não deve consultar toda a carteira ao abrir o modal.
+function GuideDeliveryDetails({ api, companyId, competencia }) {
+  const [open, setOpen] = useState(false);
+  return <details onToggle={event => setOpen(event.currentTarget.open)}><summary>Comunicação da empresa</summary>{open && <CompanyGuideDelivery api={api} companyId={companyId} competencia={competencia}/>}</details>;
 }

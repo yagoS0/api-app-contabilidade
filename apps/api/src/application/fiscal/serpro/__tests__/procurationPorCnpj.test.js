@@ -124,3 +124,11 @@ test.each(['falha', 'sucesso'])('conclusão antiga %s não sobrepõe resultado e
   concluir(); await capturada;
   expect(f.evidencia()).toEqual(atual); expect(f.tentativa()).toEqual(tentativa);
 });
+
+it.each([
+  [{}, {}],
+  [{ cnpj: '', procuradorCnpj: '' }, { cnpj: '', procuradorCnpj: '' }],
+  [{ cnpj: '1', procuradorCnpj: '2' }, { cnpj: '1', procuradorCnpj: '2' }],
+])('identidade ausente ou incompleta nunca comprova vínculo', (evidence, context) => {
+  expect(projetarProcuracaoSalva(evidence, {}, context).vinculoConfirmado).toBe(false);
+});
