@@ -1,3 +1,12 @@
+import { CompanyGuidesTable } from '../renderCompanyGuidesTable';
+const mockFormReads = jest.fn(), mockFormWrites = jest.fn();
+jest.mock('../../../../../api/client', () => ({createApiClient: () => ({
+  getFormasIndicacoesParcelamento: (...args) => mockFormReads(...args),
+  salvarFormaIndicacaoParcelamento: (...args) => mockFormWrites(...args),
+  getExpectedGuides: async (_id, competencia) => ({competencia,compliance:{coberturaParcelamentoMes:[]}}),
+  getCompanyGuideDueReport: async () => ({outros:[]}),
+  getFechamento: async () => ({}), getFechamentoContabil: async () => ({}),
+})}));
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FormasIndicacoesParcelamento } from '../FormasIndicacoesParcelamento';
 const item = { id: 'i', descricao: 'Indicação fictícia', modalidade: 'PARCSN', revision: 'a'.repeat(64), atual: null, historico: [] };
@@ -58,4 +67,19 @@ test('falha de atualização externa conserva sucesso e histórico; vigência fu
  expect(screen.getByText('Forma de pagamento a conferir')).toBeInTheDocument();
  expect(screen.getByText(/Débito automático · desde 2026-11 · registrado/)).toBeInTheDocument();
  expect(screen.getByRole('button', { name: 'Alterar configuração' })).toBeEnabled();
+});
+
+test('a configuração aberta dentro de Guias lê e salva a vigência da competência exibida',async()=>{
+ mockFormReads.mockResolvedValue({ok:true,items:[item],canEdit:true});
+ mockFormWrites.mockImplementation(async (_company,_id,body)=>({ok:true,indicacao:persisted(body)}));
+ render(<CompanyGuidesTable companyId="c" competencia="2026-10" guides={[]} loadingGuides={false}/>);
+ fireEvent.click(screen.getByText('Formas de pagamento dos parcelamentos sem contrato'));
+ const field=await screen.findByLabelText('Válido a partir de');
+ expect(mockFormReads).toHaveBeenCalledWith('c','2026-10');
+ expect(field).toHaveValue('2026-10');
+ fireEvent.change(screen.getByLabelText('Forma de pagamento'),{target:{value:'GUIA_MENSAL'}});
+ fireEvent.click(screen.getByText('Confirmar forma de pagamento'));
+ await waitFor(()=>expect(mockFormWrites).toHaveBeenCalledWith('c','i',expect.objectContaining({
+   formaPagamento:'GUIA_MENSAL',desde:'2026-10',expectedRevision:item.revision,
+ })));
 });

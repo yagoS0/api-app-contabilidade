@@ -1,5 +1,5 @@
 import { createMockApi } from "../mockApi";
-import { relatorioParcelasGuiasMock } from "../parcelasGuiasRelatorioMock";
+import { coberturaFiscalParcelasMock, relatorioParcelasGuiasMock } from "../parcelasGuiasRelatorioMock";
 import { lerEnvioDaGuia } from "../../../features/guides/lib/envioNaTela";
 
 const api = createMockApi();
@@ -69,4 +69,39 @@ test("relatório não inventa indício, DAS normal e guia de outro mês não cob
   const acompanhamento = { indicacoes: [{ id: "i", status: "PENDENTE", modalidade: "PARCSN", parcelasEmAtraso: 2 }] };
   const guias = [{ id: "das", tipo: "SIMPLES", competencia: "2026-09", status: "PROCESSED", hasPdf: true }, { id: "antiga", parcelamentoId: "p", parcelamentoTipo: "PARCSN", competencia: "2026-08", status: "PROCESSED", hasPdf: true }];
   expect(relatorioParcelasGuiasMock({ ...base, acompanhamento, guias }).simples[0].faltantes).toHaveLength(1);
+});
+
+test("a cobertura fiscal do mock conserva o mês do documento e a referência da previsão", async () => {
+  const companyId = "empresa-ficticia-fiscal";
+  const item = (parcelaId, referencia, guideId, extra = {}) => ({
+    id: parcelaId, parcelaId, portalClientId: companyId, referencia, guideId,
+    vencimento: "2026-11-30", formaPagamento: "GUIA_MENSAL", ...extra,
+  });
+  const itens = [item("real","2026-11","g"), item("outubro","2026-10",null),
+    item("novembro","2026-11",null), item("sem-mes",null,null),
+    item("outra-empresa","2026-10",null,{portalClientId:"outra"}), item("sem-guia-local","2026-10","id-desconhecido")];
+  const doc = {id:"g",competencia:"2026-10",status:"PROCESSED",hasPdf:true,vencimento:"2026-11-30",valor:20};
+  const projetar = mes => coberturaFiscalParcelasMock(companyId,mes,[doc],{itens});
+  expect(projetar("2026-10").map(p=>p.id)).toEqual(["real","outubro"]);
+  expect(projetar("2026-11").map(p=>p.id)).toEqual(["novembro"]);
+  expect(projetar("2026-10")[0]).toMatchObject({referencia:"2026-11",referenciaFiscal:"2026-10",documento:"disponivel"});
+  expect(await api.getExpectedGuides(companyId,"2026-10")).toMatchObject({competencia:"2026-10",compliance:{coberturaParcelamentoMes:[]}});
+});
+test("carteira e aba Guias projetam as mesmas parcelas para uma competência real da simulação", async () => {
+  const [empresa] = await api.listCompanies();
+  const id = empresa.companyId;
+  const { contrato } = await api.criarAcompanhamentoParcelamento(id, {
+    tipo: "PARCSN", numeroParcelamento: "COMP-IGUAL", formaPagamento: "GUIA_MENSAL",
+  });
+  await api.capturarContratoParcelamento(id, contrato.id);
+  const itens = (await api.getAcompanhamentoParcelamentos(id)).itens;
+  const item = itens.find(p => p.parcelamentoId === contrato.id && p.guideId);
+  expect(item).toBeDefined();
+  const periodo = item.referencia;
+  const carteira = (await api.listCompanies(periodo)).find(c => c.companyId === id);
+  const guias = await api.getExpectedGuides(id, periodo);
+  expect(guias.compliance.coberturaParcelamentoMes).toEqual(carteira.guideCompliance.coberturaParcelamentoMes);
+  expect(guias.compliance.coberturaParcelamentoMes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ guideId: item.guideId, referenciaFiscal: periodo, documento: "disponivel" }),
+  ]));
 });

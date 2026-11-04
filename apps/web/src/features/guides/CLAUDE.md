@@ -29,13 +29,13 @@ Upload e marcar vazio compartilham o cabeçalho da lista. A configuração de en
 
 A grade tem oito colunas: seleção, guia, competência, valor, vencimento, pagamento, envio e linha digitável. O processamento fica abaixo do nome; `ERROR` aparece como “Revisar documento”, separado do resultado de envio. Valores têm alinhamento numérico; a linha digitável mantém máscara, conteúdo completo e cópia dos dígitos. Até 800 px, as linhas viram cartões com rótulos. CSS escopado em `guides-workspace.css`. A competência global e as regras de vencimento, seleção, pagamento e envio permanecem as mesmas.
 
-## Guias dentro da empresa por vencimento — 10/09/2026
+## Guias da empresa por competência fiscal — 04/11/2026
 
-A seleção de empresas (`BarraSelecaoEmpresas`) também deriva o mês seguinte da competência do cabeçalho, sem seletor adicional. A página independente de envio em lote usa uma única competência de trabalho e deriva o vencimento; não filtra a competência original dos documentos. E-mail e WhatsApp recebem o mesmo mês derivado e os IDs conferidos. Respostas antigas da prévia não substituem uma consulta posterior.
+Os relatórios explicitamente por vencimento, incluindo a página independente de envio em lote por vencimento, conservam o calendário de vencimentos. As prévias de e-mail e WhatsApp identificam os documentos e os destinatários.
 
-Decisão de produto corrigida pelo usuário: `CompanyGuidesTable` segue SOMENTE a competência do cabeçalho e deriva o vencimento pelo mês seguinte (`deslocarCompetencia(competencia, 1)`). Agosto mostra tudo que vence em setembro, incluindo DAS de agosto e parcela de setembro. Não adicionar seletor independente de vencimento nem exigir configuração do usuário. O título informa o mês derivado; histórico e consulta fiscal ficam em “Outras consultas”. Trocar empresa/competência retorna à visão principal e limpa seleção. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal.
+Operações e CompanyGuidesTable abrem na competência fiscal selecionada no cabeçalho ou indicada pelo link da empresa. Uma guia de outubro que vence em novembro aparece em outubro. O documento usa sua competência gravada; uma previsão sem guia usa a competência comprovada da parcela e se distingue da guia emitida. Ao trocar de empresa ou competência, limpar a seleção. A data de vencimento continua visível e orienta os prazos e lembretes.
 
-A conferência de parcelas usa GET `/firm/companies/:companyId/guides/due-report`, com `requireFirmCompanyAccess`, apenas dados locais e escopo de uma empresa. Falha aparece como falha, e nenhuma ausência de documento confirma regularidade. Reutiliza a regra de parcelas do lote. `getCompanyGuides` percorre as páginas para não esconder documentos depois dos primeiros 50; falha intermediária rejeita toda a carga.
+A visão fiscal usa a projeção da rota guides/expected para a empresa e a competência. A consulta explícita por vencimento usa guides/due-report. Cada leitura respeita o acesso da empresa e apresenta falhas. getCompanyGuides percorre todas as páginas; falha intermediária rejeita a carga.
 
 Feature de guias no frontend: listagem por empresa, upload/identificação, captura,
 envio em lote e o painel de guias esperadas.

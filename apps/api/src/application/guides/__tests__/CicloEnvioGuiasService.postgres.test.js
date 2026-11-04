@@ -17,7 +17,7 @@ const url=process.env.TEST_CICLO_PG_URL;
  // Only shared settings are replaced with local fixture reads; all cycle, guide and ledger mutations use PostgreSQL.
  const db=new Proxy(pg,{get(target,prop){if(prop==='appSetting')return {...target.appSetting,findUnique:args=>args.where.key==='serpro_runtime_settings'?Promise.resolve({value:agenda}):args.where.key==='automacao_ciclo_fiscal'?Promise.resolve(null):target.appSetting.findUnique(args)};const value=target[prop];return typeof value==='function'?value.bind(target):value;}});
  const transport=jest.fn(async message=>{await message.beforeDispatch();return {id:'fake-provider-reference'};});
- const projection=async()=>new Map([[id,{das:{required:true,ok:true},inss:{required:false,ok:true},parcDas:{required:false,ok:true},guiasParcelamentoMes:[]}]]);
+ const projection=async()=>new Map([[id,{das:{required:true,ok:true},inss:{required:false,ok:true},parcDas:{required:false,ok:true},guiasParcelamentoMes:[],expectativaParcelamentoInconclusiva:false}]]);
  const deps={db,now:()=>new Date(scheduledAt),compliance:projection,contatos:async()=>({emails:['destino@example.test'],telefones:[]}),canal:async()=>({disponivel:false}),
   email:(input)=>enviarGuiasExatasDoCiclo(input,{db,email:{send:transport},validateTo:async()=>{},pdf:async guide=>Buffer.from(guide.pdfBytes)})};
  const execute=()=>comAutomacaoCicloFiscal({version:0,scheduledAt},()=>comAutomacaoEmpresa(id,()=>createCicloEnvioGuiasService(deps).executar({portalClientId:id,competencia:'2026-10',scheduledAt,assertActive(){}}),db,{scheduledAt}),db);

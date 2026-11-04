@@ -72,6 +72,7 @@ export async function readCalculationDetails(api, companyId, competencia) {
 }
 
 export function reconcileOperationGuides(guides, row, competencia) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) throw Error('Competência inválida.');
   const scoped = guides.filter(g => g.companyId === row.company.companyId && g.competencia === competencia);
   const byId = new Map();
   for (const guide of scoped) {

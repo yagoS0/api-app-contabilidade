@@ -1,8 +1,9 @@
+import { companyTabPath } from '../../features/companies/detail/lib/rotasDaEmpresa';
 import { resultadoContabil } from "../../features/fiscal/serpro/lib/consultaResultado";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccountingEntries } from "../../features/accounting/hooks/useManageAccountingEntries";
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
-import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
+import { parseCompetencia, competenciaPadrao, competenciaDaQuery } from "../../lib/competencia";
 
 export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab, navigation }) {
   const accountingEntriesState = useAccountingEntries();
@@ -35,11 +36,12 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   const [consumedNavigation, setConsumedNavigation] = useState(null);
   let incomingPeriod = null;
   const params = new URLSearchParams(navigation?.search || '');
-  const values = params.getAll('competencia');
-  const expectedPath = selectedCompanyId ? '/companies/' + encodeURIComponent(selectedCompanyId) + '/cadastro-fiscal' : null;
-  if (page === 'companyDetail' && companyDetailTab === 'cadastroFiscal' &&
-      navigation?.pathname === expectedPath && values.length === 1 &&
-      /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(values[0])) incomingPeriod = values[0];
+  const acceptsPeriod = companyDetailTab === 'cadastroFiscal' || companyDetailTab === 'guides';
+  const expectedPath = selectedCompanyId && acceptsPeriod
+    ? companyTabPath(encodeURIComponent(selectedCompanyId), companyDetailTab)
+    : null;
+  if (page === 'companyDetail' && expectedPath &&
+      navigation?.pathname === expectedPath) incomingPeriod = competenciaDaQuery(params);
   const navigationKey = incomingPeriod ? JSON.stringify([navigation.key, navigation.pathname, navigation.search, selectedCompanyId]) : null;
   if (navigationKey !== consumedNavigation) {
     setConsumedNavigation(navigationKey);

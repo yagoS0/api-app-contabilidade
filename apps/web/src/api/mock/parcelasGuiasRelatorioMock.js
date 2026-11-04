@@ -32,3 +32,23 @@ export function relatorioParcelasGuiasMock({ companyId, mesVencimento, empresa =
   row.situacao = row.faltantes.length ? "incompleto" : row.pendingGuideIds.length ? "pendente" : "documentos_tratados";
   return { mesVencimento, competencia: mesVencimento, simples: [row], presumidos: [], outros: [], pendenciasAnteriores: anteriores, conferirVencimento };
 }
+
+export function coberturaFiscalParcelasMock(companyId, competencia, guias, acompanhamento) {
+  if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(competencia)) return [];
+  const documentos = new Map(guias.map(guia => [guia.id || guia.guideId, guia]));
+  const registros = [];
+  for (const item of acompanhamento.itens || []) {
+    if (item.portalClientId !== companyId || !item.parcelaId) continue;
+    const guia = documentos.get(item.guideId);
+    const referenciaFiscal = item.guideId ? guia?.competencia : item.referencia;
+    if (referenciaFiscal !== competencia) continue;
+    const automatico = item.formaPagamento === 'DEBITO_AUTOMATICO';
+    const conferido = guia?.status === 'PROCESSED' && guia.hasPdf && !!guia.vencimento &&
+      Number(guia.valor) > 0 && !guia.extracted?.conferenciaDocumentoPendente && !item.documentoPendente;
+    const documento = conferido ? 'disponivel' : item.guideId ? 'a_conferir' : automatico ? 'nao_exigido' :
+      item.formaPagamento ? 'faltante' : 'a_conferir';
+    registros.push({...item, referenciaFiscal, mesOperacional: competencia, documento,
+      comunicacao: item.enviada ? 'enviada' : automatico ? 'nao_exigida' : conferido ? 'pendente' : 'aguarda_documento'});
+  }
+  return registros;
+}

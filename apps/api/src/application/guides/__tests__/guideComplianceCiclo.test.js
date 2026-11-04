@@ -222,7 +222,13 @@ describe('ciclo e projeção real compartilham o regime da competência',()=>{
    regimeHistorico:{findMany:jest.fn(async()=>history)},feriado:{findMany:jest.fn(async()=>[])},
    appSetting:{findUnique:jest.fn(async({where})=>where.key==='envio_guias_config:temporal'?{value:{enabled:true,selectionToken:'fixture'}}:where.key==='serpro_runtime_settings'?{value:{rotinas:{simples_envio_guias:{enabled:true,frequency:'DAILY',hour:8}}}}:where.key==='operations_manual_inss:v1:temporal:2026-10'?{value:{fixture:true}}:null)},
   });
-  prisma.guide.findMany.mockImplementation(async({where})=>where.OR||where.tipo?.in?[guide]:[]);
+  prisma.guide.findMany.mockImplementation(async ({ where, include }) => {
+    if (include?.parcela) {
+      expect(where).toEqual({ portalClientId: guide.portalClientId, competencia: guide.competencia });
+      return [guide];
+    }
+    return where.tipo?.in ? [guide] : [];
+  });
   prisma.companyMonthlyCircular.findMany.mockResolvedValue([]);prisma.envioGuia.findMany.mockResolvedValue([]);
   const email=jest.fn();
   const service=createCicloEnvioGuiasService({db:prisma,now:()=>new Date('2026-11-08T10:00:00Z'),contatos:async()=>({emails:['fixture@example.test'],telefones:[]}),canal:async()=>({disponivel:false}),email});

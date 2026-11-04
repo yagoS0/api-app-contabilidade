@@ -13,6 +13,16 @@ const absence=(status='DOCUMENT_ABSENT')=>({companyId:'reconciliada',competencia
 const project=(c,manual=[absence()])=>resumirEtapasOperacoes(projetarOperacoesEmpresas([c],comp).rows,[],manual);
 const apiFor=manual=>({getOperationManualInss:jest.fn(async()=>({items:[manual]})),getCompanyManualInss:jest.fn(async()=>manual),getOperationEvidence:jest.fn(async()=>({items:[],competencia:comp}))});
 afterEach(cleanup);
+test('DAS enviado com cobertura inconclusiva mostra revisão sem inventar outra guia nem concluir a empresa',()=>{
+ const c=company({expectativaParcelamentoInconclusiva:true, inss:{required:false,state:'na'}, coberturaParcelamentoMes:[]});
+ const projection=projetarOperacoesEmpresas([c],comp);
+ expect(projection.groups.revisoes).toContainEqual(expect.objectContaining({titulo:'Parcelamento · conferir a competência das parcelas'}));
+ const s=project(c,[]);
+ expect(s.items[0].guideItems.map(i=>[i.guideId,i.enviada])).toEqual([['fake',true]]);
+ expect(s.items[0].axes).toMatchObject({guias:null, disponivel:null, enviado:null, pago:null, concluido:false});
+ expect(s.metrics.enviado.done).toEqual([]);
+ expect(s.metrics.concluido.done).toEqual([]);
+});
 test.each(['DOCUMENT_ABSENT','NOT_APPLICABLE'])('produtor real avança após %s sem alterar tarefas/evidências',status=>{
  const c=company(),before=JSON.stringify(c);expect(c.fluxoCarteira.status.chave).toBe('guias');const s=project(c,[absence(status)]);
  expect(s.items[0].presentation.chave).toBe('concluido');expect(s.metrics.concluido.done).toHaveLength(1);expect(s.items[0].axes.guias).toBe(true);expect(s.items[0].axes.pago).toBe(false);expect(JSON.stringify(c)).toBe(before);expect(c.fluxoCarteira.tarefas.find(t=>t.chave==='enviar_guias').concluida).toBe(false);

@@ -924,7 +924,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const appRole = String(req.auth.user.role || "").toLowerCase();
     const isAdminLike = appRole === "admin" || appRole === "contador";
     // Q17: dashboard filtra por competência (default = mês anterior).
-    const competenciaRef = normalizeCompetencia(req.query?.competencia || "") || getReferenceCompetencia();
+    const competenciaRef = req.query?.competencia == null ? getReferenceCompetencia() : normalizeCompetencia(req.query.competencia);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competenciaRef)) return res.status(400).json({ error: "invalid_competencia" });
 
     if (isAdminLike) {
       const items = await prisma.portalClient.findMany({
@@ -2734,7 +2735,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     requireFirmCompanyAccess(),
     async (req, res) => {
       const { companyId } = req.params || {};
-      const { competencia, status, page, limit } = req.query || {};
+      const { status, page, limit } = req.query || {};
+      const competencia = normalizeCompetencia(req.query?.competencia);
+      if (req.query?.competencia != null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return res.status(400).json({ error: "invalid_competencia" });
       const result = await listGuidesByCompany({
         portalClientId: companyId,
         competencia,
@@ -3396,7 +3399,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // (present/vazio/missing) — alimenta a aba de Guias (lista pré-preenchida + botão Vazio).
   router.get("/companies/:companyId/guides/expected", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
-    const competencia = normalizeCompetencia(req.query?.competencia || "") || getReferenceCompetencia();
+    const competencia = req.query?.competencia == null ? getReferenceCompetencia() : normalizeCompetencia(req.query.competencia);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return res.status(400).json({ error: "invalid_competencia" });
     try {
       const portal = await prisma.portalClient.findUnique({
         where: { id: portalClientId },

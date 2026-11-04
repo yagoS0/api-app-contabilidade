@@ -15,6 +15,12 @@ const MESES_PT = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
 
+/** Só um mês civil canônico pode determinar a competência de uma navegação. */
+export function competenciaDaQuery(params) {
+  const values = params.getAll("competencia");
+  return values.length === 1 && /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(values[0]) ? values[0] : null;
+}
+
 /** `"2026-07"` → `{ ano: 2026, mes: 7 }`; entrada inválida → `null`. */
 export function parseCompetencia(comp) {
   const [yyyy, mm] = String(comp || "").split("-");

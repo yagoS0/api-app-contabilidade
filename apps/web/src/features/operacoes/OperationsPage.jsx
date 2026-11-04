@@ -73,7 +73,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
     if (search == null) return;
     setFiltersOpen(false);
     const params = new URLSearchParams(search), key = params.get('operacoesEtapa'), mode = params.get('operacoesLista');
-    if (params.get('operacoesCompetencia') === competencia && Object.hasOwn(panelNames, key) && ['all', 'stage', 'missing', 'warnings'].includes(mode)) {
+    if ((!params.has('competencia') || params.get('competencia') === competencia) && params.get('operacoesCompetencia') === competencia && Object.hasOwn(panelNames, key) && ['all', 'stage', 'missing', 'warnings'].includes(mode)) {
       setPanel({ key, title: mode === 'all' && key === 'apurar' ? 'Apuração' : panelNames[key], mode, competencia });
     } else setPanel(null);
     // Only URL and period identify a saved presentation filter.

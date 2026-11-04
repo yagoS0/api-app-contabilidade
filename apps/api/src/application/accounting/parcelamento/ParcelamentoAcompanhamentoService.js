@@ -9,12 +9,13 @@ const GUIA = { id: true, numeroParcela: true, competencia: true, anoMesParcela: 
   status: true, paymentStatus: true, baixada: true, vencimento: true, valor: true, extracted: true,
   emailStatus: true, emailSentAt: true, portalClientId: true };
 
-export async function listarPendenciasParcelamento({ portalClientIds, mesOperacional = mesAtualOperacional() }) {
+export async function listarPendenciasParcelamento({ portalClientIds, mesOperacional = mesAtualOperacional(), porCompetencia = false }) {
   projetarPendenciasParcelamento({ mesOperacional }); // Valida antes de ler/gravar o relatório salvo.
   const ids = [...new Set((portalClientIds || []).filter(Boolean))];
-  if (!ids.length) return projetarPendenciasParcelamento({ mesOperacional });
-  // Aproveita o relatório já salvo, sem consulta fiscal externa.
-  for (const portalClientId of ids) await reprocessarSitfisParcelamentos({ portalClientId });
+  if (!ids.length) return projetarPendenciasParcelamento({ mesOperacional, porCompetencia });
+  if (!porCompetencia) {
+    for (const portalClientId of ids) await reprocessarSitfisParcelamentos({ portalClientId });
+  }
   const [contratos, indicacoes] = await Promise.all([
     prisma.parcelamento.findMany({ where: { portalClientId: { in: ids }, status: { not: "EXCLUIDO" } }, include: {
       parcelasContratadas: { include: { guia: { select: GUIA } } }, guides: { where: { parcela: null }, select: GUIA },
@@ -35,6 +36,6 @@ export async function listarPendenciasParcelamento({ portalClientIds, mesOperaci
   ]);
   const pdfs = new Set(documentos.map(d => d.id));
   for (const c of normalizados) for (const p of c.parcelas) if (p.guia) p.guia.pdfDisponivel = pdfs.has(p.guia.id);
-  return projetarPendenciasParcelamento({ contratos: normalizados, indicacoes: await aplicarFormasIndicacoes(prisma, indicacoes, mesOperacional), mesOperacional,
+  return projetarPendenciasParcelamento({ contratos: normalizados, indicacoes: await aplicarFormasIndicacoes(prisma, indicacoes, mesOperacional), mesOperacional, porCompetencia,
     enviada: g => foiEnviadaComLegado(envios.get(g.id) || [], g) });
 }

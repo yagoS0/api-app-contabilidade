@@ -20,7 +20,11 @@ export function projetarOperacoesEmpresas(companies = [], competencia) {
   for (const company of companies) {
     if (!company.companyId || String(company.status || '').toUpperCase() === 'INATIVA') continue;
     const fluxo = fluxoDaEmpresa(company);
-    if (fluxo.competencia && fluxo.competencia !== competencia) continue;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia) || fluxo.competencia !== competencia) continue;
+    if (company.guideCompliance?.competencia && company.guideCompliance.competencia !== competencia) {
+      unique.set(company.companyId, { company: { ...company, guideCompliance: null }, fluxo });
+      continue;
+    }
     unique.set(company.companyId, { company, fluxo });
   }
   const rows = [...unique.values()].sort((a, b) => ETAPAS_CARTEIRA.indexOf(a.fluxo.status.chave) - ETAPAS_CARTEIRA.indexOf(b.fluxo.status.chave)
@@ -35,16 +39,19 @@ export function projetarOperacoesEmpresas(companies = [], competencia) {
       tag: { ...tag, envioPodeTentarDeNovo: company.guideCompliance?.[tag.key]?.envioPodeTentarDeNovo ?? null },
     }));
     if (!fluxo.apuracao.apurada) itens.unshift({ id: `${company.companyId}:apuracao`, company, fluxo, tipo: 'apuracoes', titulo: `Apuração · ${fluxo.apuracao.rotulo}` });
-    if (!resumo.completo && !resumo.revisoes) itens.push({ id: `${company.companyId}:indisponivel`, company, fluxo, tipo: 'pendencias', categoria: 'revisoes', titulo: 'Guias · cobertura a conferir' });
+    if (company.guideCompliance?.expectativaParcelamentoInconclusiva === true) {
+      itens.push({ id: `${company.companyId}:cobertura-parcelamento`, company, fluxo, tipo: 'pendencias', categoria: 'revisoes', titulo: 'Parcelamento · conferir a competência das parcelas' });
+    } else if (!resumo.completo && !resumo.revisoes) itens.push({ id: `${company.companyId}:indisponivel`, company, fluxo, tipo: 'pendencias', categoria: 'revisoes', titulo: 'Guias · cobertura a conferir' });
     return itens;
   });
+  const concluidas = rows.filter(r => r.fluxo.status.chave === 'concluido' && !r.company.guideCompliance?.expectativaParcelamentoInconclusiva);
   const groups = {
-    concluidas: rows.filter(r => r.fluxo.status.chave === 'concluido').map(r => ({ ...r, id: `${r.company.companyId}:concluido`, tipo: 'concluidas', titulo: 'Fluxo concluído' })),
+    concluidas: concluidas.map(r => ({ ...r, id: `${r.company.companyId}:concluido`, tipo: 'concluidas', titulo: 'Fluxo concluído' })),
     apuracoes: tasks.filter(t => t.tipo === 'apuracoes'),
     ...agruparPendencias(tasks),
   };
   return { rows, tasks, groups, metrics: [
-    rows.filter(r => r.fluxo.status.chave === 'concluido').length,
+    concluidas.length,
     rows.filter(r => !r.fluxo.apuracao.apurada).length,
     rows.filter(r => r.fluxo.status.chave === 'guias').length,
     rows.filter(r => r.fluxo.contabilizacao.chave === 'aberto').length,
@@ -63,7 +70,8 @@ export function distribuirOperacoes(rows, manualInss = []) {
   const add = (groups, key, item) => groups.find(g => g.key === key).items.push(item);
   for (const row of rows) {
     const { company, fluxo } = row;
-    add(status, status.some(g => g.key === fluxo.status?.chave) ? fluxo.status.chave : 'desconhecido', row);
+    const coberturaIncerta = company.guideCompliance?.expectativaParcelamentoInconclusiva && ['guias','contabilizacao','importacao','concluido'].includes(fluxo.status?.chave);
+    add(status, !coberturaIncerta && status.some(g => g.key === fluxo.status?.chave) ? fluxo.status.chave : 'desconhecido', row);
     const parc = company.guideCompliance?.parcDas;
     add(parcelas, company.temParcelamento === true || parc?.required === true ? 'com' : company.temParcelamento === false || parc?.required === false ? 'sem' : 'verificar', row);
     const checked = new Date(company.fiscalCheckedAt).getTime();
@@ -91,7 +99,7 @@ export function distribuirOperacoes(rows, manualInss = []) {
     for (const item of resumo.items.filter(item => !item.dispensada)) add(guias, item.grupo, { ...row, item });
   }
   return { guias, status, parcelas, fiscal, apuracao,
-    coberturaIndisponivel: rows.filter(row => !resumirGuias(row.company.guideCompliance).completo) };
+    coberturaIndisponivel: rows.filter(row => row.company.guideCompliance?.expectativaParcelamentoInconclusiva || !resumirGuias(row.company.guideCompliance).completo) };
 }
 
 export const CHECKLIST_OPERACOES = [['receitas', 'Receitas'], ['provisoes', 'Provisões'], ['folhaProlabore', 'Folha/Pró-labore'], ['despesas', 'Despesas'], ['pagamentos', 'Pagamentos']];
@@ -121,8 +129,8 @@ export function resumirEtapasOperacoes(rows, evidence = [], manualInss = []) {
     const summary = resumirGuias(periodMatches ? compliance : null);
     // parcDas is an operational aggregate, never a document or payment receipt.
     const coverage = periodMatches && Array.isArray(compliance.coberturaParcelamentoMes) ? compliance.coberturaParcelamentoMes : null;
-    const parcelas = (coverage || []).map(p => ({
-      key: p.id, guideId: p.guideId, parcelaId: p.parcelaId, parcelamentoId: p.parcelamentoId, numeroParcela: p.numeroParcela, label: `${p.tipo || 'Parcelamento'} ${p.numeroParcelamento || ''} · Parcela ${p.numeroParcela ?? 'a identificar'} · ${p.mesOperacional}`,
+    const parcelas = (coverage || []).filter(p => p.referenciaFiscal === fluxo.competencia && p.portalClientId === company.companyId).map(p => ({
+      key: p.id, guideId: p.guideId, parcelaId: p.parcelaId, parcelamentoId: p.parcelamentoId, numeroParcela: p.numeroParcela, label: `${p.tipo || 'Parcelamento'} ${p.numeroParcelamento || ''} · Parcela ${p.numeroParcela ?? 'a identificar'} · ${p.referenciaFiscal}`,
       dispensada: p.documento === 'nao_exigido', disponivel: p.documento === 'disponivel',
       enviada: p.comunicacao === 'enviada', comunicacaoDispensada: p.comunicacao === 'nao_exigida',
       paga: p.pagamentoConfirmado === true, revisar: !['disponivel', 'faltante', 'nao_exigido'].includes(p.documento),
@@ -131,7 +139,7 @@ export function resumirEtapasOperacoes(rows, evidence = [], manualInss = []) {
       pagamento: p.pagamentoConfirmado === true ? 'Confirmado' : 'Não confirmado', parcela: true,
     }));
     summary.items = [...summary.items, ...parcelas];
-    summary.completo = summary.completo && periodMatches && (compliance.parcDas?.required !== true || coverage !== null);
+    summary.completo = summary.completo && periodMatches && !compliance.expectativaParcelamentoInconclusiva && (compliance.parcDas?.required !== true || coverage !== null);
     const inssPending = ['PENDING_DOCUMENT', 'DOCUMENT_REVIEW'].includes(inss?.status);
     const guideItems = summary.items.filter(i => !i.dispensada);
     const known = Boolean(company.guideCompliance) && summary.completo && !company.guideCompliance?.error && !company.guideCompliance?.erro;
@@ -151,7 +159,7 @@ export function resumirEtapasOperacoes(rows, evidence = [], manualInss = []) {
       disponivel: known ? available : null, enviado: known ? sent : null,
       pago: known ? payable.length ? payable.every(i => i.paga) : 'na' : null,
       ...checks,
-      apurar, guias: sent, contabilizacao: accounting,
+      apurar, guias: compliance.expectativaParcelamentoInconclusiva ? null : sent, contabilizacao: accounting,
       concluido: presentation.chave === 'concluido',
     };
     return { ...row, operation: current, guideSummary: summary, guideItems, manualInss: inss, axes, presentation };

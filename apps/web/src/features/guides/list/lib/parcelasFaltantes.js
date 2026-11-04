@@ -16,12 +16,12 @@ export function parcelasFaltantesDoRelatorio(report, companyId) {
 
 export function parcelasFaltantesDaVisao(itens, { visao, mes, competencia }) {
   return itens.filter(p => {
+    if (visao === "competencia") return p.referenciaFiscal === competencia && !p.guideId;
     if (p.somenteAnteriores) return visao === "anteriores" || visao === "todas";
     const ref = String(p.vencimento || p.referencia || "").slice(0, 7);
     if (visao === "todas") return true;
     if (!ref) return visao === "vencimento" || (visao === "anteriores" && p.atrasada);
     if (visao === "anteriores") return ref < mes;
-    if (visao === "competencia") return p.referencia === competencia;
     return visao === "vencimento" && ref === mes;
   });
 }
