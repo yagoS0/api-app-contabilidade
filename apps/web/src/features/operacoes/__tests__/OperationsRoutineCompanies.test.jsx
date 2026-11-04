@@ -55,3 +55,11 @@ test('erros antigos não contaminam nova competência; busca conserva conjunto',
 test('cartão conta empresas distintas e detalhe conserva ocorrências',async()=>{
  const api=apiFor({getOperationConsultas:async competencia=>({competencia,total:2,items:[{id:'e1',companyId:'a',action:'CONS',errorMessage:'Primeiro erro'},{id:'e2',companyId:'a',action:'CONS',errorMessage:'Segundo erro'}]})});render(<OperationsRoutineCompanies api={api} companies={companies} competencia="2026-10"/>);await screen.findByRole('button',{name:'Com erro 1'});fireEvent.click(screen.getByRole('button',{name:'Com erro 1'}));expect(screen.getByRole('tab',{name:'Erros · 2'})).toBeInTheDocument();expect(screen.getByText('Primeiro erro')).toBeInTheDocument();expect(screen.getByText('Segundo erro')).toBeInTheDocument();
 });
+
+test('acesso a agendas usa a configuração existente e não grava escolhas empresariais',async()=>{
+ const api=apiFor(); api.saveRotinas=jest.fn();
+ render(<OperationsRoutineCompanies api={api} companies={companies} competencia="2026-10"/>);
+ expect(screen.getByRole('link',{name:'Configurar agendas e automações'})).toHaveAttribute('href','/rotinas?aba=configuracao');
+ await screen.findByRole('button',{name:'Habilitadas 1'});
+ expect(api.saveRotinas).not.toHaveBeenCalled();
+});

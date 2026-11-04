@@ -20,13 +20,13 @@ export function operationInstant(value) {
 }
 
 export function calculationColumns(operation) {
-  const snapshot = operation?.details?.snapshot?.value;
+  const snapshot = operation?.details?.snapshot?.value || operation?.calculationSummary;
   const audit = operation?.details?.auditoria?.value;
   const finite = v => v !== null && v !== undefined && String(v).trim() !== '' && Number.isFinite(Number(v));
   const receita = finite(snapshot?.receitaInterna) && finite(snapshot?.receitaExterna)
     ? Number(snapshot.receitaInterna) + Number(snapshot.receitaExterna) : null;
-  const warnings = (audit?.perguntas || []).filter(p => p.achados?.length || p.naoAvaliadas?.length).map(p => p.titulo || p.motivo || 'Revisar auditoria');
-  const errors = [operation?.blocked, operation?.execution && operation.execution.status !== 'DONE' ? operation.execution.message : null, approvalEvidenceError(operation, {historical:true})].filter(Boolean);
+  const warnings = !operation?.details ? ['Auditoria ainda não consultada'] : (audit?.perguntas || []).filter(p => p.achados?.length || p.naoAvaliadas?.length).map(p => p.titulo || p.motivo || 'Revisar auditoria');
+  const errors = [operation?.blocked, operation?.execution && operation.execution.status !== 'DONE' ? operation.execution.message : null, operation?.details ? approvalEvidenceError(operation, {historical:true}) : null].filter(Boolean);
   return { receita, impostos: operation?.calculation ? [{ nome: 'DAS Simples', valor: operation.calculation.dasValor }] : [], warnings, errors: [...new Set(errors)] };
 }
 

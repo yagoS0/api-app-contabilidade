@@ -143,7 +143,12 @@ it('barras independem da posição e explicam o filtro superior e os desconhecid
  expect(screen.queryByRole('button',{name:/^Receitas /})).not.toBeInTheDocument();
  view.unmount();
  render(<OperationsPage api={api} companies={[company]} competencia="2026-10"/>);
- expect(await screen.findByRole('button',{name:'Confirmado 0/1 empresas'})).toHaveAttribute('aria-description',expect.stringContaining('1 a verificar'));
+ const confirmed=await screen.findByRole('button',{name:'Confirmado — empresas'});
+ expect(confirmed).toBeDisabled();
+ expect(confirmed).toHaveAttribute('aria-description',expect.stringContaining('Informação indisponível.'));
+ expect(await screen.findByText('Não foi possível conferir as evidências da competência.',{exact:false,selector:'[role="alert"]'})).toBeVisible();
+ const metric=resumirEtapasOperacoes(projetarOperacoesEmpresas([company],'2026-10').rows,[]).metrics.confirmado;
+ expect(metric.done).toHaveLength(0);expect(metric.total).toBe(1);expect(metric.unknown).toHaveLength(1);
  fireEvent.click(screen.getByRole('button',{name:'Contabilização'}));expect(within(screen.getByRole('dialog')).getByText('Alfa')).toBeInTheDocument();
  company.fluxoCarteira.tarefas[2].concluida=false;
  expect(resumirEtapasOperacoes([{company,fluxo:company.fluxoCarteira}]).metrics.contabilizacao.done).toHaveLength(0);

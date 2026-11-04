@@ -7,6 +7,8 @@ import { Modal } from "../../../../components/ui/Modal";
 import { ResultadoRotinaModal } from "./ResultadoRotinaModal";
 import { elegivelLimparAviso, chaveAvisoRotina, estadoExecucaoRotina } from "./rotinasPresentation";
 import { Button } from "../../../../components/ui/Button";
+import { useLocation } from 'react-router-dom';
+import { useWorkspaceNavigation } from '../../../../app/navigation/WorkspaceNavigation.shared';
 
 function mensagemRotinas(erro, alternativa) {
  const mensagens = { forbidden_admin_or_contador_only: 'Rotinas exige acesso de administrador ou contador do escritório.', unauthorized: 'Entre novamente para continuar.', forbidden: 'Seu acesso não permite consultar ou alterar estas rotinas.' };
@@ -125,6 +127,10 @@ export function RotinasPage({
   message,
   error,
 }) {
+  const routerLocation = useLocation();
+  const workspace = useWorkspaceNavigation();
+  const search = (workspace?.location || routerLocation).search;
+  const requestedTab = new URLSearchParams(search).get('aba');
   const [rotinas, setRotinas] = useState([]);
   const [agenda, setAgenda] = useState({});
   const [executionStatus, setExecutionStatus] = useState([]);
@@ -135,7 +141,10 @@ export function RotinasPage({
   const [saving, setSaving] = useState(false);
   const [runningPayment, setRunningPayment] = useState(false);
   const focoRetornoManual = useRef(false);
-  const [aba, setAba] = useState("acompanhamento");
+  const [aba, setAba] = useState(requestedTab === 'configuracao' ? 'configuracao' : 'acompanhamento');
+  useEffect(() => {
+    if (['configuracao', 'acompanhamento'].includes(requestedTab)) setAba(requestedTab);
+  }, [requestedTab]);
   const [atualizando, setAtualizando] = useState(false);
   const [erroAtualizacao, setErroAtualizacao] = useState("");
   const [resultadoAberto, setResultadoAberto] = useState(null);
@@ -165,6 +174,7 @@ export function RotinasPage({
     setNotice(null);
     try {
       const out = await api.getRotinas();
+      if (!out || out.ok === false || !Array.isArray(out.rotinas) || !Array.isArray(out.empresas) || !out.agenda || typeof out.agenda !== 'object' || Array.isArray(out.agenda)) throw Error('Configuração de rotinas indisponível. Atualize antes de salvar.');
       setRotinas(Array.isArray(out?.rotinas) ? out.rotinas : []);
       setAgenda(out?.agenda || {});
       setExecutionStatus(out?.executions || []);
@@ -181,7 +191,7 @@ export function RotinasPage({
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (onRefreshWorkerStatus) atualizarExecucoes();
+    if (onRefreshWorkerStatus && requestedTab !== 'configuracao') atualizarExecucoes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -197,7 +207,7 @@ export function RotinasPage({
       for (const r of rotinas) {
         const cfg = agenda[r.key] || {};
         payloadAgenda[r.key] = {
-          enabled: ["simples_coleta_calculo", "simples_envio_guias"].includes(r.key) ? cfg.enabled === true : cfg.enabled !== false,
+          enabled: cfg.enabled === true,
           day: r.key === "simples_coleta_calculo" ? 8 : Number(cfg.day) || 5,
           hour: cfg.hour == null || cfg.hour === "" ? 7 : Number(cfg.hour),
           frequency: r.key === "simples_coleta_calculo" ? "DAILY_UNTIL_DAY" : r.key === "simples_envio_guias" || cfg.frequency === "DAILY" ? "DAILY" : "MONTHLY",
@@ -347,7 +357,7 @@ export function RotinasPage({
                   <tbody>
                     {rotinas.map((r) => {
                       const cfg = agenda[r.key] || {};
-                      const ligada = ["simples_coleta_calculo", "simples_envio_guias"].includes(r.key) ? cfg.enabled === true : cfg.enabled !== false;
+                      const ligada = cfg.enabled === true;
                       return (
                         <tr key={r.key} style={{ borderTop: "1px solid var(--border)", opacity: ligada ? 1 : 0.55 }}>
                           <td style={{ padding: "6px", color: "var(--text)" }}>
