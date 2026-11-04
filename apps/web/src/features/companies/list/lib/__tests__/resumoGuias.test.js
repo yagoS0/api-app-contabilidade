@@ -3,6 +3,7 @@ import { projetarOperacoesEmpresas } from '../../../../operacoes/operacoes';
 
 const node = (state, guideId) => ({ required: true, state, guideId });
 const compliance = {
+  competencia: '2026-09',
   irpj: node('enviada', 'a'), csll: node('enviada', 'b'),
   pisCofins: node('falhou', 'c'), iss: node('missing'),
 };
@@ -14,6 +15,7 @@ test('quatro obrigações: disponibilidade, envio e falha são eixos independent
   expect(p.groups.faltantes).toHaveLength(r.faltantes);
   expect(p.groups.envios).toHaveLength(r.enviosPendentes);
   expect(p.groups.erros).toHaveLength(r.falhas);
+  expect(projetarOperacoesEmpresas([company], '2026-10').rows).toHaveLength(0);
 });
 test('uma guia consolidada cobre duas obrigações; não chama cobertura de quantidade de PDFs', () => {
   const r = resumirGuias({ irpj: node('gerada', 'mesmo'), csll: node('gerada', 'mesmo') });

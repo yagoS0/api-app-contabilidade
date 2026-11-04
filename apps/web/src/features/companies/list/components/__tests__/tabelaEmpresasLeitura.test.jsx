@@ -94,7 +94,7 @@ test("empresa zerada e fechada mantém indicação PARC visível, sem reabrir fe
   expect(screen.getByText("Zerada")).toBeVisible();
   expect(screen.queryByRole("button", { name: /Fechadas \(/ })).toBeNull();
   fireEvent.click(chip);
-  expect(screen.getByRole("link", { name: "Abrir guias da empresa" })).toHaveAttribute("href", "/companies/c1/guides");
+  expect(screen.getByRole("link", { name: "Abrir guias da empresa" })).toHaveAttribute("href", "/companies/c1/guides?competencia=2026-07");
   expect(c.fechamentoContabil.fechado).toBe(true);
 });
 

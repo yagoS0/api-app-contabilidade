@@ -1,6 +1,6 @@
 import { classificacaoDocumentalProcuracao } from '../fiscal/serpro/lib/procuracao';
 import { situacaoFiscalDaLinha } from '../companies/list/lib/situacaoFiscal';
-import { fluxoDaEmpresa, ETAPAS_CARTEIRA, statusApresentacao } from '@contabilidade/shared/fluxo-carteira';
+import { fluxoDaEmpresa, projetarFluxoCarteira, ETAPAS_CARTEIRA, statusApresentacao } from '@contabilidade/shared/fluxo-carteira';
 import { getComplianceTags } from '../companies/list/components/renderCompanyCard';
 import { resumirGuias } from '../companies/list/lib/resumoGuias';
 
@@ -19,7 +19,10 @@ export function projetarOperacoesEmpresas(companies = [], competencia) {
   const unique = new Map();
   for (const company of companies) {
     if (!company.companyId || String(company.status || '').toUpperCase() === 'INATIVA') continue;
-    const fluxo = fluxoDaEmpresa(company);
+    let fluxo = fluxoDaEmpresa(company);
+    if (!fluxo.competencia && company.guideCompliance?.competencia === competencia) {
+      fluxo = projetarFluxoCarteira(company, { competencia });
+    }
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia) || fluxo.competencia !== competencia) continue;
     if (company.guideCompliance?.competencia && company.guideCompliance.competencia !== competencia) {
       unique.set(company.companyId, { company: { ...company, guideCompliance: null }, fluxo });

@@ -20,7 +20,8 @@
     "Parecer de interface: 16 verificações em Chrome local com API fictícia, resoluções de 1440 e 390 pixels.",
     "Os checks integrais do PR e a verificação do deploy são condições adicionais. O controlador local registrou timeout do executor; a revisão complementar e as provas são separadas do resultado original.",
     "Cobertura inconclusiva: 16 testes de API e 19 de Operações passaram. Uma guia individual continua acessível quando o conjunto mensal necessita de revisão.",
-    "66 testes da interface na integração de Guias e seleção. Parecer sistêmico favorável para abertura do PR."
+    "66 testes da interface na integração de Guias e seleção. Parecer sistêmico favorável para abertura do PR.",
+    "CI inicial registrou 4 falhas em 3 suítes da carteira; links agora exigem competência correta também ao avançar e voltar. Operações conserva a linha quando a cobertura comprova a competência e a apuração ainda não informa período, sem misturar meses. As quatro suítes focais passaram na revalidação."
   ],
   "rollback": "Reverter o commit de integração mediante PR. O incremento não necessita de migração de dados, ativação de rotina ou reprocessamento fiscal.",
   "humanDecisions": [
