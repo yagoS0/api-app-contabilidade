@@ -139,6 +139,8 @@ test('mês sem documento pode ter previsão no relatório de vencimento, e a fal
     outros:[{portalClientId:'c1',faltantes:[{portalClientId:'c1',parcelaId:'p1',acordo:'123',numeroParcela:9,vencimento:'2027-01-20'}]}],
   });
   render(<CompanyGuidesTable {...props} competencia="2026-12" guides={[]}/>);
+  await waitFor(()=>expect(mockFechamento).toHaveBeenCalledWith('c1','2026-12'));
+  mockFechamento.mockClear();
   abrirVencimentos();
   expect(await screen.findByRole('heading',{name:'Vencimentos de Janeiro 2027'})).toBeVisible();
   expect(await screen.findByText('Não foi possível conferir as parcelas previstas')).toBeVisible();
@@ -146,6 +148,8 @@ test('mês sem documento pode ter previsão no relatório de vencimento, e a fal
   expect(await screen.findByText('Falta guia de parcelamento')).toBeVisible();
   expect(screen.getByRole('button',{name:'Subir parcela'})).toBeInTheDocument();
   expect(mockDueReport).toHaveBeenLastCalledWith('c1','2027-01');
+  expect(screen.queryByText(/Confira essas parcelas na aba Parcelamentos/)).toBeNull();
+  expect(mockFechamento).not.toHaveBeenCalled();
 });
 
 test.each(['?competencia=2026-10&competencia=2026-11','?competencia=0000-10'])(
