@@ -8,7 +8,7 @@ import { CONFIG_EMPRESA, secaoEmpresa } from "../../../configuracoes/catalogo";
 import { CompanyAutomation } from '../../../operacoes/CompanyAutomation';
 import { GuruConferenciaPanel } from '../../../notas/components/GuruConferenciaPanel';
 import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation.shared";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import '../../../../components/ui/Modal';
