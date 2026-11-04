@@ -21,7 +21,8 @@ export function projetarOperacoesEmpresas(companies = [], competencia) {
     if (!company.companyId || String(company.status || '').toUpperCase() === 'INATIVA') continue;
     let fluxo = fluxoDaEmpresa(company);
     if (!fluxo.competencia && company.guideCompliance?.competencia === competencia) {
-      fluxo = projetarFluxoCarteira(company, { competencia });
+      const { companyId, legacyCompany, regimeTributario, guideCompliance } = company;
+      fluxo = projetarFluxoCarteira({ companyId, legacyCompany, regimeTributario, guideCompliance }, { competencia });
     }
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia) || fluxo.competencia !== competencia) continue;
     if (company.guideCompliance?.competencia && company.guideCompliance.competencia !== competencia) {
