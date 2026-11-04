@@ -90,7 +90,7 @@ test('detalhe embutido direciona foco e retorna à empresa sem criar modal extra
  render(<OperationsApproval embedded api={fixture()} rows={rows} competencia="2026-09"/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir'})).toBeEnabled());await openDetail({embedded:true});expect(screen.getByRole('heading',{name:'Conferir CDA'})).toHaveFocus();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Voltar'}));expect(screen.getByRole('button',{name:'Conferir'})).toHaveFocus();
 });
 test('lote embutido recebe foco e cancelar retorna ao acionador',async()=>{
- render(<OperationsApproval embedded api={fixture({status:'CONFIRMED'})} rows={rows} competencia="2026-09"/>);const select=await screen.findByRole('button',{name:'Selecionar elegíveis (1)'});await waitFor(()=>expect(select).toBeEnabled());fireEvent.click(select);const btn=screen.getByRole('button',{name:'Transmitir selecionadas (1)'});fireEvent.click(btn);expect(await screen.findByRole('heading',{name:'Liberar apurações confirmadas'})).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Transmitir selecionadas (1)'})).toHaveFocus();
+ render(<OperationsApproval embedded api={fixture({status:'CONFIRMED'})} rows={rows} competencia="2026-09"/>);const select=await screen.findByRole('button',{name:'Selecionar elegíveis (1)'});await waitFor(()=>expect(select).toBeEnabled());fireEvent.click(select);const btn=screen.getByRole('button',{name:'Transmitir selecionadas (1)'});fireEvent.click(btn);expect(await screen.findByRole('heading',{name:'Conferir transmissão'})).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));expect(screen.getByRole('button',{name:'Transmitir selecionadas (1)'})).toHaveFocus();
 });
 
 test('seleção explícita libera somente o subconjunto e resposta vazia não executa', async () => {
@@ -216,11 +216,11 @@ test.each([false,true])('execução concluída preserva histórico e bloqueia co
 test('Calculado confere seleção sem transmitir e sem usar ausência como zero',async()=>{
  const api=fixture();api.executeCompanyOperation=jest.fn();
  render(<OperationsApproval api={api} rows={rows} competencia="2026-09" stage="calculado" embedded/>);
- await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());expect(screen.getByRole('columnheader',{name:'Receita calculada'})).toBeInTheDocument();fireEvent.click(screen.getByLabelText('Selecionar CDA'));fireEvent.click(screen.getByText('Liberar para transmissão'));expect(api.saveCompanyOperation).not.toHaveBeenCalled();fireEvent.click(await screen.findByText('Confirmar cálculos selecionados'));await waitFor(()=>expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1));expect(api.saveCompanyOperation.mock.calls[0][2].action).toBe('confirm');expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+ await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());expect(screen.getByRole('columnheader',{name:'Receita calculada'})).toBeInTheDocument();fireEvent.click(screen.getByLabelText('Selecionar CDA'));fireEvent.click(screen.getByText('Conferir selecionadas'));expect(api.saveCompanyOperation).not.toHaveBeenCalled();fireEvent.click(await screen.findByText('Confirmar cálculos selecionados'));await waitFor(()=>expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1));expect(api.saveCompanyOperation.mock.calls[0][2].action).toBe('confirm');expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
 
 import { Modal } from '../../../components/ui/Modal';
-test.each([['calculado','PENDING','Liberar para transmissão','Conferir liberação para transmissão'],['confirmado','CONFIRMED','Transmitir selecionadas','Liberar apurações confirmadas']])('cancelar prévia %s devolve foco ao gatilho dentro do Modal real',async(stage,status,label,heading)=>{
+test.each([['calculado','PENDING','Conferir selecionadas','Conferir cálculos selecionados'],['confirmado','CONFIRMED','Transmitir selecionadas','Conferir transmissão']])('cancelar prévia %s devolve foco ao gatilho dentro do Modal real',async(stage,status,label,heading)=>{
  const api=fixture({status});api.executeCompanyOperation=jest.fn();render(<Modal titulo="Operações" aoFechar={()=>{}}><OperationsApproval api={api} rows={rows} competencia="2026-09" stage={stage} embedded/></Modal>);
  await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());fireEvent.click(screen.getByLabelText('Selecionar CDA'));const trigger=screen.getByRole('button',{name:label,exact:true});trigger.focus();fireEvent.click(trigger);expect(await screen.findByRole('heading',{name:heading})).toHaveFocus();const cancel=screen.getByRole('button',{name:'Cancelar',exact:true});cancel.focus();fireEvent.click(cancel);expect(screen.getByRole('button',{name:label,exact:true})).toHaveFocus();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
@@ -358,4 +358,45 @@ test.each([
  await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir detalhes'})).toBeEnabled());
  expect(screen.queryByText('Autor indevido')).not.toBeInTheDocument();
  expect(api.getCompanyOperation).not.toHaveBeenCalled();expect(api.getAuditoriaNotas).not.toHaveBeenCalled();expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+});
+
+
+test('prévia embedded usa rodapé externo e cancelar preserva seleção e foco',async()=>{
+ const footer=document.createElement('div');document.body.appendChild(footer);
+ const api=fixture({status:'CONFIRMED'});api.executeCompanyOperation=jest.fn();
+ const view=render(<OperationsApproval api={api} rows={rows} competencia="2026-09" stage="confirmado" embedded footerTarget={footer}/>);
+ await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());fireEvent.click(screen.getByLabelText('Selecionar CDA'));
+ const trigger=screen.getByRole('button',{name:'Transmitir selecionadas'});trigger.focus();fireEvent.click(trigger);
+ expect(await screen.findByRole('heading',{name:'Conferir transmissão'})).toHaveFocus();
+ const cancel=screen.getByRole('button',{name:'Cancelar'}),release=screen.getByRole('button',{name:'Liberar e executar'});
+ expect(footer.contains(cancel)).toBe(true);expect(footer.contains(release)).toBe(true);expect(release).toBeDisabled();
+ expect(screen.queryByRole('button',{name:'Transmitir selecionadas'})).not.toBeInTheDocument();fireEvent.click(cancel);
+ expect(screen.getByRole('button',{name:'Transmitir selecionadas'})).toHaveFocus();expect(screen.getByLabelText('Selecionar CDA')).toBeChecked();
+ expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();view.unmount();footer.remove();
+});
+
+
+test('prévia manual oculta rotina geral sem desmontar histórico e cancelar restaura contexto', async () => {
+  const api = fixture({status:'CONFIRMED'});
+  api.executeCompanyOperation = jest.fn();
+  api.previewOperationsBatch = jest.fn();
+  api.listOperationsBatches = jest.fn(async()=>({ok:true,items:[]}));
+  render(<OperationsApproval embedded stage="confirmado" api={api} rows={rows} competencia="2026-09"/>);
+  await screen.findByText('Nenhuma liberação registrada nesta competência.');
+  await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());
+  const routine = screen.getByRole('region',{name:'Liberação da rotina de transmissão'});
+  fireEvent.click(screen.getByLabelText('Selecionar CDA'));
+  const trigger=screen.getByRole('button',{name:'Transmitir selecionadas'});trigger.focus();fireEvent.click(trigger);
+  expect(await screen.findByRole('heading',{name:'Conferir transmissão'})).toHaveFocus();
+  expect(routine).toBeInTheDocument();expect(routine).not.toBeVisible();
+  expect(screen.queryByRole('button',{name:'Liberar rotina',exact:true})).not.toBeInTheDocument();
+  expect(screen.getByRole('list',{name:'Consequências da transmissão'})).toBeVisible();
+  expect(screen.getByRole('button',{name:'Liberar e executar'})).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Digite a competência 2026-09 para executar'),{target:{value:'2026-08'}});
+  expect(screen.getByRole('button',{name:'Liberar e executar'})).toBeDisabled();
+  fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));
+  expect(routine).toBeVisible();expect(screen.getByRole('button',{name:'Transmitir selecionadas'})).toHaveFocus();
+  expect(screen.getByLabelText('Selecionar CDA')).toBeChecked();
+  expect(screen.getByRole('region',{name:'Liberação da rotina de transmissão'})).toBe(routine);
+  expect(api.previewOperationsBatch).not.toHaveBeenCalled();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });

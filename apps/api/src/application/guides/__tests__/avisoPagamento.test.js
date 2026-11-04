@@ -148,7 +148,7 @@ test.each([
 ])('guideId resolve parcela real %j %j antes de reservar lembrete', async (parcela, contrato, status, motivo) => {
   const f = setup(); Object.assign(f.guide, { parcelamentoId: 'acordo', parcela: { portalClientId: 'c', guiaId: 'g', ...parcela }, parcelamento: { id: 'acordo', ...contrato } });
   expect(await f.run()).toMatchObject({ status, motivo }); expect(f.transporte.whatsapp).not.toHaveBeenCalled(); expect(f.records.size).toBe(0);
-  expect(f.db.guide.findUnique).toHaveBeenCalledWith({ where: { id: 'g' }, include: { parcela: { include: { parcelamento: true } }, parcelamento: true } });
+  expect(f.db.guide.findUnique).toHaveBeenCalledWith({ where: { id: 'g' }, include: { parcela: { include: { parcelamento: true } }, parcelamento: true, tributosParcela: true } });
 });
 test('parcela entra em débito automático durante preparação: cancela sem saída', async () => {
   const f = setup({ parcelamentoId: 'acordo', parcela: { portalClientId: 'c', guiaId: 'g' }, parcelamento: { id: 'acordo', formaPagamento: 'GUIA' } });

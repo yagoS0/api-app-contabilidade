@@ -58,3 +58,11 @@ it('dispensa e débito automático de parcela ficam fora dos faltantes; desconhe
   expect(r.faltantes).toBe(0); expect(r.revisoes).toBe(1); expect(r.completo).toBe(false);
   expect(r.items.find(i => i.key === 'inss').grupo).toBe('verificar');
 });
+
+test('INSS não aplicável fica fora das expectativas; ausência comprovada não vira dispensa manual', () => {
+ const r=resumirGuias({das:node('vazio'),inss:{required:true,state:'na'}});
+ expect(r.items.some(i=>i.key==='inss')).toBe(false);
+ expect(r.items.find(i=>i.key==='das').documento).toBe('Ausência registrada');
+ expect(r.esperadas).toBe(0);
+ expect(resumirGuias({inss:{required:true}}).completo).toBe(false);
+});

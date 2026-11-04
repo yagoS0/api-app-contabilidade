@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { CompanyAutomation } from '../CompanyAutomation';
 jest.mock('../OperationsManualInss',()=>({CompanyManualInss:()=>null}));
 jest.mock('../CompanyGuideDelivery',()=>({CompanyGuideDelivery:()=>null}));
-const data={companyId:'a',revision:'r1',rotinas:[],envioGuias:{enabled:false,applicableCurrentRegime:true},automationPolicy:{paused:false},globalAutomationPolicy:{paused:false}};
+const data={companyId:'a',revision:'r1',agendaEventos:{schemaVersion:1,revision:'agenda-r1',version:0,executionMode:'LEGADO',relativeConsumerReady:false,overrides:{},effective:{},origins:{}},rotinas:[],envioGuias:{enabled:false,applicableCurrentRegime:true},automationPolicy:{paused:false},globalAutomationPolicy:{paused:false}};
 beforeEach(()=>Object.defineProperty(crypto,'randomUUID',{configurable:true,value:()=> 'envio-request'}));
 test('seleção nasce desligada e precisa prévia; só salva envio sem ligar outra rotina',async()=>{
  const api={getCompanyAutomation:jest.fn(async()=>data),saveCompanyAutomation:jest.fn(async(_,input)=>({...data,revision:'r2',envioGuias:{...data.envioGuias,...input.envioGuias}}))};

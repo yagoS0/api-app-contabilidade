@@ -1,3 +1,4 @@
+import { AgendaEventosEditor } from '../../../operacoes/AgendaEventosEditor';
 import "./rotinas.css";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
@@ -33,13 +34,13 @@ const DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => {
 
 const ROTINA_HINT = {
   simples_envio_guias: "Envio das guias válidas completas ou parcial no limite do dia 13 útil anterior. Seleção independente na Automação da empresa. Erros exigem conferência.",
-  simples_coleta_calculo: "Coleta do dia 1 ao dia 8; cálculo após a coleta final completa, aguardando conferência do contador. Seleção e fontes em Automação da empresa.",
+  simples_coleta_calculo: "Coleta até o dia 8 do mês; cálculo após a coleta final completa, aguardando conferência do contador. Seleção e fontes em Automação da empresa.",
   das: "Guia do DAS (Simples Nacional)",
   inss: "Guia do INSS (DCTFWeb)",
   extrato: "Extrato do PGDAS-D — gera os lançamentos",
   presumido: "Lucro Presumido: traz PIS, COFINS, CSLL e IRPJ de uma vez",
   parcelamento: "Parcelas dos parcelamentos ativos",
-  avisos_guias_whatsapp: "Diariamente, sem consulta SERPRO. Selecione cada empresa em Configuração → Automação → Lembretes de guias.",
+  avisos_guias_whatsapp: "Avisos antes, no vencimento e depois, conforme o calendário adotado pela empresa. Sem consulta SERPRO nesta rotina.",
   pagamento: "Confirma pagamentos de DAS, INSS e parcelas acompanhadas",
   conferencia: "Confere as NFS-e contra o ADN nacional antes do fechamento",
 };
@@ -139,6 +140,7 @@ export function RotinasPage({
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [eventDirty,setEventDirty] = useState(false);
   const [runningPayment, setRunningPayment] = useState(false);
   const focoRetornoManual = useRef(false);
   const [aba, setAba] = useState(requestedTab === 'configuracao' ? 'configuracao' : 'acompanhamento');
@@ -330,11 +332,11 @@ export function RotinasPage({
           <div id="rotinas-painel-configuracao" role="tabpanel" aria-labelledby="rotinas-tab-configuracao" hidden={aba !== "configuracao"}>
           <PausaCicloFiscal api={api} onPolicy={setPausePolicy} />
             {naoSalvo && <p role="status">Alterações não salvas.</p>}
-          <fieldset className="rotinas-configuracao" disabled={saving}>
+          <AgendaEventosEditor api={api} canEdit={carregou && !loading} disabled={saving || naoSalvo} onDirty={setEventDirty} onSaved={load}/><fieldset className="rotinas-configuracao" disabled={saving || eventDirty}>
           {/* ── Agenda: um dia/hora por rotina, valendo pras empresas marcadas ── */}
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
-              <h2 className="serpro-settings-card__title">Agenda</h2>
+              <h2 className="serpro-settings-card__title">Agendas atuais</h2>
               <p className="serpro-settings-card__description">
                 Horário de Brasília. Consultas apenas na agenda salva, sem novas tentativas automáticas. Se o mês não tiver o dia escolhido, a rotina não será executada naquele mês.
               </p>
@@ -359,12 +361,12 @@ export function RotinasPage({
                       const cfg = agenda[r.key] || {};
                       const ligada = cfg.enabled === true;
                       return (
-                        <tr key={r.key} style={{ borderTop: "1px solid var(--border)", opacity: ligada ? 1 : 0.55 }}>
+                        <tr key={r.key} style={{ borderTop: "1px solid var(--border)", opacity: 1 }}>
                           <td style={{ padding: "6px", color: "var(--text)" }}>
                             <strong>{r.label}</strong>
                             <div style={{ fontSize: "0.8125rem", color: "var(--text-faint)" }}>{ROTINA_HINT[r.key]}</div>
                             {r.key === "pagamento" && (
-                              <select aria-label="Frequência da consulta de pagamentos" disabled={!ligada}
+                              <select aria-label="Frequência da consulta de pagamentos" disabled={false}
                                 value={cfg.frequency || "MONTHLY"}
                                 onChange={(e) => setAgendaCampo(r.key, "frequency", e.target.value)}>
                                 <option value="MONTHLY">Mensal</option>
@@ -373,18 +375,18 @@ export function RotinasPage({
                             )}
                           </td>
                           <td style={td}>
-                            <input
+                            <label className="rotinas-checkbox-alvo"><input
                               type="checkbox"
                               aria-label={`Ligar ${r.label}`}
                               checked={ligada}
                               onChange={(e) => setAgendaCampo(r.key, "enabled", e.target.checked)}
                               style={{ width: 16, height: 16, cursor: "pointer" }}
-                            />
+                            /></label>
                           </td>
                           <td style={td}>
-                            {r.key === "simples_coleta_calculo" ? <span>Dias 1 a 8</span> : ["avisos_guias_whatsapp", "simples_envio_guias"].includes(r.key) ? <span>Diariamente</span> : <select
+                            {r.key === "simples_coleta_calculo" ? <span>Dias 1 a 8</span> : ["avisos_guias_whatsapp", "simples_envio_guias"].includes(r.key) ? <span>{r.key === "simples_envio_guias" ? "Quando as guias estiverem prontas; limite dia 13 útil anterior" : "Antes, no vencimento e depois, conforme adesão"}</span> : <select
                               value={String(cfg.day ?? 5)}
-                              disabled={!ligada || cfg.frequency === "DAILY"}
+                              disabled={cfg.frequency === "DAILY"}
                               aria-label={`Dia de ${r.label}`}
                               onChange={(e) => setAgendaCampo(r.key, "day", Number(e.target.value))}
                               style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
@@ -400,7 +402,7 @@ export function RotinasPage({
                               max={r.key === "simples_coleta_calculo" ? "11:00" : undefined}
                               aria-label={`Horário de ${r.label}`}
                               value={`${pad2(cfg.hour ?? 7)}:00`}
-                              disabled={!ligada}
+                              disabled={false}
                               onChange={(e) => setAgendaCampo(r.key, "hour", Math.max(0, Math.min(r.key === "simples_coleta_calculo" ? 11 : 23, Number(String(e.target.value || "07:00").split(":")[0]))))}
                               style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "4px 6px", fontSize: "0.8rem", colorScheme: "dark" }}
                             />
@@ -420,7 +422,7 @@ export function RotinasPage({
           <section className="serpro-settings-card">
             <h2>Consultas por empresa</h2>
             <p>A ativação fica em Configurações → Automação dentro de cada empresa. Os horários acima continuam compartilhados pelas rotinas.</p>
-            <ul>{empresas.map(e => <li key={e.companyId}><a href={`/companies/${encodeURIComponent(e.companyId)}/automacao`}>{e.razao}</a></li>)}</ul>
+            <table className="automation-settings-table"><thead><tr><th>Empresa</th><th>Configuração</th></tr></thead><tbody>{empresas.map(e=><tr key={e.companyId}><th scope="row">{e.razao}</th><td><a className="btn btn-secondary btn-sm" href={`/companies/${encodeURIComponent(e.companyId)}/automacao`}>Configurar empresa</a></td></tr>)}</tbody></table>
             <div className="serpro-settings-form__actions">
               <Button variant="secondary" disabled={loading || saving} onClick={load}>Descartar alterações de horário</Button>
               <Button disabled={saving || loading || !rotinas.length} onClick={handleSave}>{saving ? 'Salvando…' : 'Salvar horários'}</Button>

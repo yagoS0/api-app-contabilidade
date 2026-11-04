@@ -59,9 +59,32 @@ test.each(['erro','expirado'])('ZIP %s permite novo pedido explícito, sem retry
 test('consulta SITFIS independe de PDF e exige prévia sem forçar cache',async()=>{
  const api={getStoredSitfis:jest.fn(async()=>({ok:true,status:null})),getSitfis:jest.fn(async()=>({ok:true,throttled:true,message:'Cache preservado'}))};
  render(<OperationsFiscalReports api={api} rows={[{company:{companyId:'a',razao:'Alfa',myRole:'ACCOUNTANT'}}]} competencia="2026-10" title="SITFIS" onClose={()=>{}}/>);
- await screen.findByText('PDF salvo indisponível');expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));fireEvent.click(screen.getByText('Consultar situação fiscal (1)'));expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar consultas selecionadas'));await screen.findByText('Cache preservado');expect(api.getSitfis).toHaveBeenCalledWith('a');
+ await screen.findByText('PDF salvo indisponível');expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.change(screen.getByLabelText('Finalidade da seleção SITFIS'),{target:{value:'consult'}});fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));fireEvent.click(screen.getByText('Consultar situação fiscal (1)'));expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Confirmar consultas selecionadas'));await screen.findByText('Cache preservado');expect(api.getSitfis).toHaveBeenCalledWith('a');
 });
 
 test('cancelar prévia SITFIS devolve foco sem consultar',async()=>{
- const api={getStoredSitfis:jest.fn(async()=>({ok:true,status:null})),getSitfis:jest.fn()};render(<OperationsFiscalReports api={api} rows={[{company:{companyId:'a',razao:'Alfa',myRole:'ACCOUNTANT'}}]} competencia="2026-10" title="SITFIS" onClose={()=>{}}/>);await screen.findByText('PDF salvo indisponível');fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));const trigger=screen.getByText('Consultar situação fiscal (1)');trigger.focus();fireEvent.click(trigger);expect(screen.getByRole('heading',{name:'Conferir consulta SITFIS'})).toHaveFocus();const cancel=screen.getByText('Cancelar');cancel.focus();fireEvent.click(cancel);expect(trigger).toHaveFocus();expect(api.getSitfis).not.toHaveBeenCalled();
+ const api={getStoredSitfis:jest.fn(async()=>({ok:true,status:null})),getSitfis:jest.fn()};render(<OperationsFiscalReports api={api} rows={[{company:{companyId:'a',razao:'Alfa',myRole:'ACCOUNTANT'}}]} competencia="2026-10" title="SITFIS" onClose={()=>{}}/>);await screen.findByText('PDF salvo indisponível');fireEvent.change(screen.getByLabelText('Finalidade da seleção SITFIS'),{target:{value:'consult'}});fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));const trigger=screen.getByText('Consultar situação fiscal (1)');trigger.focus();fireEvent.click(trigger);expect(screen.getByRole('heading',{name:'Conferir consulta SITFIS'})).toHaveFocus();const cancel=screen.getByText('Cancelar');cancel.focus();fireEvent.click(cancel);expect(trigger).toHaveFocus();expect(api.getSitfis).not.toHaveBeenCalled();
+});
+
+
+test('SITFIS mantém seleções separadas e ações no rodapé da finalidade explícita',async()=>{
+ const api=fixture();const view=render(<OperationsFiscalReports api={api} rows={[{company:{companyId:'a',razao:'Alfa',myRole:'ACCOUNTANT'}}]} title="SITFIS" competencia="2026-10" onClose={()=>{}}/>);
+ await waitFor(()=>expect(screen.getByLabelText('Selecionar PDF de Alfa')).toBeEnabled());fireEvent.click(screen.getByLabelText('Selecionar PDF de Alfa'));
+ expect(screen.queryByLabelText('Consultar situação fiscal de Alfa')).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText('Finalidade da seleção SITFIS'),{target:{value:'consult'}});
+ expect(screen.getByLabelText('Consultar situação fiscal de Alfa')).not.toBeChecked();expect(screen.queryByLabelText('Selecionar PDF de Alfa')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByLabelText('Consultar situação fiscal de Alfa'));
+ const prepare=screen.getByRole('button',{name:'Consultar situação fiscal (1)'});expect(view.container.querySelector('.modal-rodape')).toContainElement(prepare);fireEvent.click(prepare);
+ expect(screen.queryByRole('region',{name:'Relatórios fiscais salvos'})).not.toBeInTheDocument();expect(screen.getByText(/Cache de 4 horas/)).toBeInTheDocument();
+ expect(view.container.querySelector('.modal-rodape')).toContainElement(screen.getByRole('button',{name:'Cancelar'}));fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));
+ fireEvent.change(screen.getByLabelText('Finalidade da seleção SITFIS'),{target:{value:'pdf'}});expect(screen.getByLabelText('Selecionar PDF de Alfa')).toBeChecked();
+ expect(api.getSitfis).not.toHaveBeenCalled();expect(api.createSitfisDownload).not.toHaveBeenCalled();
+});
+
+test('detalhe fiscal preserva datas, erro, finalidade e seleção sem consulta',async()=>{
+ const api=fixture();setup(api);await select();const trigger=screen.getByRole('button',{name:'Detalhes de Alfa'});fireEvent.click(trigger);expect(screen.getByRole('heading',{name:'Alfa'})).toHaveFocus();expect(screen.getByRole('region',{name:'Detalhes da situação fiscal'})).toBeInTheDocument();expect(screen.getByRole('link',{name:'Abrir situação fiscal da empresa'})).toHaveAttribute('href','/companies/a/sitfis?competencia=2026-10');expect(api.getSitfis).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Voltar'}));await waitFor(()=>expect(trigger).toHaveFocus());expect(screen.getByRole('checkbox',{name:'Selecionar PDF de Alfa'})).toBeChecked();expect(screen.getByLabelText('Finalidade da seleção SITFIS')).toHaveValue('pdf');expect(api.createSitfisDownload).not.toHaveBeenCalled();
+});
+
+test('ZIP em acompanhamento não abre detalhe nem perde ação de parar',async()=>{
+ let finish;const api=fixture();api.getSitfisDownload.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));setup(api);await select();fireEvent.click(screen.getByRole('button',{name:'Baixar selecionados (2)'}));await waitFor(()=>expect(api.getSitfisDownload).toHaveBeenCalled());expect(screen.getByRole('button',{name:'Detalhes de Alfa'})).toBeDisabled();expect(screen.getByRole('button',{name:'Detalhes de Beta'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'Detalhes de Alfa'}));expect(screen.queryByRole('region',{name:'Detalhes da situação fiscal'})).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Parar acompanhamento'}));await act(async()=>finish({job:{id:'zip',status:'concluido',comPdf:2}}));expect(api.fetchSitfisDownloadBlob).not.toHaveBeenCalled();expect(api.createSitfisDownload).toHaveBeenCalledTimes(1);expect(screen.getByRole('button',{name:'Retomar download do mesmo ZIP'})).toBeEnabled();
 });

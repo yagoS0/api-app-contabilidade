@@ -1,3 +1,4 @@
+import { lerAgendaEventosGlobal, salvarAgendaEventosGlobal } from '../../application/fiscal/serpro/AgendaEventosService.js';
 import { createSolicitacoesRouter } from './solicitacoes.js';
 import { travarPessoasDoCadastro, exigirPessoasCompativeis } from '../../application/company/pessoasDoCadastro.js';
 import { createReclassificarDocumentoGuiaRouter } from './reclassificarDocumentoGuia.js';
@@ -2503,6 +2504,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       ok: true,
       rotinas: AGENDA_KEYS.map((key) => ({ key, label: key === "avisos_guias_whatsapp" ? "Lembretes de guias no WhatsApp" : ROTINA_LABELS[key] })),
       agenda: settings.rotinas,
+      agendaEventos: await lerAgendaEventosGlobal(prisma),
       executions: await getRoutineExecutionStatus(settings),
       empresas,
     });
@@ -2512,6 +2514,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {
       return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    // Independent parameter save: validate exclusive payload before legacy writes.
+    if (req.body && Object.hasOwn(req.body, 'agendaEventos')) {
+      try {
+        const agendaEventos = await salvarAgendaEventosGlobal(prisma, req.auth.user, req.body);
+        return res.json({ ok: true, agendaEventos });
+      } catch (error) {
+        const conflict = ['P2002', 'P2034'].includes(error.code);
+        return res.status(conflict ? 409 : error.status || 503).json({ ok: false,
+          error: conflict ? 'EVENT_POLICY_CHANGED' : error.status ? error.code : 'EVENT_POLICY_UNAVAILABLE',
+          message: conflict ? 'Houve alteração simultânea. Recarregue os parâmetros.' : error.status ? error.message : 'Não foi possível confirmar o salvamento. Recarregue antes de repetir.' });
+      }
     }
     const { empresas, agenda } = req.body || {};
     if (agenda !== undefined) {

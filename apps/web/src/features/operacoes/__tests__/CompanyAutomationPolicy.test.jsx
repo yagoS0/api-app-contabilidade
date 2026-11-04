@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CompanyAutomation } from '../CompanyAutomation';
 
-const initial = { revision: 'r1', rotinas: [{ key: 'das', label: 'DAS', enabled: true }], serproPolicy: { paused: false, reason: '' } };
+const initial = { companyId: 'a', revision: 'r1', rotinas: [{ key: 'das', label: 'DAS', enabled: true }], serproPolicy: { paused: false, reason: '' }, agendaEventos: { schemaVersion:1,version:0,revision:'agenda-r1',executionMode:'LEGADO',relativeConsumerReady:true,capabilities:{reminders:true,paymentD2:true,capture:false},overrides:{schemaVersion:1,tributos:{}},effective:{},origins:{} } };
 
 test('pausa automática separada preserva SERPRO e informa prevalência global', async () => {
   const data = { ...initial, automationPolicy: { paused: false, version: 0 }, globalAutomationPolicy: { paused: true } };
@@ -64,6 +64,7 @@ test('resultado incerto repete mesma solicitação e impede editar motivo', asyn
   fireEvent.click(screen.getByText('Salvar configuração'));
   await screen.findByRole('alert');
   expect(screen.getByLabelText('Motivo da pausa')).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Recarregar configuração'})).toBeDisabled();
   fireEvent.click(screen.getByText('Salvar configuração'));
   await screen.findByText(/Configuração salva/);
   expect(save.mock.calls[0]).toEqual(save.mock.calls[1]);
@@ -74,6 +75,7 @@ test('conflito bloqueia salvar até recarregar versão atual', async () => {
   fireEvent.click(screen.getByText('Salvar configuração'));
   await screen.findByRole('alert');
   expect(screen.getByText('Salvar configuração')).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Recarregar configuração'})).toBeEnabled();
   fireEvent.click(screen.getByText('Recarregar configuração'));
   await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Pausar operações SERPRO' })).not.toBeChecked());
   expect(api.getCompanyAutomation).toHaveBeenCalledTimes(2);
@@ -81,7 +83,7 @@ test('conflito bloqueia salvar até recarregar versão atual', async () => {
 test('resposta antiga de outra empresa não substitui política atual', async () => {
   let resolveOld;
   const old = new Promise(resolve => { resolveOld = resolve; });
-  const { api, view } = setup({ getCompanyAutomation: jest.fn().mockImplementation(id => id === 'a' ? old : Promise.resolve({ ...initial, serproPolicy: { paused: true, reason: 'Empresa B' } })) });
+  const { api, view } = setup({ getCompanyAutomation: jest.fn().mockImplementation(id => id === 'a' ? old : Promise.resolve({ ...initial, companyId: 'b', serproPolicy: { paused: true, reason: 'Empresa B' } })) });
   view.rerender(<CompanyAutomation api={api} companyId="b" canEdit />);
   expect(await screen.findByText('Último motivo registrado: Empresa B')).toBeInTheDocument();
   resolveOld(initial);
@@ -144,10 +146,27 @@ test('empresa não captura foco movido durante salvamento', async()=>{
  }finally{other.remove();}
 });
 test('resposta tardia da empresa anterior não muda dados nem foco da nova', async()=>{
- let finish;const save=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));const {api,view}=setup({saveCompanyAutomation:save});await preparePause();
+ let finish;const save=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));const {api,view}=setup({saveCompanyAutomation:save,getCompanyAutomation:jest.fn(async companyId=>({...initial,companyId}))});await preparePause();
  screen.getByRole('button',{name:'Salvar configuração'}).focus();fireEvent.click(screen.getByRole('button',{name:'Salvar configuração'}));
  view.rerender(<CompanyAutomation api={api} companyId="b" canEdit/>);
  const checkbox=await screen.findByRole('checkbox',{name:'Pausar operações SERPRO'});await waitFor(()=>expect(checkbox).toBeEnabled());checkbox.focus();
  await act(async()=>finish({...initial,companyId:'a',revision:'old',serproPolicy:{paused:true,reason:'Resposta antiga'}}));
  expect(checkbox).toHaveFocus();expect(checkbox).not.toBeChecked();expect(screen.queryByText(/Configuração salva/)).toBeNull();
+});
+test('409 permite GET explícito e novo comando usa revisão atual sem repetir pedido antigo',async()=>{
+ Object.defineProperty(crypto,'randomUUID',{configurable:true,value:jest.fn().mockReturnValueOnce('policy-request-old').mockReturnValueOnce('policy-request-new')});
+ const fresh={...initial,revision:'r-current'};
+ const get=jest.fn().mockResolvedValueOnce(initial).mockResolvedValue(fresh);
+ const save=jest.fn().mockRejectedValueOnce(Object.assign(Error('Revisão mudou'),{status:409})).mockResolvedValue({...fresh,revision:'r-saved',serproPolicy:{paused:true,reason:'Conferir dados'}});
+ const {api}=setup({getCompanyAutomation:get,saveCompanyAutomation:save});
+ await preparePause();fireEvent.click(screen.getByRole('button',{name:'Salvar configuração'}));
+ await screen.findByRole('alert');expect(screen.getByRole('button',{name:'Salvar configuração'})).toBeDisabled();
+ const reload=screen.getByRole('button',{name:'Recarregar configuração'});expect(reload).toBeEnabled();
+ expect(save).toHaveBeenCalledTimes(1);fireEvent.click(reload);
+ await waitFor(()=>expect(get).toHaveBeenCalledTimes(2));await waitFor(()=>expect(screen.getByRole('checkbox',{name:'Pausar operações SERPRO'})).toBeEnabled());
+ expect(save).toHaveBeenCalledTimes(1);expect(screen.getByRole('checkbox',{name:'Pausar operações SERPRO'})).not.toBeChecked();
+ await preparePause();fireEvent.click(screen.getByRole('button',{name:'Salvar configuração'}));await screen.findByText(/Configuração salva/);
+ expect(save.mock.calls[0][1]).toEqual({expectedRevision:'r1',requestId:'policy-request-old',serproPolicy:{paused:true,reason:'Conferir dados'}});
+ expect(save.mock.calls[1][1]).toEqual({expectedRevision:'r-current',requestId:'policy-request-new',serproPolicy:{paused:true,reason:'Conferir dados'}});
+ expect(api.getDas).not.toHaveBeenCalled();expect(api.getExtrato).not.toHaveBeenCalled();
 });

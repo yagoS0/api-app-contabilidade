@@ -79,7 +79,23 @@ export function reconcileOperationGuides(guides, row, competencia) {
     if (byId.has(guide.guideId)) throw Error('Documento repetido no retorno. Atualize as guias antes de continuar.');
     byId.set(guide.guideId, guide);
   }
-  const missing = (row.guideSummary?.items || []).filter(item => !item.guideId || !byId.has(item.guideId));
-  return { guides: [...byId.values()], missing };
+  const expected = (row.guideSummary?.items || []).filter(item => !(item.key === 'inss' && item.state === 'na'));
+  const sameInstallment = (a,b) => Boolean((a.parcelaId && a.parcelaId === b.parcelaId) || (a.parcelamentoId && a.parcelamentoId === b.parcelamentoId && a.numeroParcela != null && a.numeroParcela === b.numeroParcela));
+  // Only explicit supersession removes a document; a coverage snapshot may be stale.
+  const active = [...byId.values()].filter(g => !['SUBSTITUIDA', 'SUBSTITUIDO', 'SUPERSEDED'].includes(g.status));
+  const current = active.map(g => active.some(other => other.guideId !== g.guideId && sameInstallment(g,other)) ? {...g,operationsIdentityConflict:true} : g);
+  const missing = expected.filter(item => !current.some(g => (item.guideId && g.guideId === item.guideId) || sameInstallment(item,g)));
+  return { guides: current, missing };
+}
+
+export function guideSendBlock(guide, evidence, { allowPaid = false } = {}) {
+  if (guide.operationsIdentityConflict) return 'Mais de uma revisão da mesma parcela. Confira os documentos em Guias antes de enviar.';
+  if (guide.status !== 'PROCESSED') return ({ ERROR: 'Erro de processamento', NEEDS_REVIEW: 'Em conferência', PROCESSING: 'Em processamento' })[guide.status] || 'Documento não validado';
+
+  if (guide.bloqueioEnvio) return guide.bloqueioEnvio.message || guide.bloqueioEnvio.motivo || 'Envio bloqueado; confira em Guias';
+  const channels = [...(guide.envio?.canais || []), ...(evidence?.envios || []), ...(evidence?.tentativas || [])];
+  if (guide.emailStatus === 'SENDING' || channels.some(c => ['INDETERMINADO', 'ENVIANDO', 'INCERTO', 'EM_PROCESSAMENTO'].includes(String(c.status).toUpperCase()))) return 'Resultado incerto ou em processamento exige conciliação antes de repetir envio.';
+  if (!allowPaid && (guide.paymentStatus === 'PAID' || guide.clienteConfirmouEm || guide.confirmacaoCliente?.confirmado === true)) return 'Pagamento já confirmado';
+  return null;
 }
 

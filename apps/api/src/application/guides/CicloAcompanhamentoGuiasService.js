@@ -1,3 +1,8 @@
+import { conferirVigenciaDocumentoAcompanhamento } from './VigenciaDocumentoAcompanhamento.js';
+import { lerAgendaEventosEmpresa } from '../fiscal/serpro/AgendaEventosService.js';
+import { calendarioEventosGuia } from './calendarioEventosGuia.js';
+import { lerModoEventos } from '../fiscal/serpro/AgendaEventosModo.js';
+import { prepararEventosAcompanhamento, conferirEventoAcompanhamento } from './AgendaEventosExecucao.js';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { calendarioAvisosGuia, faseAvisoGuia, hojeSaoPaulo, POLITICA_ACOMPANHAMENTO_GUIAS } from './calendarioAvisosGuia.js';
 import { versaoPagamentoGuia, listarConfirmacoesPagamento } from './ConfirmacaoPagamentoClienteService.js';
@@ -30,12 +35,12 @@ const identidade = g => JSON.stringify([g.portalClientId, g.id, g.parcela?.id ||
   (g.tributosParcela || []).map(t => [t.id, String(t.principal ?? '')]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))]);
 
 // Somente leituras locais: esta mesma guarda roda depois da autenticação fiscal.
-export async function conferirGuiaAcompanhamento(db, g) {
+export async function conferirGuiaAcompanhamento(db, g, { permitirRecalculada = false } = {}) {
   if (!g || !g.portalClientId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(g.competencia || '')) throw fail('IDENTIFICACAO_INCOMPLETA', 'Confira a identificação da guia.');
   exigirGuiaArrecadatoria(g);
   if (g.baixada || g.clienteConfirmouEm || g.paymentConfirmedAt || g.paymentStatus === 'PAID'
     || g.parcela?.origemBaixa || g.parcela?.baixadaEm || g.parcela?.pagamentoStatus === 'CONFIRMADO') throw fail('PAGAMENTO_JA_CONFIRMADO', 'Pagamento informado ou confirmado; acompanhamento encerrado.');
-  if (lerRegistroRecalculo(g)) throw fail('GUIA_RECALCULADA', 'Guia recalculada; confira a nova versão antes de qualquer acompanhamento.');
+  if (!permitirRecalculada && lerRegistroRecalculo(g)) throw fail('GUIA_RECALCULADA', 'Guia recalculada; confira a nova versão antes de qualquer acompanhamento.');
   if (g.status !== 'PROCESSED' || !g.liberadaCliente || !g.hash) throw fail('GUIA_NAO_LIBERADA', 'Confira o documento e a liberação da guia.');
   if (g.parcela && (g.parcela.portalClientId !== g.portalClientId || g.parcela.guiaId !== g.id || g.parcela.parcelamentoId !== g.parcelamentoId)
     || g.parcelamento && g.parcelamento.portalClientId !== g.portalClientId) throw fail('DOCUMENTO_ESCOPO_DIVERGENTE', 'Confira o vínculo entre empresa, guia e parcela.');
@@ -47,7 +52,7 @@ export async function conferirGuiaAcompanhamento(db, g) {
   // não impede acompanhar uma guia ainda não confirmada com vencimento futuro.
 }
 
-export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(), assertActive = () => {} }, deps = {}) {
+export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(), assertActive = () => {}, eventoFase = null, executionMode = null }, deps = {}) {
   const db = deps.db || prisma;
   if (!scheduledAt) return { status: 'IGNORADO', motivo: 'CONSULTA_MANUAL' };
   const consultar = deps.consultar || consultaPadrao, avisar = deps.avisar || avisoPadrao;
@@ -56,7 +61,10 @@ export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(),
   try {
     await assertActive();
     const original = await carregarGuia(db, guideId);
-    await conferirGuiaAcompanhamento(db, original);
+    const modo = await lerModoEventos(db, original?.portalClientId);
+    if (executionMode && modo.executionMode !== executionMode) return { status: 'IGNORADO', motivo: 'EVENT_MODE_CHANGED' };
+    const relativo = modo.executionMode === 'RELATIVO_V1';
+    await conferirGuiaAcompanhamento(db, original, { permitirRecalculada: relativo });
     const companyId = original.portalClientId;
     const originalIdentity = identidade(original);
     const config = await lerConfiguracaoAcompanhamento(db, companyId);
@@ -65,7 +73,16 @@ export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(),
     if (!Array.isArray(feriados) || !original.portalClient?.municipio) throw fail('CALENDARIO_INDISPONIVEL', 'Confira o município e o calendário de feriados.');
     const calendario = calendarioAvisosGuia(original.vencimento, feriados, original.portalClient.municipio, config.politica);
     if (!calendario) throw fail('VENCIMENTO_INVALIDO', 'Confira o vencimento nominal da guia.');
-    const fase = faseAvisoGuia(original.vencimento, agora, feriados, original.portalClient.municipio, config.politica);
+    const relativeSnapshot = relativo ? await prepararEventosAcompanhamento(db, original, agora) : null;
+    if (relativo && !eventoFase && relativeSnapshot.events.length > 1) {
+      const resultados = [];
+      for (const event of [...relativeSnapshot.events].sort((a,b) => (a.tipo === 'CONSULTA_PAGAMENTO' ? -1 : 0) - (b.tipo === 'CONSULTA_PAGAMENTO' ? -1 : 0)))
+        resultados.push(await acompanharGuia({ guideId, scheduledAt, agora, assertActive, eventoFase: event.fase, executionMode: modo.executionMode }, deps));
+      return { status: resultados.some(r => r.status === 'PENDENTE') ? 'PENDENTE' : 'CONCLUIDO', resultados };
+    }
+    const event = relativo ? relativeSnapshot.events.find(e => !eventoFase || e.fase === eventoFase) : null;
+    const fase = relativo ? event?.fase : faseAvisoGuia(original.vencimento, agora, feriados, original.portalClient.municipio, config.politica);
+    const eventProof = event ? { fingerprint: relativeSnapshot.fingerprint, tipo: event.tipo, fase: event.fase } : null;
     if (!fase) return { status: 'IGNORADO', motivo: 'FORA_DO_DIA_DO_AVISO' };
     const destinos = (await destinatarios(companyId)).telefones;
     if (!destinos?.length) throw fail('SEM_DESTINATARIO_WHATSAPP', 'Cadastre um destinatário autorizado com entrega comprovada.');
@@ -82,14 +99,17 @@ export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(),
       const globalAtual = await lerAutomacaoCicloFiscal(database), companyAtual = await lerPoliticaAutomacao(database, companyId);
       if (globalAtual.paused || companyAtual.paused || globalAtual.version !== policy.version || companyAtual.version !== companyPolicy.version) throw fail('AUTOMACAO_EMPRESA_PAUSADA', 'A pausa mudou durante a preparação.');
       const g = await carregarGuia(database, guideId);
-      await conferirGuiaAcompanhamento(database, g);
+      await conferirGuiaAcompanhamento(database, g, { permitirRecalculada: relativo });
+      const modeNow = await lerModoEventos(database, companyId);
+      if (modeNow.modeRevision !== modo.modeRevision) throw fail('EVENT_MODE_CHANGED', 'A adoção mudou durante o preparo.');
+      if (relativo) await conferirEventoAcompanhamento(database, g, agora, eventProof);
       if (identidade(g) !== originalIdentity) throw fail('GUIA_ALTERADA', 'A guia ou sua revisão mudou; confira o acompanhamento.');
       const atual = await lerConfiguracaoAcompanhamento(database, companyId);
       if (JSON.stringify(atual) !== JSON.stringify(config)) throw fail('CONFIGURACAO_ALTERADA', 'A seleção de acompanhamento mudou.');
       const rotina = await database.companyRotina.findUnique({ where: { portalClientId_rotina: { portalClientId: companyId, rotina: 'avisos_guias_whatsapp' } } });
       const agenda = (await database.appSetting.findUnique({ where: { key: 'serpro_runtime_settings' } }))?.value?.rotinas?.avisos_guias_whatsapp;
       const hora = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date(scheduledAt)));
-      if (!rotina?.enabled || !agenda?.enabled || agenda.frequency !== 'DAILY' || !Number.isInteger(agenda.hour) || agenda.hour !== hora || hojeSaoPaulo(new Date(scheduledAt)) !== hojeSaoPaulo(agora)) throw fail('AGENDA_ALTERADA', 'Confira seleção e horário salvo da agenda diária.');
+      if (!rotina?.enabled || !agenda?.enabled || agenda.frequency !== 'DAILY' || !Number.isInteger(agenda.hour) || (!relativo && agenda.hour !== hora) || hojeSaoPaulo(new Date(scheduledAt)) !== hojeSaoPaulo(agora)) throw fail('AGENDA_ALTERADA', 'Confira seleção e horário salvo da agenda diária.');
       const atuais = (await destinatarios(companyId)).telefones;
       const elegiveis = entregues.filter(d => atuais.some(a => a.id === d.id && a.telefoneE164 === d.telefoneE164 && a.vinculoNumeroId === d.vinculoNumeroId));
       if (!elegiveis.length) throw fail('DESTINATARIO_ALTERADO', 'O contato autorizado mudou durante o preparo.');
@@ -98,9 +118,9 @@ export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(),
     };
     return await comAutomacaoAgendada({ ...policy, scheduledAt }, () => comAutomacaoEmpresa(companyId, async () => {
       await verificarLocal(db);
-      if (fase === 'DEPOIS') {
+      if (relativo ? event.tipo === 'CONSULTA_PAGAMENTO' : fase === 'DEPOIS') {
         if (config.limiteConsultas !== 1) throw fail('LIMITE_CONSULTA_NAO_AUTORIZADO', 'Autorize explicitamente o limite de uma consulta por guia antes do acompanhamento.');
-        const input = { companyId, guideId, parcelaId: original.parcela?.id || null, revisao: versaoPagamentoGuia(original), politica: config.politica, fase, scheduledAt };
+        const input = { companyId, guideId, parcelaId: original.parcela?.id || null, revisao: versaoPagamentoGuia(original), politica: config.politica, fase, scheduledAt, executionMode: modo.executionMode };
         consulta = await executarConsultaAutomatica(input, () => comVerificacaoTentativaAutomatica({ portalClientId: companyId, competencia: original.competencia,
           verificar: async () => {
             // O transporte fornece um transaction client distinto. A origem das leituras
@@ -111,7 +131,8 @@ export async function acompanharGuia({ guideId, scheduledAt, agora = new Date(),
         if (consulta?.pago === true) return { status: 'ENCERRADO', consulta: { resultado: 'PAGA' } };
         if (consulta?.skipped) return { status: 'PENDENTE', motivo: 'CONSULTA_A_CONFERIR', mensagem: 'Consulta já reservada ou inconclusiva; confira o histórico, sem nova consulta automática.', consulta };
       }
-      const aviso = await avisar({ guideId, scheduledAt, agora, politica: config.politica, assertActive: async () => { await assertActive(); await verificarLocal(db); } }, { ...deps, db, feriados });
+      if (relativo && event.tipo === 'CONSULTA_PAGAMENTO') return { status: consulta?.pago ? 'ENCERRADO' : 'PENDENTE', consulta, motivo: 'CONSULTA_A_CONFERIR' };
+      const aviso = await avisar({ guideId, scheduledAt, agora, politica: config.politica, eventoRelativo: eventProof, assertActive: async () => { await assertActive(); await verificarLocal(db); } }, { ...deps, db, feriados });
       return { ...aviso, ...(consulta ? { status: 'PENDENTE', motivo: 'CONSULTA_A_CONFERIR', mensagem: 'Pagamento não confirmado pela consulta. Confira o resultado fiscal; isso não comprova inadimplência.', consulta: { resultado: consulta.negativaConfirmada || consulta.status === 'NAO_LOCALIZADO' ? 'NAO_LOCALIZADO' : 'INCONCLUSIVO' } } : {}) };
     }, db), db);
   } catch (e) {
@@ -148,13 +169,17 @@ function motivoSeguroAviso(value) {
 export async function lerAcompanhamentoGuias({ portalClientId, competencia }, { db = prisma, agora = new Date() } = {}) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia || '')) throw Object.assign(fail('COMPETENCIA_INVALIDA', 'Confira a competência.'), { status: 422 });
   const config = await lerConfiguracaoAcompanhamento(db, portalClientId);
+  const { agendaEventos, paymentHour } = await db.$transaction(async tx => ({ agendaEventos: await lerAgendaEventosEmpresa(tx, portalClientId), paymentHour: (await tx.appSetting.findUnique({ where: { key: 'serpro_runtime_settings' } }))?.value?.rotinas?.avisos_guias_whatsapp?.hour }), { isolationLevel: 'RepeatableRead' });
+  const relativo = agendaEventos.executionMode === 'RELATIVO_V1';
   const geral = await lerAutomacaoCicloFiscal(db), empresa = await lerPoliticaAutomacao(db, portalClientId);
   const feriados = await db.feriado.findMany({});
-  const guias = await db.guide.findMany({ where: { portalClientId, competencia }, include: { portalClient: { select: { municipio: true } } }, orderBy: { id: 'asc' } });
+  const guias = await db.guide.findMany({ where: { portalClientId, competencia }, include: { portalClient: { select: { municipio: true } }, parcela: { include: { parcelamento: true } }, parcelamento: true, tributosParcela: true }, orderBy: { id: 'asc' } });
   const confirmacoes = await listarConfirmacoesPagamento(db, portalClientId);
   const items = [];
   for (const g of guias) {
-    const calendario = calendarioAvisosGuia(g.vencimento, feriados, g.portalClient?.municipio, POLITICA_ACOMPANHAMENTO_GUIAS);
+    const calendario = relativo ? null : calendarioAvisosGuia(g.vencimento, feriados, g.portalClient?.municipio, POLITICA_ACOMPANHAMENTO_GUIAS);
+    const vigenciaDocumento = relativo ? await conferirVigenciaDocumentoAcompanhamento(db, g) : null;
+    const calendarioEventos = relativo ? calendarioEventosGuia({ guia: g, revisao: versaoPagamentoGuia(g), globalPolicy: { schemaVersion: 1, tributos: agendaEventos.effective }, companyPolicy: { schemaVersion: 1 }, feriados, municipio: g.portalClient?.municipio, estado: { documentoVigente: vigenciaDocumento.vigente, pagamentoConfirmado: Boolean(g.baixada || g.clienteConfirmouEm || g.paymentConfirmedAt || g.paymentStatus === 'PAID' || g.parcela?.origemBaixa || g.parcela?.baixadaEm || g.parcela?.pagamentoStatus === 'CONFIRMADO'), recalculada: Boolean(lerRegistroRecalculo(g)) }, horaConsultaPagamento: paymentHour }) : null;
     const tentativa = (await db.appSetting.findUnique({ where: { key: chaveConsultaAutomatica({ guideId: g.id }) } }))?.value;
     const avisos = await db.appSetting.findMany({ where: { key: { startsWith: 'aviso_pagamento:' }, value: { path: ['guideId'], equals: g.id } } });
     const historico = avisos.filter(r => r.value?.companyId === portalClientId && r.value?.guideId === g.id).map(r => ({ fase: r.value.fase, status: r.value.status, politica: r.value.politica === POLITICA_ACOMPANHAMENTO_GUIAS ? POLITICA_ACOMPANHAMENTO_GUIAS : null, motivo: motivoSeguroAviso(r.value), revisaoCompativel: r.value.revisao === versaoPagamentoGuia(g) }));
@@ -166,12 +191,12 @@ export async function lerAcompanhamentoGuias({ portalClientId, competencia }, { 
       catch (e) { if (e.code !== 'GUIA_WHATSAPP_NAO_ENTREGUE') throw e; }
     }
     const pendenciaContabil = confirmacoes.some(c => c.guideId === g.id && !['CONCLUIDA', 'SUBSTITUIDA'].includes(c.estadoBaixa));
-    const encerrada = Boolean(g.baixada || g.clienteConfirmouEm || g.paymentStatus === 'PAID' || lerRegistroRecalculo(g));
+    const encerrada = Boolean(g.baixada || g.clienteConfirmouEm || g.paymentConfirmedAt || g.paymentStatus === 'PAID' || g.parcela?.origemBaixa || g.parcela?.baixadaEm || g.parcela?.pagamentoStatus === 'CONFIRMADO' || (!relativo && lerRegistroRecalculo(g)));
     items.push({ guideId: g.id, revisao: versaoPagamentoGuia(g), documento: g.tipo, competencia: g.competencia,
-      calendario, fase: calendario ? faseAvisoGuia(g.vencimento, agora, feriados, g.portalClient?.municipio, POLITICA_ACOMPANHAMENTO_GUIAS) : null,
+      calendario, calendarioEventos, vigenciaDocumento, executionMode: agendaEventos.executionMode, fase: calendario ? faseAvisoGuia(g.vencimento, agora, feriados, g.portalClient?.municipio, POLITICA_ACOMPANHAMENTO_GUIAS) : null,
       encerrada, pendenciaContabil, entrega: { comprovada }, historico, consulta: tentativa?.companyId === portalClientId ? { status: tentativa.status, resultado: tentativa.resultado || null, revisaoCompativel: tentativa.revisao === versaoPagamentoGuia(g) } : null,
-      motivo: pendenciaContabil ? 'Confirmação do cliente preservada; a baixa contábil exige conferência explícita.' : encerrada ? 'Pagamento informado/confirmado ou guia recalculada; acompanhamento encerrado.' : !calendario ? 'Vencimento ou calendário a conferir.' : !comprovada ? 'Sem entrega comprovada da revisão atual; confira o histórico.' : tentativa && tentativa.status !== 'PAGA' ? 'Consulta reservada ou inconclusiva; exige conferência, sem repetição automática.' : 'Entrega e contato autorizado serão conferidos antes de qualquer saída.' });
+      motivo: pendenciaContabil ? 'Confirmação do cliente preservada; a baixa contábil exige conferência explícita.' : encerrada ? 'Pagamento informado/confirmado ou guia recalculada; acompanhamento encerrado.' : relativo && calendarioEventos?.status === 'A_CONFERIR' || !relativo && !calendario ? 'Vencimento ou calendário a conferir.' : !comprovada ? 'Sem entrega comprovada da revisão atual; confira o histórico.' : tentativa && tentativa.status !== 'PAGA' ? 'Consulta reservada ou inconclusiva; exige conferência, sem repetição automática.' : 'Entrega e contato autorizado serão conferidos antes de qualquer saída.' });
   }
   return { portalClientId, competencia, enabled: config.enabled, politica: config.politica, limiteConsultas: config.limiteConsultas,
-    paused: geral.paused || empresa.paused, items, template: { status: 'A_CONFERIR', mensagem: 'Fora da janela, exige modelo Utility aprovado e contrato comprovado na Meta.' } };
+    executionMode: agendaEventos.executionMode, paused: geral.paused || empresa.paused, items, template: { status: 'A_CONFERIR', mensagem: 'Fora da janela, exige modelo Utility aprovado e contrato comprovado na Meta.' } };
 }

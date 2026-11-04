@@ -42,16 +42,15 @@ test('old month response cannot replace current month and retry only reloads loc
   await waitFor(() => expect(api.getOperationManualInss).toHaveBeenCalledTimes(3));
 });
 
-test('manual INSS opens existing guide modal with compact summary and configuration link', async () => {
+test('manual INSS remains in Guias without a universal detail action in Disponível', async () => {
   const manual = { companyId: 'a', competencia: '2026-09', revision: 'a'.repeat(64), hasProlabore: true, status: 'PENDING_DOCUMENT', guides: [], state: { applicable: null, responsible: 'Equipe fiscal', dueDate: null, note: '', reason: '' } };
   const api = { getOperationManualInss: jest.fn(async () => ({ items: [manual] })), getCompanyManualInss: jest.fn(async () => manual) };
   render(<OperationsPage api={api} companies={[{ ...company, razao: 'Empresa exemplo', apuracao: { competencia: '2026-09' }, guideCompliance: { competencia: '2026-09', inss: { required: true, state: 'missing', ok: false } } }]} competencia="2026-09" />);
   fireEvent.click(await screen.findByRole('button', { name: /Disponível 0\/1/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes do INSS manual' }));
-  expect(await screen.findByText('Equipe fiscal')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Configurar INSS manual' })).toHaveAttribute('href', '/companies/a/automacao?competencia=2026-09');
+  expect(screen.queryByRole('button', { name: 'Ver detalhes do INSS manual' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Abrir Guias' })).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
   expect(screen.queryByRole('textbox', { name: 'Responsável' })).not.toBeInTheDocument();
-  expect(api.getCompanyManualInss).toHaveBeenCalledTimes(1);
+  expect(api.getCompanyManualInss).not.toHaveBeenCalled();
 });
 
 test('batch failure is not displayed as zero pendencies or success', async () => {

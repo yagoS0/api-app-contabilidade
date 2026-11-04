@@ -39,7 +39,7 @@ test('quadros abrem detalhes locais e links preservam empresa e competência', a
   render(<OperationsPage companies={[company]} competencia="2026-09" onRefresh={onRefresh} onChangeCompetencia={onChangeCompetencia} />);
   fireEvent.click(screen.getByRole('button', { name: /Disponível 0\/1/ }));
   expect(await screen.findByText(/Leitura de guias: Leitura de documentos indisponível/)).toHaveTextContent('não há confirmação de ausência');
-  expect(screen.getByRole('link', { name: 'Abrir Guias — conferir canais e reenvio' })).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
+  expect(screen.getByRole('link', { name: 'Abrir Guias' })).toHaveAttribute('href', '/companies/a/guides?competencia=2026-09');
   fireEvent.keyDown(document, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button',{name:/Recarregar a lista/}));
   expect(onRefresh).toHaveBeenCalledTimes(1);
@@ -114,7 +114,7 @@ test('troca do documento depois da prévia impede enviar outra guia sem conferê
 });
 test('ativação exige prévia e não salva na leitura; resposta perdida reutiliza a chave', async () => {
   Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => 'pedido-123' });
-  const before = { revision: 'r1', rotinas: [{ key: 'das', label: 'DAS', enabled: false, agenda: null }] };
+  const before = { companyId: 'a', agendaEventos: { schemaVersion: 1, revision: 'policy-r1', version: 0, executionMode: 'LEGADO', relativeConsumerReady: false, overrides: {}, effective: {}, origins: {} }, revision: 'r1', rotinas: [{ key: 'das', label: 'DAS', enabled: false, agenda: null }] };
   const api = { getCompanyAutomation: jest.fn().mockResolvedValue(before), saveCompanyAutomation: jest.fn().mockRejectedValueOnce(new Error('Resposta perdida')).mockResolvedValue({ ...before, revision: 'r2', rotinas: [{ ...before.rotinas[0], enabled: true }] }) };
   render(<CompanyAutomation api={api} companyId="a" canEdit />);
   fireEvent.click(await screen.findByRole('checkbox', { name: /^DAS/ }));
@@ -123,7 +123,7 @@ test('ativação exige prévia e não salva na leitura; resposta perdida reutili
   fireEvent.click(screen.getByText('Salvar configuração'));
   expect(await screen.findByRole('alert')).toHaveTextContent('Resposta perdida');
   fireEvent.click(screen.getByText('Salvar configuração'));
-  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Configuração salva'));
+  await waitFor(() => expect(screen.getByText(/Configuração salva/).closest('[role="status"]')).toHaveTextContent('Configuração salva'));
   expect(api.saveCompanyAutomation.mock.calls[0]).toEqual(api.saveCompanyAutomation.mock.calls[1]);
 });
 

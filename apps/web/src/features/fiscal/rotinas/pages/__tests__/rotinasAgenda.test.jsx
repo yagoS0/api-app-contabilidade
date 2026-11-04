@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RotinasPage } from "../renderRotinasPage.jsx";
 
@@ -6,7 +6,8 @@ test('ativação fica dentro da empresa; salvar horários não sobrescreve escol
   const api = { getRotinas: jest.fn(async () => ({ rotinas: [{ key: 'das', label: 'DAS' }], agenda: { das: { enabled: true, day: 5, hour: 7 } }, empresas: [{ companyId: 'empresa-a', razao: 'Empresa A', rotinas: { das: true } }] })), saveRotinas: jest.fn(async () => ({})) };
   render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);
   fireEvent.click(screen.getByRole('tab', { name: 'Configuração' }));
-  expect(await screen.findByRole('link', { name: 'Empresa A' })).toHaveAttribute('href', '/companies/empresa-a/automacao');
+  const empresa = await screen.findByRole('rowheader', { name: 'Empresa A' });
+  expect(within(empresa.closest('tr')).getByRole('link', { name: 'Configurar empresa' })).toHaveAttribute('href', '/companies/empresa-a/automacao');
   expect(screen.queryByLabelText('DAS para Empresa A')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Salvar horários' }));
   await waitFor(() => expect(api.saveRotinas).toHaveBeenCalled());
@@ -73,7 +74,7 @@ test('horário dos lembretes é independente da consulta fiscal mensal',async()=
  render(<MemoryRouter><RotinasPage api={api}/></MemoryRouter>);
  fireEvent.click(screen.getByRole('tab',{name:'Configuração'}));
  fireEvent.click(await screen.findByLabelText('Ligar Lembretes de guias no WhatsApp'));
- expect(screen.getByText('Diariamente')).toBeVisible();
+ expect(screen.getByText('Antes, no vencimento e depois, conforme adesão')).toBeVisible();
  expect(screen.queryByLabelText('Dia de Lembretes de guias no WhatsApp')).not.toBeInTheDocument();
  fireEvent.change(screen.getByLabelText('Horário de Lembretes de guias no WhatsApp'),{target:{value:'09:00'}});
  fireEvent.click(screen.getByRole('button',{name:'Salvar horários'}));
@@ -103,7 +104,7 @@ test('acesso contextual abre configuração existente sem ligar agenda ou atuali
  expect(await screen.findByLabelText('Ligar Coleta e cálculo')).not.toBeChecked();
  expect(screen.getByLabelText('Ligar Envio de guias')).not.toBeChecked();
  expect(screen.getByLabelText('Ligar Lembretes')).not.toBeChecked();
- expect(api.getRotinas).toHaveBeenCalledTimes(1);expect(api.saveRotinas).not.toHaveBeenCalled();expect(onRefreshWorkerStatus).not.toHaveBeenCalled();
+ await waitFor(()=>expect(api.getRotinas).toHaveBeenCalledTimes(2));expect(api.getRotinas.mock.calls).toEqual([[],[]]);expect(api.saveRotinas).not.toHaveBeenCalled();expect(onRefreshWorkerStatus).not.toHaveBeenCalled();
 });
 
 test('resposta de configuração inválida não se torna agenda desligada nem permite salvar',async()=>{

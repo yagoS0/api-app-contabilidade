@@ -19,7 +19,7 @@ test('ZIP freezes exact selection including hidden company and requires explicit
  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Selecionar extrato de Empresa a' })).toBeEnabled());
  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar extrato de Empresa a' }));
  view.rerender(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={[transmissionRows[1]]} competencia="2026-10" />);
- expect(screen.getByText(/1 empresas selecionadas · 1 fora/)).toBeInTheDocument();
+ expect(screen.getByText(/1 selecionadas · 1 fora/)).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button', { name: 'Baixar extratos selecionados (1)' }));
  expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button', { name: 'Confirmar download' }));
@@ -116,4 +116,9 @@ test('resumo descarta resposta antiga e não reutiliza valor na troca de empresa
 
 test.each([undefined,null,{}])('resumo sem conexão disponível (%s) não derruba a página nem inventa valores',async api=>{
  render(summary(api));expect(screen.getByText('Lendo cálculo salvo…')).toBeInTheDocument();expect(screen.getByText('Lendo extrato salvo…')).toBeInTheDocument();expect(await screen.findAllByText('A verificar')).toHaveLength(2);expect(screen.queryByText(/R\$/)).not.toBeInTheDocument();
+});
+
+test('detalhe de transmissão mantém revisão, seleção, destino e foco sem ato fiscal',async()=>{
+ const api={getOperationsTransmissionDocuments:jest.fn(async(id,period)=>transmissionResponse(id,period)),downloadOperationsTransmissionDocuments:jest.fn()};const changed=jest.fn();render(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={transmissionRows} competencia="2026-10" onDetailChange={changed}/>);
+ await waitFor(()=>expect(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'})).toBeEnabled());fireEvent.click(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'}));const trigger=screen.getByRole('button',{name:'Detalhes da transmissão de Empresa a'});fireEvent.click(trigger);expect(screen.getByRole('heading',{name:'Empresa a · 2026-10'})).toHaveFocus();expect(screen.getByText('a'.repeat(64))).toBeInTheDocument();expect(screen.getByRole('link',{name:'Retificar'})).toHaveAttribute('href','/companies/a/cadastro-fiscal?competencia=2026-10');expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Voltar'}));await waitFor(()=>expect(trigger).toHaveFocus());expect(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'})).toBeChecked();fireEvent.click(screen.getByRole('button',{name:'Limites do download'}));expect(screen.getByText(/30 PDFs, 8 MiB por arquivo e 32 MiB por ZIP/)).toBeVisible();expect(changed).toHaveBeenLastCalledWith(false);
 });

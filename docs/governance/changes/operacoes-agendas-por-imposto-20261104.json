@@ -1,0 +1,47 @@
+{
+  "summary": "Corrige modais e filtros de Operações e integra configuração por empresa e imposto, com adoção explícita do calendário por vencimento e referência confirmada por competência.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Implementa as decisões aprovadas da seção33 e a referência confirmada por competência; preserva R01/R02/R07–R11/R14/R19–R22/R25/R26 e seção32. Salvar parâmetros não ativa rotinas; adoção do modo é explícita e versionada. Busca inicial continua indisponível (capture:false/referenceConsumerReady:false); cadastro da referência não autoriza consulta. Não há ativação, mensagens, atos fiscais ou atualização de dados empresariais neste incremento.",
+  "tests": [
+    "API:738suítes/12459testes aprovados por composição verificada, incluindo11focais dos dois testes reparados e10cenários PostgreSQL executados separadamente. Falhas/skips originais preservados. Não é execução única nova.",
+    "Web:582suítes/6882testes por composição;17suítes afetadas/173testes executados na fonte aplicada,565suítes compatíveis reaproveitadas. As20falhas originais permanecem no registro, substituídas apenas na avaliação final pelas provas corrigidas.",
+    "Governança85/85, portal1610/1610, data-gate e2cenários PostgreSQL de referência/agenda aprovados e reaproveitados mediante compatibilidade de fontes.",
+    "Visual:10capturas1440/390 e9percursos, complemento de4verificações referência409 e3verificações recarga409/503. Sem transporte externo.",
+    "Lint dos56JS/JSXweb alterados:exit0,zeroerros/dezavisos dehooks analisados. Três limpezas sem mudança de comportamento revisadas pelo Principal. Buildwebfinalpós-lint:exit0,sourceGuardtrue,FP a99f6ad57798330b75f66699b97fb50f5798e8876e1195de7fd6e36578e372c2. Buildportal compatível preservado.",
+    "Revisão independente final conferiu composição API/web por arquivo e cenário, sem duplicar resultados, e aprovou fechamento complementar. CI do PR e inspeção pós-deploy ainda são etapas seguintes; nenhuma homologação fiscal real é declarada."
+  ],
+  "rollback": "Reverter somente o commit deste incremento, preservando trabalhos independentes. A migração é aditiva; manter tabelas de referência e histórico, sem apagar eventos ou reverter dados. Não mudar flags/seleções/agendas. Conferir saúde da API e interface após reversão.",
+  "humanDecisions": [
+    "Após a validação complementar sem publicação, o usuário autorizou expressamente em04/11/2026 abrir PR, integrar main e publicar somente após CI aprovado. Conferência posterior de Operações/configurações/Alessandro é somente leitura. Não ativar automações nem alterar dados reais; preservar pendências no plano.",
+    "Referência fiscal manual confirmada por contador é específica à empresa, tributo e competência; não se copia para outros meses.",
+    "Guru em conferência, eNotas ativo, benefício pendente e Sintropia fora da ativação."
+  ],
+  "validationMode": "complementary_record_with_compatible_evidence_and_required_final_ci",
+  "originalRun": "2026-11-04T14-35-59-399Z-9152b6bf",
+  "limitations": [
+    "Primeira busca baseada na referência ainda sem consumidor fiscal integrado.",
+    "Conferência real da projeção de parcelamentos de Alessandro permanece pendente; não houve correção de registros.",
+    "Formulários de configuração permanecem extensos no celular; compactação adicional preservada no plano.",
+    "Sem homologação de transporte fiscal ou WhatsApp real neste incremento."
+  ],
+  "pending": [
+    "Implementar e homologar primeiro consumidor de captura com identidade documental e persistência idempotente.",
+    "Conferir em produção, somente leitura, procurações, modais e projeção mensal de Alessandro.",
+    "Concluir compactação das configurações preservando erros, versões e confirmações."
+  ],
+  "evidenceDirectory": "output/operacoes-ux-agendas-20261104"
+}

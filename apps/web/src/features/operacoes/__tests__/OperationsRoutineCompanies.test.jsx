@@ -59,7 +59,7 @@ test('cartão conta empresas distintas e detalhe conserva ocorrências',async()=
 test('acesso a agendas usa a configuração existente e não grava escolhas empresariais',async()=>{
  const api=apiFor(); api.saveRotinas=jest.fn();
  render(<OperationsRoutineCompanies api={api} companies={companies} competencia="2026-10"/>);
- expect(screen.getByRole('link',{name:'Configurar agendas e automações'})).toHaveAttribute('href','/rotinas?aba=configuracao');
+ expect(screen.getByRole('link',{name:'Configurar'})).toHaveAttribute('href','/rotinas?aba=configuracao');
  await screen.findByRole('button',{name:'Habilitadas 1'});
  expect(api.saveRotinas).not.toHaveBeenCalled();
 });

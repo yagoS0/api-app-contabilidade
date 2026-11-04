@@ -1,3 +1,4 @@
+import { criarReferenciaVencimentoApi } from './referenciaVencimentoApi';
 import { lerRespostaDocumento } from "../../features/notas/lib/documentoIndividual";
 import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 import { importarNotasEmLotes } from "./importarNotasEmLotes";
@@ -832,6 +833,7 @@ export function createRealApi() {
     savePausaCicloFiscal: input => request('/firm/rotinas/pausa-geral', { method: 'PUT', body: JSON.stringify(input) }),
     getCompanyGuideTracking: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/acompanhamento-guias`),
     getCompanyGuideDelivery: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/envio-guias`),
+    ...criarReferenciaVencimentoApi(request),
     getCompanyAutomation: companyId => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`),
     getCompanySimplesCycle: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples`),
     reviseCompanySimplesCycle: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples/revisao`, { method: 'POST', body: JSON.stringify(input) }),

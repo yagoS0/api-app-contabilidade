@@ -294,3 +294,143 @@
 @media(max-width:760px) { .operacoes .operacoes-etapa { min-height:0; } .operacoes .operacoes-rotinas-contadores { grid-template-columns:1fr; } .operacoes .operacoes-grafico-legenda button { min-height:44px; } }
 
 .operacoes-dialogo .operacoes-valor { display:block; }
+/* Review of the approved compact panel and fixed modal actions. */
+.operacoes .operacoes-etapa { min-height:300px; }
+.operacoes .operacoes-progress,.operacoes .operacoes-quadro,.operacoes .operacoes-grafico-legenda button,.operacoes-dialogo .btn { transition:background-color .16s,border-color .16s,transform .16s; }
+.operacoes button:not(.btn-primary):hover:not(:disabled),.operacoes-dialogo .btn:not(.btn-primary):hover:not(:disabled) { background:var(--bg-subtle); }
+.operacoes button:active:not(:disabled),.operacoes-dialogo .btn:active:not(:disabled) { border-color:var(--text-muted); }
+.operacoes-dialogo :is(button,a,input,select):focus-visible { outline:2px solid var(--accent-purple); outline-offset:3px; }
+.operacoes .operacoes-rotinas-unico { display:flex; flex-wrap:wrap; align-items:center; gap:16px; }
+.operacoes .operacoes-rotinas-contadores { flex:1; margin:0; }
+.operacoes .operacoes-rotinas-contadores > button.operacoes-quadro { border:0; background:transparent; min-height:44px; }
+.operacoes .operacoes-rotinas-unico > :is(p,small) { flex-basis:100%; }
+.operacoes-dialogo .modal-caixa { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); overflow:hidden; }
+.operacoes-dialogo .modal-topo,.operacoes-dialogo .modal-rodape { flex:none; }
+.operacoes-dialogo .modal-corpo { min-height:0; overflow:auto; }
+.operacoes-dialogo .modal-rodape { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.operacoes-guide-footer-slot { flex:1; min-width:0; }
+.operacoes-guide-footer { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.operacoes-guide-footer > span { margin-left:auto; color:var(--text-muted); }
+.operacoes-dialogo .operacoes-guias-tabela :is(td,th) + :is(td,th) { border-left:1px solid var(--border); }
+.operacoes-dialogo .operacoes-guias-tabela .operacoes-moeda { display:table-cell; text-align:right; font-variant-numeric:tabular-nums; }
+.operacoes-dialogo .operacoes-guias-tabela th[scope=rowgroup] { font-weight:500; }
+@media(max-width:760px) {
+  .operacoes .operacoes-rotinas-contadores { flex-basis:100%; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
+  .operacoes .operacoes-rotinas-contadores > button.operacoes-quadro { flex-direction:column; padding:8px 4px; gap:4px; }
+  .operacoes .operacoes-etapa { min-height:0; }
+  .operacoes-dialogo .modal-rodape { gap:8px; }
+  .operacoes-guide-footer-slot { flex-basis:100%; }
+  .operacoes-guide-footer > span { margin:0; flex-basis:100%; }
+  .operacoes-guide-footer .btn { flex:1; min-height:44px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .operacoes *, .operacoes-dialogo * { transition:none!important; animation:none!important; }
+}
+
+.operacoes button:hover:not(:disabled),.operacoes-dialogo .btn:hover:not(:disabled) { transform:translateY(-1px); }
+.operacoes button:active:not(:disabled),.operacoes-dialogo .btn:active:not(:disabled) { transform:translateY(0); }
+.operacoes-dialogo .operacoes-acoes a.btn { text-decoration:none; }
+@media(prefers-reduced-motion:reduce) { .operacoes button,.operacoes-dialogo .btn { transform:none!important; } }
+
+.operacoes-dialogo .operacoes-guide-selection { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.operacoes-guide-selection label { display:grid; gap:6px; font-size:12px; color:var(--text-muted); }
+.operacoes-guide-selection select { min-height:40px; min-width:180px; padding:8px 12px; background:var(--bg-subtle); color:var(--text); border:1px solid var(--border); border-radius:8px; }
+.operacoes-dialogo th[scope=rowgroup] { text-transform:none; letter-spacing:normal; font-weight:500; color:var(--text); }
+@media(max-width:760px) { .operacoes-guide-selection select { min-height:44px; width:100%; } .operacoes-guide-selection label { flex-basis:100%; } .operacoes-guide-footer { gap:8px; } }
+
+.operacoes-stage-filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,1fr); gap:16px; align-items:end; }
+@media(max-width:760px) { .operacoes-stage-filters { grid-template-columns:1fr; gap:8px; } .operacoes-stage-filters :is(input,select) { min-height:44px; } }
+
+@media(max-width:760px) {
+ .operacoes-dialogo .modal-rodape .operacoes-stage-footer { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
+ .operacoes-dialogo .modal-rodape .operacoes-stage-footer > span { grid-column:1/-1; }
+ .operacoes-dialogo .modal-rodape .operacoes-stage-footer > .btn { min-height:44px; white-space:normal; }
+ .operacoes-dialogo .modal-rodape .operacoes-destinos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+ .operacoes-dialogo .modal-rodape .operacoes-destinos > .btn { min-height:44px; white-space:normal; }
+}
+
+/* Consolidated modal candidate: keep semantic tables, size columns by content. */
+.operacoes-dialogo .operacoes-tabela :is(th,td) { min-width:0; overflow-wrap:break-word; }
+.operacoes-dialogo .operacoes-tabela :is(th[scope=row],th[scope=rowgroup]) { min-width:10rem; max-width:18rem; }
+.operacoes-dialogo .operacoes-tabela .operacoes-coluna-selecao { min-width:44px; width:44px; }
+.operacoes-dialogo .operacoes-tabela .operacoes-moeda { white-space:nowrap; min-width:7rem; }
+.operacoes-dialogo .operacoes-tabela .operacoes-moeda small { white-space:normal; }
+.operacoes-guias-tabela td:nth-last-child(3) { min-width:13rem; max-width:24rem; }
+.operacoes-dialogo .operacoes-tabela td:last-child { min-width:9rem; }
+.operacoes-dialogo .operacoes-tabela small { overflow-wrap:break-word; }
+.operacoes-dialogo .operacoes-tabela details { margin-top:8px; }
+.operacoes-dialogo .operacoes-tabela summary { min-height:44px; display:list-item; align-content:center; cursor:pointer; }
+.operacoes-report-filters { align-items:end; margin-block:0 12px; }
+.operacoes-report-filters label:first-child { flex:1; min-width:10rem; }
+.operacoes-report-filters label:nth-child(2) { min-width:12rem; }
+.operacoes-report-tabela td:nth-child(3),.operacoes-report-tabela td:nth-child(4) { min-width:11rem; max-width:20rem; }
+.operacoes-report-footer,.operacoes-transmission-footer { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; width:100%; }
+.operacoes-report-footer > span { margin-right:auto; color:var(--text-muted); font-size:.85rem; }
+.operacoes-report-footer[hidden] { display:none; }
+.operacoes-payment-view { align-items:end; margin-block:0 12px; }
+.operacoes-payment-view p { margin:0; flex:1; min-width:12rem; }
+.operacoes-liberacao-tabela td:last-child { min-width:12rem; }
+.operacoes-transmission-tabela td { min-width:7rem; }
+@media(max-width:760px) {
+ .operacoes-dialogo .modal-rodape { gap:8px; }
+ .operacoes-dialogo .operacoes-tabela :is(th,td) { padding:8px; }
+ .operacoes-dialogo .operacoes-tabela p { margin:4px 0; }
+ .operacoes-dialogo .operacoes-tabela :is(th[scope=row],th[scope=rowgroup]) { min-width:9rem; }
+ .operacoes-dialogo .operacoes-tabela .operacoes-coluna-selecao { padding-inline:2px; }
+ .operacoes-report-filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
+ .operacoes-report-filters label { min-width:0 !important; }
+ .operacoes-report-filters :is(input,select) { width:100%; min-width:0; box-sizing:border-box; }
+ .operacoes-report-filters > .btn { grid-column:1/-1; justify-self:end; }
+ .operacoes-dialogo .modal-rodape :is(.operacoes-report-footer,.operacoes-transmission-footer) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+ .operacoes-dialogo .modal-rodape .operacoes-report-footer[hidden] { display:none; }
+ .operacoes-report-footer > span { grid-column:1/-1; }
+ .operacoes-dialogo .modal-rodape :is(.operacoes-report-footer,.operacoes-transmission-footer) > .btn { min-height:44px; white-space:normal; }
+ .operacoes-dialogo .modal-rodape .operacoes-stage-footer { padding-top:0; }
+}
+
+/* R1 authorized hierarchy: essential cells, named detail panels and fixed actions. */
+.operacoes-title-context { font-size:.8em; font-weight:400; color:var(--text-muted); }
+.operacoes-search-row { display:flex; gap:8px; align-items:end; margin-bottom:8px; }
+.operacoes-search-row > label { flex:1; min-width:0; }
+.operacoes-search-row input { box-sizing:border-box; width:100%; }
+.operacoes-search-row > .btn { flex:none; min-height:44px; }
+.operacoes-filter-panel { padding:12px; border:1px solid var(--border); margin-bottom:12px; }
+.operacoes-filter-panel label,.operacoes-payment-view { display:grid; gap:4px; }
+.operacoes-filter-panel select,.operacoes-payment-view select { box-sizing:border-box; width:100%; min-height:44px; border:1px solid var(--border); border-radius:8px; background:var(--bg-subtle); color:var(--text); padding:8px; }
+.operacoes-mobile-cell { display:none; }
+.operacoes-dialogo .operacoes-detail-table { min-width:0; table-layout:fixed; width:100%; }
+.operacoes-dialogo .operacoes-detail-table :is(th,td) { min-width:0; overflow-wrap:anywhere; }
+.operacoes-dialogo .operacoes-detail-table th { width:38%; }
+.operacoes-dialogo [hidden] { display:none!important; }
+.operacoes-selection-summary { font-size:.85rem; margin-bottom:8px; }
+.operacoes-selection-summary .btn { padding-inline:8px; }
+.operacoes-report-filters { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.operacoes-report-filters > label:first-child { grid-column:1/-1; }
+.operacoes-report-filters > .btn { grid-column:auto; }
+.operacoes-dialogo .operacoes-liberacao-tabela { min-width:0; width:100%; table-layout:fixed; }
+.operacoes-dialogo .operacoes-liberacao-tabela :is(th,td) { width:50%; min-width:0; }
+@media(max-width:760px) {
+ .operacoes-dialogo .operacoes-desktop-cell { display:none!important; }
+ .operacoes-dialogo .operacoes-mobile-cell { display:block; }
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) { min-width:309px; width:100%; table-layout:fixed; }
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) :is(th,td) { min-width:0; max-width:none; box-sizing:border-box; padding:6px 4px; overflow-wrap:anywhere; }
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) :is(th,td):last-child { width:80px; }
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) .operacoes-coluna-selecao { width:44px; min-width:44px; padding-inline:0; box-sizing:border-box; }
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) .btn-sm { min-height:44px; padding:8px 4px; width:100%; white-space:normal; }
+ .operacoes-dialogo .operacoes-payment-tabela th[scope=rowgroup] { width:100px; }
+ .operacoes-dialogo .operacoes-report-tabela th[scope=row] { width:100px; }
+ .operacoes-dialogo .operacoes-transmission-tabela th[scope=row] { width:100px; }
+ /* Fixed table layout derives column proportions from its first row. */
+ .operacoes-dialogo .operacoes-payment-tabela thead th:first-child:not(.operacoes-coluna-selecao),
+ .operacoes-dialogo .operacoes-payment-tabela thead th.operacoes-coluna-selecao + th,
+ .operacoes-dialogo .operacoes-report-tabela thead th:first-child,
+ .operacoes-dialogo .operacoes-transmission-tabela thead th:nth-child(2) { width:100px; }
+ /* Keep the label intact; the column includes padding, so the button fits inside it. */
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) td:last-child button.btn-sm { box-sizing:border-box; white-space:nowrap; word-break:normal; overflow-wrap:normal; }
+ .operacoes-dialogo :is(.operacoes-payment-tabela,.operacoes-report-tabela,.operacoes-transmission-tabela) :is(th[scope=row],th[scope=rowgroup]) { word-break:normal; overflow-wrap:break-word; }
+ .operacoes-dialogo .operacoes-report-filters > label:first-child { grid-column:1/-1; }
+ .operacoes-dialogo .operacoes-report-filters > .btn { grid-column:auto; }
+ .operacoes-dialogo .operacoes-liberacao-tabela :is(th,td) { min-width:0; padding:8px; }
+ .operacoes-dialogo .operacoes-selection-summary { gap:4px 8px; }
+ .operacoes-dialogo .operacoes-selection-summary .btn { min-height:44px; }
+}

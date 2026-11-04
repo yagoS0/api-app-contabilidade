@@ -1,3 +1,4 @@
+import { conferirModoConsultaDespacho } from './ConsultaPagamentoAutomaticaService.js';
 import crypto from "node:crypto";
 import { conferirContextoCicloFiscal, conferirTentativaAutomaticaDespacho, tentativaAutomaticaSemDespacho, marcarDespachoTentativaAutomatica } from '../automacaoCicloFiscalContext.js';
 import { bloquearCicloFiscal, AutomacaoCicloFiscalError } from '../AutomacaoCicloFiscalService.js';
@@ -143,6 +144,7 @@ export async function autorizarDespacho(autorizacao, client = prisma) {
         await conferirContextoCicloFiscal(tx);
         await conferirContextoCicloFiscal(tx, { requireCompany: true, portalClientId: reserva.portalClientId });
         await conferirPoliticaSerpro(tx, reserva.portalClientId);
+        await conferirModoConsultaDespacho(tx, { portalClientId: reserva.portalClientId });
         await conferirTentativaAutomaticaDespacho(tx, { portalClientId: reserva.portalClientId });
       }
       catch (error) {

@@ -37,13 +37,24 @@ test('evidência parcial não conclui fluxo sem tarefas/obrigações completas',
 test.each(['unknown', 'concluido'])('tarefa extra %s não vira conclusão silenciosa',(etapa)=>{
  const c=company({}, {registros:[{chave:'extra:unknown',dados:{titulo:'Etapa a revisar',etapa}}]});expect(project(c).items[0].presentation.chave).toBe('verificar');
 });
-test.each(['DOCUMENT_ABSENT','NOT_APPLICABLE'])('detalhe de %s abre pela empresa sem criar pendência ou executar ações',async status=>{
- const c=company(),manual=absence(status),api=apiFor(manual),onSend=jest.fn();const view=render(<OperationsPage api={api} companies={[c]} competencia={comp} acoesGuia={{onEnviar:onSend}}/>);
- fireEvent.click(await screen.findByRole('button',{name:'Pago 0/1 empresas'}));fireEvent.click(screen.getByRole('button',{name:'Ver detalhes do INSS manual'}));
- expect(await screen.findByText('Equipe responsável')).toBeInTheDocument();expect(api.getCompanyManualInss).toHaveBeenCalledWith('reconciliada',comp);expect(api.getCompanyManualInss).toHaveBeenCalledTimes(1);expect(onSend).not.toHaveBeenCalled();expect(screen.queryByRole('textbox',{name:'Responsável'})).not.toBeInTheDocument();expect(screen.getByRole('link',{name:'Configurar INSS manual'})).toHaveAttribute('href','/companies/reconciliada/automacao?competencia=2026-10');
- fireEvent.click(screen.getByText('Fechar',{selector:'button'}));expect(screen.queryByText('Equipe responsável')).not.toBeInTheDocument();
- fireEvent.click(screen.getByRole('button',{name:'Pago 0/1 empresas'}));fireEvent.click(screen.getByRole('button',{name:'Ver detalhes do INSS manual'}));await screen.findByText('Equipe responsável');view.rerender(<OperationsPage api={api} companies={[]} competencia="2026-11"/>);expect(screen.queryByText('Equipe responsável')).not.toBeInTheDocument();
+// Decisão do usuário: Pago não abre detalhe manual de INSS ausente/não aplicável.
+// O controle editável permanece coberto em OperationsManualInss.test.jsx, na configuração.
+test.each(['DOCUMENT_ABSENT','NOT_APPLICABLE'])('Pago omite ação manual de %s, preserva empresa/competência e não executa',async status=>{
+ const c=company(),manual=absence(status),api=apiFor(manual),onSend=jest.fn();
+ api.getCompanyGuides=jest.fn(async()=>[{companyId:'reconciliada',guideId:'das',competencia:comp,tipo:'DAS',status:'PROCESSED',paymentStatus:'OPEN',valor:100}]);
+ api.saveCompanyManualInss=jest.fn();const view=render(<OperationsPage api={api} companies={[c]} competencia={comp} acoesGuia={{onEnviar:onSend}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Pago 0/1 empresas'}));
+ await waitFor(()=>expect(api.getCompanyGuides).toHaveBeenCalledWith('reconciliada'));
+ expect(screen.queryByRole('button',{name:'Ver detalhes do INSS manual'})).not.toBeInTheDocument();
+ expect(screen.queryByText('Dispensado')).not.toBeInTheDocument();expect(screen.queryByText('INSS')).not.toBeInTheDocument();
+ expect(screen.queryByText('Equipe responsável')).not.toBeInTheDocument();expect(screen.queryByRole('textbox',{name:'Responsável'})).not.toBeInTheDocument();
+ expect(screen.getByRole('link',{name:'Abrir Guias'})).toHaveAttribute('href','/companies/reconciliada/guides?competencia=2026-10');
+ expect(api.getCompanyManualInss).not.toHaveBeenCalled();expect(api.saveCompanyManualInss).not.toHaveBeenCalled();expect(onSend).not.toHaveBeenCalled();
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Pago 0/1 empresas'}));expect(screen.queryByRole('button',{name:'Ver detalhes do INSS manual'})).not.toBeInTheDocument();expect(api.getCompanyManualInss).not.toHaveBeenCalled();
+ view.rerender(<OperationsPage api={api} companies={[]} competencia="2026-11"/>);expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(screen.queryByText('Equipe responsável')).not.toBeInTheDocument();expect(api.saveCompanyManualInss).not.toHaveBeenCalled();expect(onSend).not.toHaveBeenCalled();
 });
+
 test('Empresas e Operações exibem a mesma conclusão reconciliada do produtor',async()=>{
  const c=company(),api=apiFor(absence());const table=render(<CompaniesTable api={api} companies={[c]} competencia={comp}/>);
  fireEvent.click(await screen.findByRole('button',{name:/Concluídas \(1\)/}));await waitFor(()=>expect(screen.getByRole('button',{name:'Ver tarefas de Empresa Reconciliada: Concluído'})).toBeInTheDocument());table.unmount();render(<OperationsPage api={api} companies={[c]} competencia={comp}/>);expect(screen.queryByRole('button',{name:'Concluído 1/1 empresas'})).not.toBeInTheDocument();expect(await screen.findByRole('button',{name:'Disponível 1/1 empresas'})).toBeInTheDocument();expect(project(c).metrics.concluido.done).toHaveLength(1);expect(c.fluxoCarteira.status.chave).toBe('guias');
