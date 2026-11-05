@@ -207,3 +207,76 @@ test("50 páginas completas retornam parcial sem repetir nem afirmar sincroniza�
     expect(limpezasDeErro()).toHaveLength(0);
   } finally { timer.mockRestore(); }
 });
+
+test.each(['CERT_STORAGE_UNAVAILABLE', 'CERT_PASSWORD_DECRYPT_FAILED', 'CERT_CNPJ_MISMATCH'])("falha tipada %s não vira ausência nem expõe dados", async code => {
+  resolveCertForCompany.mockRejectedValueOnce(Object.assign(new Error('segredo 12345678000199 <xml/>'), { code }));
+  const r = await syncAdnNotasForCompany({ portalClientId: 'p1' });
+  expect(r).toMatchObject({ ok: false, reason: code });
+  expect(JSON.stringify(r)).not.toMatch(/segredo|12345678000199|xml/);
+  expect(fetchDfeNFSe).not.toHaveBeenCalled();
+});
+
+test('falha inesperada do cofre não é certificado ausente', async () => {
+  resolveCertForCompany.mockRejectedValueOnce(new Error('credencial privada'));
+  expect(await syncAdnNotasForCompany({ portalClientId: 'p1' })).toMatchObject({ ok: false, reason: 'CERT_RESOLUTION_FAILED' });
+  expect(fetchDfeNFSe).not.toHaveBeenCalled();
+});
+
+test('rejeição preserva somente códigos estruturados e cursor, com backoff', async () => {
+  fetchDfeNFSe.mockResolvedValueOnce({ status: 'REJEICAO', items: [], errors: [
+    { Codigo: 'E0718', Descricao: 'token secreto <xml/> 12345678000199' },
+    { code: 'E0718' }, { codigo: '12345678000199' }, { code: '<xml/>' }, { code: 'Bearer_private' },
+  ] });
+  const r = await syncAdnNotasForCompany({ portalClientId: 'p1' });
+  expect(r).toMatchObject({ ok: false, reason: 'ADN_REJEICAO', errors: [{ code: 'E0718' }], newCursor: '10' });
+  expect(r.message).toContain('causa precisa ser conferida');
+  expect(r.backoffUntil).toBeInstanceOf(Date);
+  expect(JSON.stringify(r)).not.toMatch(/secreto|12345678000199|xml|Bearer/);
+  expect(prisma.portalSyncState.upsert.mock.calls.at(-1)[0].update.adnLastError).toContain('E0718');
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(limpezasDeErro()).toHaveLength(0);
+});
+
+test.each([
+  { status: 'DESCONHECIDO', items: [] },
+  { status: 'DOCUMENTOS_LOCALIZADOS', items: [] },
+  { status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: [], errors: [{ Codigo: 'E001' }] },
+])('resposta inconclusiva %j não limpa erro', async response => {
+  fetchDfeNFSe.mockResolvedValueOnce(response);
+  expect(await syncAdnNotasForCompany({ portalClientId: 'p1' })).toMatchObject({ ok: false, newCursor: '10' });
+  expect(limpezasDeErro()).toHaveLength(0);
+});
+
+test('fim oficial E2220 vazio conclui captura e limpa somente o erro anterior', async () => {
+  fetchDfeNFSe.mockResolvedValueOnce({ status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: [], errors: [{ Codigo: 'E2220', Descricao: 'texto privado' }] });
+  const r = await syncAdnNotasForCompany({ portalClientId: 'p1' });
+  expect(r).toMatchObject({ ok: true, complete: true, partial: false, totalDocs: 0, newCursor: '10' });
+  expect(limpezasDeErro()).toHaveLength(1);
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(JSON.stringify(r)).not.toContain('texto privado');
+});
+
+test.each([
+  { status: 'REJEICAO', items: [], errors: [{ Codigo: 'E2220' }] },
+  { status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: [], errors: [{ Codigo: 'E2220' }, { Codigo: 'E2245' }] },
+  { status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: [], errors: [{ Codigo: 'E2220' }, { Codigo: 'segredo' }] },
+  { status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: lote().items, errors: [{ Codigo: 'E2220' }] },
+  { status: 'NENHUM_DOCUMENTO_LOCALIZADO', items: [], errors: [{ Codigo: 'E2230' }] },
+])('E2220 não mascara retorno incoerente %j', async response => {
+  fetchDfeNFSe.mockResolvedValueOnce(response);
+  expect(await syncAdnNotasForCompany({ portalClientId: 'p1' })).toMatchObject({ ok: false, newCursor: '10' });
+  expect(limpezasDeErro()).toHaveLength(0);
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+});
+
+test('captura pede depois de 50 e recebe 51 sem salto', async () => {
+  prisma.portalSyncState.findUnique.mockResolvedValueOnce({ adnNsuCursor: 0n });
+  const timer = jest.spyOn(global, 'setTimeout').mockImplementation(fn => { queueMicrotask(fn); return 0; });
+  try {
+    fetchDfeNFSe.mockResolvedValueOnce({ ...lote(50), items: lote(50).items.map((item, i) => ({ ...item, NSU: String(i + 1) })) })
+      .mockResolvedValueOnce({ ...lote(), items: [{ ...lote().items[0], NSU: '51' }] });
+    const r = await syncAdnNotasForCompany({ portalClientId: 'p1' });
+    expect(r).toMatchObject({ ok: true, totalDocs: 51, newCursor: '51' });
+    expect(fetchDfeNFSe.mock.calls.map(([opts]) => opts.ultNSU)).toEqual(['0', '50']);
+  } finally { timer.mockRestore(); }
+});
