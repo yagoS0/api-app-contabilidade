@@ -13,6 +13,13 @@
     "portal",
     "web"
   ],
+  "affectedDomains": [
+    "api",
+    "fiscal",
+    "accounting",
+    "documentation",
+    "governance"
+  ],
   "baseCommit": "8cec458c3c3183dc4e312c005b8f01a219828911",
   "status": "validated_locally_complementary_record_no_publication",
   "operationalImpact": "Adequação às regras R01/R02/R05/R19/R20/R26: rejeição ou coleta incompleta não comprova ausência de notas; divergência anterior preservada; sucesso exige revisão atual. Cancelamento factual local, pendência e conferência atômicos; mês contábil fechado exige correção explícita. Sem alteração tributária, agenda, seleção de certificado, emissão ou procuração; suporte ADN por representação permanece pendente.",
