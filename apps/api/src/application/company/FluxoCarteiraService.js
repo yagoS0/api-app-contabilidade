@@ -100,11 +100,11 @@ export async function lerFluxoEmpresa(id, competencia, db = prisma) {
   return (await contextosCarteira([company], competencia, db)).get(id);
 }
 
-export async function salvarFluxoTarefa(id, competencia, chave, corpo, userId, db = prisma) {
+export async function salvarFluxoTarefa(id, competencia, chave, corpo, userId, db = prisma, { transaction = null } = {}) {
   competenciaValida(competencia);
   if (!ROTINAS_CARTEIRA.some(t => t.chave === chave) && !/^extra:[a-zA-Z0-9-]{1,80}$/.test(chave)) throw erro('Tarefa inválida.');
   // Lock por empresa/competência + serializable preservam histórico e recusam prévias antigas.
-  return db.$transaction(async tx => {
+  const write = async tx => {
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${`carteira:${id}:${competencia}`}))`;
     const detalhe = await lerFluxoEmpresa(id, competencia, tx);
     const existente = detalhe.contexto.registros.find(t => t.chave === chave);
@@ -122,7 +122,8 @@ export async function salvarFluxoTarefa(id, competencia, chave, corpo, userId, d
     if (existente) await tx.carteiraTarefa.update({ where: { id: existente.id }, data });
     else await tx.carteiraTarefa.create({ data: { ...data, portalClientId: id, competencia, chave } });
     return { salvo: true };
-  }, { isolationLevel: 'Serializable', timeout: 30000 });
+  };
+  return transaction ? write(transaction) : db.$transaction(write, { isolationLevel: 'Serializable', timeout: 30000 });
 }
 
 // Obrigações nativas observam a mesma evidência da carteira, inclusive sua invalidação.

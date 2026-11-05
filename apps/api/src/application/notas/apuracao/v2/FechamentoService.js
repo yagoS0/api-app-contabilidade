@@ -720,7 +720,7 @@ export async function calcularFechamento(params) {
   finally { await lease.release(); }
 }
 
-async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false, expectedAutomaticContextHash }, lease, { automatico = false } = {}) {
+async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false, expectedAutomaticContextHash, manualOperation }, lease, { automatico = false } = {}) {
   const preparo = automatico ? preparacaoAutomaticaAtual() : null;
   if (automatico && (!preparo || preparo.prova.portalClientId !== portalClientId || preparo.prova.competencia !== competencia || hashCalculo(preparo.formulario) !== hashCalculo({ atividades, folhaMensal12, regimeApuracao, semMovimento }))) throw erroCalculoObsoleto();
   exigirRegimeSuportado(regimeApuracao);
@@ -825,6 +825,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
     lease.assertActive();
     await conferirContextoCicloFiscal(undefined, { requireCompany: true, portalClientId });
     if (automatico) await conferirTentativaAutomaticaAntesSimulacao(prisma, { portalClientId });
+    await manualOperation?.beforeDispatch?.();
     return sim.simular(p);
   };
   const params = { contratanteCnpj, contribuinteCnpj, competencia,
@@ -841,7 +842,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   });
   const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await (preparo
     ? executarAutomatico()
-    : executarComRetomada(executar, params, { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos, tentativaUnica: false })
+    : executarComRetomada(executar, params, { portalClientId, competencia, ajustarPeriodos: executarComAjusteDePeriodos, tentativaUnica: Boolean(manualOperation) })
   ).catch(err => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
 
   // HTTP 200 não comprova um cálculo utilizável. Zero explícito é válido.
@@ -875,6 +876,7 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   if (preparo && (await prepararSimplesConsistente({ portalClientId, competencia })).hash !== preparo.hash) throw erroCalculoObsoleto();
   const receitaPorTipoDoMes = preparo ? preparo.dados.receitaPorTipo : (await receitaPorTipoMercado({ portalClientId, competencia })).receitaPorTipo;
 
+  await manualOperation?.verify?.();
   // Persiste snapshot (configurando→calculada)
   const vinculo = criarVinculoCalculo({ portalClientId, competencia,
     formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }),

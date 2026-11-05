@@ -1,4 +1,16 @@
-import { operationDate, operationMoney, operationInstant } from '../operationsDetails';
+import { operationDate, operationMoney, operationInstant, calculationAuditLabel } from '../operationsDetails';
+test('auditoria REVIEW é concluída com achados e o resumo identifica o cálculo salvo', () => {
+  const auditSummary = { status: 'REVIEW', totalAchados: 2, warnings: ['Anexo alterado'] };
+  expect(calculationAuditLabel(auditSummary)).toBe('Auditoria concluída · 2 achados');
+  expect(calculationAuditLabel(auditSummary, { saved: true })).toBe('Auditoria no cálculo salvo · 2 achados');
+  const result = calculationColumns({ auditSummary, calculationWarnings: ['Anexo alterado'] });
+  expect(result.warnings).toEqual(['Anexo alterado']);
+});
+test.each([['REVIEW','Preencher folha Fator R'],['UNCERTAIN','Conferir tentativa anterior'],['STALE','As notas mudaram']])('tentativa %s conserva motivo na tabela após fechar resultado', (status, reason) => {
+  const result = calculationColumns({ manualCalculation: { status, reason } });
+  expect(result.errors.join(' ')).toContain(reason);
+  expect(result.errors.join(' ')).toMatch(/Revisão necessária|Resultado a conferir|Dados alterados/);
+});
 test.each([null, '', '2026-02-30', '2026-13-01', '2026-10-10T99:00'])('data inválida %s permanece a verificar', value => {
   expect(operationDate(value)).toBe('A verificar');
 });

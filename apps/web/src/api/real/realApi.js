@@ -851,6 +851,11 @@ export function createRealApi() {
     getOperationAlerts: (offset = 0) => request('/firm/operacoes/avisos' + (offset ? '?offset=' + encodeURIComponent(offset) : '')),
     executeCompanyOperation: (companyId, competencia, expectedRevision) => background.request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/executar`, { method: 'POST', body: JSON.stringify({ expectedRevision, confirmCompetencia: competencia }) }),
     saveCompanyOperation: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`, { method: 'PUT', body: JSON.stringify(input) }),
+    previewOperationsCalculation: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo/previa`),
+    executeOperationsCalculation: (companyId, competencia, input) => background.request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo`, { method: 'POST', body: JSON.stringify(input) }),
+    getOperationsCalculationResult: (companyId, competencia, requestId) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo/resultado${requestId ? `?requestId=${encodeURIComponent(requestId)}` : ''}`),
+    getOperationsExternal: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/externa`),
+    saveOperationsExternal: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/externa`, { method: 'POST', body: JSON.stringify(input) }),
     saveCompanyAutomation: (companyId, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/automacao`, { method: 'PUT', body: JSON.stringify(input) }),
     async saveRotinas(input = {}) {
       return request(`/firm/rotinas`, {

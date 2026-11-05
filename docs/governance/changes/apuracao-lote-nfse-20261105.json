@@ -1,0 +1,18 @@
+{
+  "summary": "Adiciona preparação e cálculo em lote somente NFS-e em Operações, conferência explícita, transmissão restrita ao Simples histórico e conclusão externa auditada do Presumido.",
+  "risk": "high",
+  "domains": ["accounting", "api", "commercial", "communication", "documentation", "fiscal", "governance", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Implementa T121–T125 no escopo local delimitado: coleta/auditoria NFS-e com recusa de base parcial, conferência da revisão, guarda de regime até o transporte e tarefas externas sem fabricar PGDAS. Preserva competência fiscal e apresenta tributos/parcelas separadamente; não cria novo transporte de lote por vencimento. Não ativa agendas, muda dados reais ou amplia fontes fiscais. Referência canônica e snapshot reconciliados pelo Principal; políticas, gates e runtime intactos.",
+  "tests": [
+    "Controlador 2026-11-05T13-26-24-453Z-e97ee455 no candidato congelado: governança 85, API 12516 aprovados e 10 pendentes, web 6913, portal 1610, ambos os builds aprovados. Parecer call009 interrompido por capacidade do serviço; estado escalated preservado, sem ready_for_human fabricado.",
+    "Reprovações API/fiscal foram tratadas em complemento: guarda histórica para cálculos legados/individuais, preparação RBT local e testes reais de auditoria/fechamento sobre PostgreSQL descartável, concorrência e rollback. 59 cenários distintos aprovados incluindo 8 PostgreSQL; transportes fiscais simulados. Parecer independente favorável em REVISAO-COMPLEMENTO-API.txt.",
+    "Regressão final afetada: API 190 aprovados e 5 pendentes em 12 suítes; web 114 aprovados em 5 suítes; build web final aprovado. Contagens se sobrepõem aos testes anteriores e não são somadas. Gates antigos não são atribuídos automaticamente à fonte modificada.",
+    "Revisão visual desktop/celular com 61 verificações e complemento de contrato de 26, preservando reprovações anteriores. Integração/frontend e juiz sistêmico independentes aprovaram a composição local de 33 arquivos com hashes conferidos. Evidências locais em output/operacoes-apuracao-lote-20261105; logs brutos não publicados.",
+    "CI do PR permanece condição obrigatória antes do merge. Resultado incerto pós-transporte continua bloqueado e exige conciliação supervisionada pendente; não foi comprovada homologação externa ADN/SERPRO nem Alessandro real. Fator R e bases não abrangidas seguem fluxo individual. Nenhum teste executa atos fiscais reais."
+  ],
+  "rollback": "Reverter o commit de integração mediante PR revisado e redeploy da versão anterior. Não há nova migração. Preservar tentativas, auditoria, resultados fiscais e dados já persistidos; não repetir operações incertas. Não alterar seleções, pausas ou ativação de rotinas durante implantação/reversão.",
+  "humanDecisions": [
+    "Em 05/11/2026 o usuário restringiu o novo atalho a NFS-e, sem NF-e, e confirmou separar por competência com lote por vencimento.",
+    "Após receber o resultado local e limitações, em 05/11/2026 o usuário determinou: vamos ate a publicação pelo orquestrador. Autoriza preparar PR, integrar após CI/revisões e publicar; mantém automações desligadas e proibição de atos fiscais/dados reais como teste."
+  ]
+}

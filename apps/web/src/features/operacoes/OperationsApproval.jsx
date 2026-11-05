@@ -7,9 +7,11 @@ import { Modal } from '../../components/ui/Modal';
 import { InternalLink } from '../../components/ui/InternalLink';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { CalculationEvidence } from './OperationsCalculationDetails';
-import { readCalculationDetails, approvalEvidenceError, operationDate, operationInstant, calculationColumns, operationMoney as money } from './operationsDetails';
+import { readCalculationDetails, calculationAuditLabel, approvalEvidenceError, operationDate, operationInstant, calculationColumns, operationMoney as money } from './operationsDetails';
 
 import { OperationsBatch } from './OperationsBatch';
+import { OperationsCalculationBatch } from './OperationsCalculationBatch';
+import { OperationsExternalBatch } from './OperationsExternalBatch';
 
 const labels = { PENDING: 'A conferir', IN_REVIEW: 'Em revisão', CONFIRMED: 'Confirmada', INVALIDATED: 'Dados alterados · revisar', RELEASED: 'Liberada · aguardando execução', EXECUTED: 'Execução concluída', ATTENTION: 'Conferir resultado em Tarefas' };
 
@@ -21,7 +23,8 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   const [data, setData] = useState({}), [error, setError] = useState(''), [mutationBusy, setBusy] = useState(false);
   const [routineBusy, setRoutineBusy] = useState(false), [routineDetail, setRoutineDetail] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
-  const busy = mutationBusy || routineBusy || detailBusy;
+  const [command, setCommand] = useState(null), [commandBusy, setCommandBusy] = useState(false);
+  const busy = mutationBusy || routineBusy || detailBusy || commandBusy;
   const [selected, setSelected] = useState(null), [schedule, setSchedule] = useState(''), [batch, setBatch] = useState(null);
   const [message, setMessage] = useState('');
   const [checked, setChecked] = useState({});
@@ -37,18 +40,19 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   const lock = useRef(false);
   const detailRef = useRef(null), triggerRefs = useRef(new Map()), batchRef = useRef(null), refreshRef = useRef(null);
   const previewHeading=useRef(null);
+  const stageTableRef=useRef(null);
   useEffect(()=>{if(confirmPreview)previewHeading.current?.focus();},[confirmPreview]);
   const returnTo = useRef(null), wasDetail = useRef(false);
-  const detailOpen = Boolean(batch || (selected && data[selected] && rows.some(r => r.company.companyId === selected)));
+  const detailOpen = Boolean(command || batch || (selected && data[selected] && rows.some(r => r.company.companyId === selected)));
   useEffect(() => {
     if (!embedded) return;
-    if (detailOpen) detailRef.current?.focus();
+    if (detailOpen) { if (!command) detailRef.current?.focus(); }
     else if (wasDetail.current) {
       const target = returnTo.current === 'batch' ? batchRef.current : triggerRefs.current.get(returnTo.current);
-      (target && !target.disabled ? target : refreshRef.current)?.focus();
+      (target && !target.disabled ? target : stageTableRef.current || refreshRef.current)?.focus();
     }
     wasDetail.current = detailOpen;
-  }, [embedded, selected, batch, detailOpen]);
+  }, [embedded, selected, batch, detailOpen, command]);
   const writable = useRef(new Set());
   writable.current = new Set(rows.filter(r => ['ACCOUNTANT', 'FIRM_ADMIN'].includes(String(r.company.myRole || '').toUpperCase())).map(r => r.company.companyId));
   const [reading, setReading] = useState(true);
@@ -62,6 +66,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   function refreshEvidence() {
     evidence.reload();
   }
+  useEffect(() => { setCommand(null); setCommandBusy(false); }, [api, competencia]);
   // Selection of a summary only prepares inspection. Commands still require
   // current operation, snapshot and audit, and the server revalidates revision.
   const selectable = value => grouped && !value.details ? Boolean(value.calculation) : !approvalEvidenceError(value);
@@ -79,7 +84,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
         if (!value || value.ok === false || value.companyId !== item.companyId || value.competencia !== competencia || !value.revision || !Array.isArray(value.pending)) throw Error('Conferência indisponível.');
         const details = await readCalculationDetails(api, item.companyId, competencia);
         if (!active()) return;
-        loaded.push({ ...value, details });
+        loaded.push({ ...data[item.companyId], ...value, details });
         if (api.getOperationsTransmissionDocuments && open === 'detail') {
           const proof = await api.getOperationsTransmissionDocuments(item.companyId, competencia).catch(() => null);
           if (!active()) return;
@@ -139,6 +144,7 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
   const chosen = confirmed.filter(v => checked[v.companyId] === v.revision);
   async function change(items, action) {
     if (lock.current || reading || items.some(item => !writable.current.has(item.companyId) || item.competencia !== competencia || data[item.companyId]?.revision !== item.revision)) return;
+    if (stage && ['confirm', 'release'].includes(action) && items.some(item => data[item.companyId]?.regime !== 'SIMPLES')) { setError('Confirmação e transmissão disponíveis somente para o Simples comprovado na competência.'); return; }
     if (['confirm', 'release'].includes(action) && items.some(item => approvalEvidenceError(data[item.companyId]) || data[item.companyId]?.blocked || (data[item.companyId]?.execution && data[item.companyId].execution.status !== 'DONE'))) return;
     const origin = context.current;
     lock.current = true; setBusy(true); setError(''); setMessage('');
@@ -174,32 +180,49 @@ export function OperationsApproval({ api, rows, competencia, onChanged, onBusyCh
     } finally { lock.current = false; setBusy(false); if (context.current === origin) { setBatch(null); setSelected(null); setChecked({}); setConfirmCompetencia(''); } }
   }
   const confirmable = Object.values(data).filter(v => !['CONFIRMED','RELEASED','EXECUTED'].includes(v.status) && selectable(v) && !v.blocked && !v.execution && writable.current.has(v.companyId));
-  const stageEligible = stage === 'calculado' ? confirmable : confirmed;
-  const stageRows = sorted.filter(r => stage !== 'confirmado' || ['CONFIRMED','RELEASED','EXECUTED','ATTENTION','INVALIDATED'].includes(data[r.company.companyId]?.status))
+  const stageEligible = Object.values(data).filter(value => writable.current.has(value.companyId));
+  const stageRows = sorted.filter(r => stage !== 'confirmado' || (data[r.company.companyId]?.regime === 'PRESUMIDO' ? data[r.company.companyId]?.externalSummary?.apurar?.concluida === true : ['CONFIRMED','RELEASED','EXECUTED','ATTENTION','INVALIDATED'].includes(data[r.company.companyId]?.status)))
     .filter(r => stageFilter === 'all' || (stageFilter === 'done' ? !!data[r.company.companyId]?.calculation : stageFilter === 'pending' ? !!data[r.company.companyId] && !data[r.company.companyId].calculation : stageFilter === 'error' ? !!data[r.company.companyId]?.blocked || !!data[r.company.companyId]?.execution && data[r.company.companyId].execution.status !== 'DONE' : !data[r.company.companyId]))
     .filter(r => `${r.company.razao || r.company.razaoSocial || ''} ${r.company.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
   const visibleEligible = stageEligible.filter(d => stageRows.some(r => r.company.companyId === d.companyId));
   const stageChosen = stageEligible.filter(d => checked[d.companyId] === d.revision);
+  const commandEligible = stage === 'calculado' ? confirmable : confirmed;
+  const canConfirmChosen = stageChosen.length > 0 && stageChosen.every(item => commandEligible.some(value => value.companyId === item.companyId && value.revision === item.revision) && item.regime === 'SIMPLES');
+  const externalChosen = stageChosen.filter(item => item.regime === 'PRESUMIDO');
+  function prepareCommand(kind) {
+    if (busy || reading || !stageChosen.length) return;
+    returnTo.current = 'batch';
+    setCommand({ kind, items: stageChosen.map(item => ({ companyId: item.companyId, revision: item.revision, name: rows.find(row => row.company.companyId === item.companyId)?.company.razao || rows.find(row => row.company.companyId === item.companyId)?.company.razaoSocial || item.companyId })) });
+    setConfirmPreview(null);
+  }
+  function closeCommand() {
+    setCommand(null); setChecked({}); refreshEvidence();
+    requestAnimationFrame(() => stageTableRef.current?.focus());
+  }
+  const stageFooter = <div className="operacoes-stage-footer"><span>{stageChosen.length} selecionadas · {stageChosen.filter(d=>!stageRows.some(r=>r.company.companyId===d.companyId)).length} fora da busca</span><Button ref={refreshRef} variant="secondary" disabled={busy||reading} onClick={refreshEvidence}>Atualizar conferências</Button>{stage === 'calculado' && <Button variant="secondary" disabled={busy || reading || !stageChosen.length || !api.previewOperationsCalculation || !api.executeOperationsCalculation} onClick={() => prepareCommand('calculate')}>Calcular selecionadas</Button>}{externalChosen.length > 0 && <Button variant="secondary" disabled={busy || reading || externalChosen.length !== stageChosen.length || !api.getOperationsExternal || !api.saveOperationsExternal} onClick={() => prepareCommand('external')}>Registrar conclusão externa</Button>}<Button ref={batchRef} disabled={busy||reading||!canConfirmChosen||!!error||(stage==='confirmado'&&!api?.executeCompanyOperation)} onClick={()=>prepareSelection(stageChosen)}>{stage==='calculado'?'Conferir selecionadas':'Transmitir selecionadas'}</Button></div>;
   return <section aria-label="Conferência e programação de Operações">
-    {stage !== 'calculado' && api?.previewOperationsBatch && <div hidden={embedded && detailOpen}><OperationsBatch footerTarget={footerTarget} key={competencia} api={api} competencia={competencia} disabled={mutationBusy || detailBusy || Boolean(selected || batch)} onChanged={onChanged} embedded={embedded} onBusyChange={setRoutineBusy} onDetailChange={setRoutineDetail} /></div>}
+    {command?.kind === 'calculate' && <OperationsCalculationBatch api={api} items={command.items} competencia={competencia} footerTarget={footerTarget} onClose={closeCommand} onChanged={onChanged} onBusyChange={setCommandBusy} canWrite={id => writable.current.has(id)} />}
+    {command?.kind === 'external' && <OperationsExternalBatch api={api} items={command.items} competencia={competencia} taskKey={stage === 'calculado' ? 'apurar' : 'transmitir'} footerTarget={footerTarget} onClose={closeCommand} onChanged={onChanged} onBusyChange={setCommandBusy} canWrite={id => writable.current.has(id)} />}
+    {!command && stage !== 'calculado' && api?.previewOperationsBatch && <div hidden={embedded && detailOpen}><OperationsBatch actionsVisible={!detailOpen} footerTarget={footerTarget} key={competencia} api={api} competencia={competencia} disabled={mutationBusy || detailBusy || Boolean(selected || batch)} onChanged={onChanged} embedded={embedded} onBusyChange={setRoutineBusy} onDetailChange={setRoutineDetail} /></div>}
     {!stage && !(embedded && ((row && current) || batch || routineDetail)) && <><div className="operacoes-cabecalho"><h3>Apurações da competência</h3><div className="operacoes-acoes"><Button ref={refreshRef} variant="secondary" disabled={busy || reading} onClick={refreshEvidence}>Atualizar conferências</Button>{writable.current.size > 0 && <><Button variant="secondary" disabled={busy || reading || !confirmed.length || !!error} onClick={() => setChecked(Object.fromEntries(confirmed.map(v => [v.companyId, v.revision])))}>Selecionar elegíveis ({confirmed.length})</Button><Button ref={batchRef} variant="secondary" disabled={busy || reading || !chosen.length || !!error} onClick={() => prepareSelection(chosen)}>Transmitir selecionadas ({chosen.length})</Button></>}</div></div>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     <div className="operacoes-tabela-scroll" role="region" aria-label="Conferência das empresas" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao">Selecionar</th><th>Empresa</th><th>Cálculo salvo</th><th>Faturamento salvo</th><th>Anexo do formulário</th><th>Conferência e pendências</th><th>Ação</th></tr></thead><tbody>{sorted.map(({ company }) => { const d = data[company.companyId], name = company.razao || company.razaoSocial || company.cnpj; return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} disabled={busy || reading || !confirmed.some(v => v.companyId === company.companyId)} checked={Boolean(d && checked[company.companyId] === d.revision)} onChange={e => setChecked(old => ({ ...old, [company.companyId]: e.target.checked ? d.revision : null }))} /></label></td><th scope="row">{name}</th><td>{money(d?.calculation?.dasValor)}</td><td>Interno: {money(d?.details?.snapshot?.value?.receitaInterna)}<br />Externo: {money(d?.details?.snapshot?.value?.receitaExterna)}</td><td>{d?.details?.snapshot?.value?.atividadesEscolhidas?.map(a => a.anexoImplicito ?? 'Não registrado').join(' · ') || 'Não disponível no snapshot'}</td><td>{d ? `${d.schedule ? operationDate(d.schedule) + ' · ' + d.schedule.slice(11,16) : 'Sem programação'} · ${labels[d.status] || 'A verificar'}${d.pending.length ? ` · ${d.pending.length} pendência(s) do período` : ''}` : reading ? 'Conferindo…' : 'Conferência indisponível'}{d?.blocked && <p>{d.blocked}</p>}{d && approvalEvidenceError(d, { historical: true }) && <p role="alert">{approvalEvidenceError(d, { historical: true })}. Atualize a conferência ou abra a empresa para verificar.</p>}<p>Auditoria: {d?.details?.auditoria?.value ? `${d.details.auditoria.value.totalAchados ?? 'A verificar'} achados` : 'Indisponível; não equivale a aprovação'}</p></td><td><Button ref={el => { if (el) triggerRefs.current.set(company.companyId, el); else triggerRefs.current.delete(company.companyId); }} size="sm" variant="secondary" disabled={!d || busy || reading} onClick={() => openDetail(company.companyId)}>Conferir</Button></td></tr>; })}</tbody></table></div></>}
-    {stage && !row && !batch && !routineDetail && <>
+    {stage && !command && !row && !batch && !routineDetail && <>
       <p>Competência {competencia} · {stage === 'calculado' ? 'Conferir registra a revisão, sem transmitir.' : 'Fila não comprova transmissão. Liberar rotina inclui todas as confirmadas elegíveis, independentemente da seleção manual.'}</p>
       <label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
       {stage==='calculado'&&<label className="operacoes-rotinas-filtros">Situação da etapa<select aria-label="Situação da etapa" disabled={busy} value={stageFilter} onChange={e=>setStageFilter(e.target.value)}><option value="all">Todas as empresas deste conjunto</option><option value="done">Calculadas</option><option value="pending">Não calculadas</option><option value="error">Atenção ou bloqueio</option><option value="unknown">A verificar</option></select></label>}
       {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}{reading && <p role="status">Lendo cálculos e evidências…</p>}{detailBusy && <p role="status">Conferindo evidências selecionadas…</p>}
-      <div className="operacoes-tabela-scroll" role="region" aria-label={stage === 'calculado' ? 'Cálculos para conferência' : 'Apurações confirmadas'} tabIndex={0}><table className="operacoes-tabela"><thead><tr><th className="operacoes-coluna-selecao"><input type="checkbox" aria-label="Selecionar elegíveis exibidas" disabled={busy||reading||!visibleEligible.length} checked={visibleEligible.length>0&&visibleEligible.every(d=>checked[d.companyId]===d.revision)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,...Object.fromEntries(visibleEligible.map(d=>[d.companyId,e.target.checked?d.revision:null]))}));}}/></th><th>Empresa</th><th>{stage==='calculado'?'Receita calculada':'Receita confirmada'}</th><th>Impostos</th>{stage==='calculado'?<><th>Avisos</th><th>Erros</th></>:<th>Confirmação</th>}<th>Situação / ações</th></tr></thead><tbody>{stageRows.map(({company})=>{
+      <div className="operacoes-acoes"><Button variant="secondary" disabled={busy || reading || !visibleEligible.length} onClick={() => { setConfirmPreview(null); setChecked(old => ({ ...old, ...Object.fromEntries(visibleEligible.map(value => [value.companyId, value.revision])) })); }}>Selecionar todas do filtro ({visibleEligible.length})</Button><Button variant="secondary" disabled={busy || !stageChosen.length} onClick={() => { setConfirmPreview(null); setChecked({}); }}>Limpar seleção</Button></div>
+      <div ref={stageTableRef} className="operacoes-tabela-scroll" role="region" aria-label={stage === 'calculado' ? 'Cálculos para conferência' : 'Apurações confirmadas'} tabIndex={0}><table className="operacoes-tabela operacoes-approval-cards"><thead><tr><th className="operacoes-coluna-selecao"><input type="checkbox" aria-label="Selecionar elegíveis exibidas" disabled={busy||reading||!visibleEligible.length} checked={visibleEligible.length>0&&visibleEligible.every(d=>checked[d.companyId]===d.revision)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,...Object.fromEntries(visibleEligible.map(d=>[d.companyId,e.target.checked?d.revision:null]))}));}}/></th><th>Empresa</th><th>{stage==='calculado'?'Receita calculada':'Receita confirmada'}</th><th>Impostos</th>{stage==='calculado'?<><th>Avisos</th><th>Erros</th></>:<th>Confirmação</th>}<th>Situação / ações</th></tr></thead><tbody>{stageRows.map(({company})=>{
         const d=data[company.companyId], c=calculationColumns(d), name=company.razao||company.razaoSocial||company.cnpj;
         const summaryProof = d?.confirmationSummary?.status === 'AVAILABLE' ? d.confirmationSummary.confirmation : null;
         const matchingSummary = typeof d?.fingerprint === 'string' && d.fingerprint.length > 0 && summaryProof?.fingerprint === d.fingerprint ? summaryProof : null;
         // A fresh detail result, including null, supersedes a presentation summary.
         const proof = Object.hasOwn(confirmation, company.companyId) ? confirmation[company.companyId] : matchingSummary;
-        return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} checked={!!d&&checked[company.companyId]===d.revision} disabled={busy||reading||!stageEligible.some(v=>v.companyId===company.companyId)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,[company.companyId]:e.target.checked?d.revision:null}));}}/></label></td><th scope="row">{name}</th><td>{money(c.receita)}</td><td>{c.impostos.length?c.impostos.map(t=><div key={t.nome}>{t.nome}<strong className="operacoes-valor">{money(t.valor)}</strong></div>):'Impostos indisponíveis'}</td>{stage==='calculado'?<><td>{c.warnings.join(' · ')||'Nenhum aviso identificado nesta leitura'}</td><td>{c.errors.join(' · ')||(grouped&&!d?.details?'Conferir evidências':'Nenhum erro impeditivo identificado')}</td></>:<td>{proof?.by || (d?.confirmationSummary?.status === 'INCOMPLETE' ? 'Histórico incompleto · conferir detalhe' : 'Autor não disponível')}<small>{operationInstant(proof?.at)}</small></td>}<td>{d?labels[d.status]||'A verificar':reading?'Lendo…':'Leitura indisponível'}{stage!=='calculado'&&c.errors.length>0&&<p>{c.errors.join(' · ')}</p>}<Button ref={el=>{if(el)triggerRefs.current.set(company.companyId,el);else triggerRefs.current.delete(company.companyId);}} size="sm" variant="secondary" disabled={!d||busy||reading} onClick={()=>openDetail(company.companyId)}>Conferir detalhes</Button></td></tr>;
+        return <tr key={company.companyId}><td className="operacoes-coluna-selecao"><label className="operacoes-selecao-alvo"><input type="checkbox" aria-label={`Selecionar ${name}`} checked={!!d&&checked[company.companyId]===d.revision} disabled={busy||reading||!stageEligible.some(v=>v.companyId===company.companyId)} onChange={e=>{setConfirmPreview(null);setChecked(old=>({...old,[company.companyId]:e.target.checked?d.revision:null}));}}/></label></td><th scope="row"><strong>{name}</strong><small>{d?.regime === 'SIMPLES' ? 'Simples Nacional' : d?.regime === 'PRESUMIDO' ? 'Lucro Presumido' : 'Regime a conferir'} · {d?.routine?.label || 'Rotina não comprovada'}</small></th><td data-label="Receita">{money(c.receita)}</td><td data-label="Impostos">{c.impostos.length?c.impostos.map(t=><div key={t.nome}>{t.nome}<strong className="operacoes-valor">{money(t.valor)}</strong></div>):'Impostos indisponíveis'}</td>{stage==='calculado'?<><td data-label="Auditoria / avisos"><strong>{calculationAuditLabel(d?.auditSummary, { saved: true })}</strong><small>{c.warnings.join(' · ')}</small></td><td data-label="Erros">{c.errors.join(' · ')||(grouped&&!d?.details?'Conferir evidências':'Nenhum erro impeditivo identificado')}</td></>:<td data-label="Confirmação">{proof?.by || (d?.confirmationSummary?.status === 'INCOMPLETE' ? 'Histórico incompleto · conferir detalhe' : 'Autor não disponível')}<small>{operationInstant(proof?.at)}</small></td>}<td data-label="Situação / ações">{d?.regime === 'PRESUMIDO' ? d.externalSummary?.transmitir?.concluida ? 'Entrega externa registrada' : d.externalSummary?.apurar?.concluida ? 'Apuração externa concluída' : 'Apuração externa pendente' : d?labels[d.status]||'A verificar':reading?'Lendo…':'Leitura indisponível'}{stage!=='calculado'&&c.errors.length>0&&<p>{c.errors.join(' · ')}</p>}<Button ref={el=>{if(el)triggerRefs.current.set(company.companyId,el);else triggerRefs.current.delete(company.companyId);}} size="sm" variant="secondary" disabled={!d||busy||reading} onClick={()=>{if(d.regime === 'PRESUMIDO'){returnTo.current=company.companyId;setCommand({kind:'external',items:[{companyId:company.companyId,name}]});}else openDetail(company.companyId);}}>Conferir detalhes</Button></td></tr>;
       })}</tbody></table></div>{!stageRows.length&&!reading&&!error&&<p>Nenhuma empresa nesta etapa ou busca.</p>}
       {confirmPreview && <div className="operacoes-previa"><h3 ref={previewHeading} tabIndex={-1}>Conferir cálculos selecionados</h3><p>Registrar conferência destas empresas na competência {competencia}, sem transmitir.</p><ul>{confirmPreview.map(d=><li key={d.companyId}>{rows.find(r=>r.company.companyId===d.companyId)?.company.razao||d.companyId}</li>)}</ul><Button disabled={busy||confirmPreview.some(d=>!confirmable.some(c=>c.companyId===d.companyId&&c.revision===d.revision))} onClick={()=>{const items=confirmPreview;setConfirmPreview(null);change(items,'confirm');}}>Confirmar cálculos selecionados</Button> <Button variant="secondary" disabled={busy} onClick={()=>{setConfirmPreview(null);batchRef.current?.focus();}}>Cancelar</Button></div>}
-      {footerTarget ? createPortal(<div className="operacoes-stage-footer"><span>{stageChosen.length} selecionadas · {stageChosen.filter(d=>!stageRows.some(r=>r.company.companyId===d.companyId)).length} fora da busca</span><Button ref={refreshRef} variant="secondary" disabled={busy||reading} onClick={refreshEvidence}>Atualizar conferências</Button><Button ref={batchRef} disabled={busy||reading||!stageChosen.length||!!error||(stage==='confirmado'&&!api?.executeCompanyOperation)} onClick={()=>prepareSelection(stageChosen)}>{stage==='calculado'?'Conferir selecionadas':'Transmitir selecionadas'}</Button></div>, footerTarget) : <div className="operacoes-stage-footer"><span>{stageChosen.length} selecionadas · {stageChosen.filter(d=>!stageRows.some(r=>r.company.companyId===d.companyId)).length} fora da busca</span><Button ref={refreshRef} variant="secondary" disabled={busy||reading} onClick={refreshEvidence}>Atualizar conferências</Button><Button ref={batchRef} disabled={busy||reading||!stageChosen.length||!!error||(stage==='confirmado'&&!api?.executeCompanyOperation)} onClick={()=>prepareSelection(stageChosen)}>{stage==='calculado'?'Conferir selecionadas':'Transmitir selecionadas'}</Button></div>}
+      {footerTarget ? createPortal(stageFooter, footerTarget) : stageFooter}
     </>}
     {row && current && <ApprovalDialog footerTarget={footerTarget} focusRef={detailRef} embedded={embedded} className="operacoes-dialogo" titulo={`Conferir ${row.company.razao || row.company.razaoSocial || row.company.cnpj}`} ocupado={busy} aoFechar={() => !busy && setSelected(null)} rodape={<Button disabled={busy} variant="secondary" onClick={() => setSelected(null)}>{embedded ? 'Voltar' : 'Fechar'}</Button>}>
       <p>Competência {competencia} · {labels[current.status]}</p>

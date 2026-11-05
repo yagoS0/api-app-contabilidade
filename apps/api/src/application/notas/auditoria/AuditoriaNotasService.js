@@ -58,21 +58,21 @@ function rangeDaCompetencia(competencia) {
  * @returns {Promise<Object>} o resultado de `auditarNotasDaCompetencia` (perguntas + `manutencao` +
  *                            `foraDaConferencia`) mais o bloco `empresa`.
  */
-export async function auditarCompetencia({ portalClientId, competencia }) {
+export async function auditarCompetencia({ portalClientId, competencia }, { db = prisma } = {}) {
   if (!portalClientId) throw new Error("portalClientId obrigatório");
   if (!COMPETENCIA_RE.test(String(competencia || ""))) throw new Error("competencia inválida");
 
   // ⚠ O CADASTRO NÃO MORA NO `PortalClient`. A lista de serviços é do model legado `Company`,
   // alcançado por `PortalClient.companyId` (que é opcional — empresa sem `Company` existe, e nesse
   // caso a lista é vazia, que a regra já sabe responder como "não dá para conferir").
-  const portal = await prisma.portalClient.findUnique({
+  const portal = await db.portalClient.findUnique({
     where: { id: portalClientId },
     select: { id: true, razao: true, cnpj: true, companyId: true },
   });
   if (!portal) throw new Error("empresa não encontrada");
 
   const legacy = portal.companyId
-    ? await prisma.company.findUnique({
+    ? await db.company.findUnique({
         where: { id: portal.companyId },
         // `codigoServicoNacional` (singular) vem junto de propósito: ele é o que a DPS LEVA, e a
         // tela precisa dos dois para explicar o cadastro sem que o contador precise abrir a ficha.
@@ -86,7 +86,7 @@ export async function auditarCompetencia({ portalClientId, competencia }) {
   // ⚠ ANTES DE 21/08/2026 ESTA QUERY CARREGAVA 12 MESES, para alimentar a pergunta de numeração da
   // DPS. Aquela pergunta foi removida (ver `auditoriaNotas.js`), e com ela caiu a janela: a
   // auditoria voltou a ler exatamente o mês que ela audita — 1/12 do volume, mesma resposta.
-  const notasDoMes = await prisma.portalInvoice.findMany({
+  const notasDoMes = await db.portalInvoice.findMany({
     where: { ...daEmpresa, competencia: { gte, lt } },
     select: SELECT_PARA_AUDITORIA,
     orderBy: [{ issueDate: "asc" }],
@@ -110,8 +110,8 @@ export async function auditarCompetencia({ portalClientId, competencia }) {
   // truncasse — justamente na empresa em que o problema é grande.
   const semCompetenciaWhere = { ...daEmpresa, competencia: null };
   const [totalSemCompetencia, notasSemCompetencia] = await Promise.all([
-    prisma.portalInvoice.count({ where: semCompetenciaWhere }),
-    prisma.portalInvoice.findMany({
+    db.portalInvoice.count({ where: semCompetenciaWhere }),
+    db.portalInvoice.findMany({
       where: semCompetenciaWhere,
       select: SELECT_PARA_AUDITORIA,
       orderBy: [{ issueDate: "desc" }],

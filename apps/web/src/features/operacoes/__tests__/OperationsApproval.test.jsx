@@ -3,7 +3,7 @@ import { OperationsApproval } from '../OperationsApproval';
 
 const rows = [{ company: { companyId: 'a', razao: 'CDA', myRole: 'ACCOUNTANT' } }];
 function fixture(overrides = {}) {
-  let state = { companyId: 'a', competencia: '2026-09', revision: 'r1', status: 'PENDING', pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 }, ...overrides };
+  let state = { regime: 'SIMPLES', companyId: 'a', competencia: '2026-09', revision: 'r1', status: 'PENDING', pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 }, ...overrides };
   return { getOperationEvidence: jest.fn(async competencia => ({items:[state,{...state,companyId:'b'}].map(item=>({...item,competencia})),total:2,competencia})), getApuracaoSnapshot: jest.fn(async (id, competencia) => ({ snapshot: { portalClientId: id, competencia, estado: 'calculada', idempotencyKey: 'calculo-1', dasSimuladoSerpro: 100, atividadesEscolhidas: [] } })),
     getAuditoriaNotas: jest.fn(async (id, competencia) => ({ auditoria: { competencia, totalAchados: 0, perguntas: [] } })),
     getPgdasHistorico: jest.fn(async (id, competencia) => ({ competencia, versoes: [] })),
@@ -228,7 +228,7 @@ test.each([['calculado','PENDING','Conferir selecionadas','Conferir cálculos se
 test('três empresas selecionadas em paralelo; fechar não inicia detalhes, provas ou restante da carteira', async () => {
  const pending=[];const api=fixture();api.getCompanyOperation=jest.fn(()=>new Promise(resolve=>pending.push(resolve)));api.getOperationsTransmissionDocuments=jest.fn();api.executeCompanyOperation=jest.fn();
  const many=Array.from({length:8},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`,myRole:'ACCOUNTANT'}}));
- api.getOperationEvidence=jest.fn(async competencia=>({items:many.map(({company})=>({companyId:company.companyId,competencia,revision:'r1',status:'CONFIRMED',pending:[],calculation:{calculoId:'calculo-1',dasValor:100}})),total:8,competencia}));
+ api.getOperationEvidence=jest.fn(async competencia=>({items:many.map(({company})=>({regime:'SIMPLES',companyId:company.companyId,competencia,revision:'r1',status:'CONFIRMED',pending:[],calculation:{calculoId:'calculo-1',dasValor:100}})),total:8,competencia}));
  const view=render(<OperationsApproval api={api} rows={many} competencia="2026-09" stage="confirmado"/>);
  await waitFor(()=>expect(screen.getByLabelText('Selecionar elegíveis exibidas')).toBeEnabled());
  expect(api.getCompanyOperation).not.toHaveBeenCalled();
@@ -241,7 +241,7 @@ test('três empresas selecionadas em paralelo; fechar não inicia detalhes, prov
 test('troca de competência descarta a fila selecionada antiga antes de ler evidências', async () => {
  const pending=[];const api=fixture();api.executeCompanyOperation=jest.fn();api.getCompanyOperation=jest.fn((id,competencia)=>new Promise(resolve=>pending.push(()=>resolve({companyId:id,competencia,revision:'antiga',pending:[]}))));
  const many=Array.from({length:5},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`,myRole:'ACCOUNTANT'}}));
- api.getOperationEvidence=jest.fn(async competencia=>({items:many.map(({company})=>({companyId:company.companyId,competencia,revision:competencia,status:'CONFIRMED',pending:[],calculation:{calculoId:'calculo-1',dasValor:100}})),total:5,competencia}));
+ api.getOperationEvidence=jest.fn(async competencia=>({items:many.map(({company})=>({regime:'SIMPLES',companyId:company.companyId,competencia,revision:competencia,status:'CONFIRMED',pending:[],calculation:{calculoId:'calculo-1',dasValor:100}})),total:5,competencia}));
  const view=render(<OperationsApproval api={api} rows={many} competencia="2026-09" stage="confirmado"/>);
  await waitFor(()=>expect(screen.getByLabelText('Selecionar elegíveis exibidas')).toBeEnabled());
  fireEvent.click(screen.getByLabelText('Selecionar elegíveis exibidas'));fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas',exact:true}));
@@ -382,7 +382,7 @@ test('prévia manual oculta rotina geral sem desmontar histórico e cancelar res
   api.previewOperationsBatch = jest.fn();
   api.listOperationsBatches = jest.fn(async()=>({ok:true,items:[]}));
   render(<OperationsApproval embedded stage="confirmado" api={api} rows={rows} competencia="2026-09"/>);
-  await screen.findByText('Nenhuma liberação registrada nesta competência.');
+  fireEvent.click(screen.getByRole('button', { name: 'Ver liberações' })); await screen.findByText('Nenhuma liberação registrada nesta competência.');
   await waitFor(()=>expect(screen.getByLabelText('Selecionar CDA')).toBeEnabled());
   const routine = screen.getByRole('region',{name:'Liberação da rotina de transmissão'});
   fireEvent.click(screen.getByLabelText('Selecionar CDA'));

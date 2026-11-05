@@ -25,8 +25,10 @@ export function calculationColumns(operation) {
   const finite = v => v !== null && v !== undefined && String(v).trim() !== '' && Number.isFinite(Number(v));
   const receita = finite(snapshot?.receitaInterna) && finite(snapshot?.receitaExterna)
     ? Number(snapshot.receitaInterna) + Number(snapshot.receitaExterna) : null;
-  const warnings = !operation?.details ? ['Auditoria ainda não consultada'] : (audit?.perguntas || []).filter(p => p.achados?.length || p.naoAvaliadas?.length).map(p => p.titulo || p.motivo || 'Revisar auditoria');
-  const errors = [operation?.blocked, operation?.execution && operation.execution.status !== 'DONE' ? operation.execution.message : null, operation?.details ? approvalEvidenceError(operation, {historical:true}) : null].filter(Boolean);
+  const warnings = [...(operation?.calculationWarnings || []).map(value => typeof value === 'string' ? value : value.message || value.label).filter(Boolean), ...(!operation?.details ? ['COMPLETE','REVIEW'].includes(operation?.auditSummary?.status) ? [] : ['Auditoria ainda não consultada'] : (audit?.perguntas || []).filter(p => p.achados?.length || p.naoAvaliadas?.length).map(p => p.titulo || p.motivo || 'Revisar auditoria'))];
+  const attempt = operation?.manualCalculation;
+  const attemptState = { REVIEW: 'Revisão necessária', UNCERTAIN: 'Resultado a conferir', STALE: 'Dados alterados · revisar', BLOCKED: 'Cálculo bloqueado', COLLECTING: 'Coletando NFS-e', CALCULATING: 'Calculando' }[attempt?.status];
+  const errors = [operation?.blocked, attemptState ? `${attemptState}${attempt.reason ? `: ${attempt.reason}` : ''}` : null, operation?.execution && operation.execution.status !== 'DONE' ? operation.execution.message : null, operation?.details ? approvalEvidenceError(operation, {historical:true}) : null].filter(Boolean);
   return { receita, impostos: operation?.calculation ? [{ nome: 'DAS Simples', valor: operation.calculation.dasValor }] : [], warnings, errors: [...new Set(errors)] };
 }
 
@@ -100,3 +102,5 @@ export function guideSendBlock(guide, evidence, { allowPaid = false } = {}) {
   return null;
 }
 
+
+export const calculationAuditLabel = (audit, { saved = false } = {}) => audit?.label || audit?.reason || (['COMPLETE','REVIEW'].includes(audit?.status) ? `${saved ? 'Auditoria no cálculo salvo' : 'Auditoria concluída'}${audit.totalAchados != null ? ` · ${audit.totalAchados} achados` : ''}` : 'Auditoria não concluída');

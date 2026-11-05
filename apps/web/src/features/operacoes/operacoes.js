@@ -158,7 +158,7 @@ export function resumirEtapasOperacoes(rows, evidence = [], manualInss = []) {
     const presentation = statusApresentacao(fluxo, { guiasConhecidas: known, guiasPendentes: inssPending || (known && !sent) });
     const axes = {
       calculado: fluxo.apuracao?.apurada ?? null,
-      confirmado: current ? ['CONFIRMED', 'RELEASED', 'EXECUTED'].includes(current.status) && current.status !== 'INVALIDATED' : null,
+      confirmado: current?.regime === 'PRESUMIDO' ? current.externalSummary?.apurar ? current.externalSummary.apurar.concluida === true : null : current ? ['CONFIRMED', 'RELEASED', 'EXECUTED'].includes(current.status) && current.status !== 'INVALIDATED' : null,
       transmitido: fluxo.apuracao?.transmitida ?? null,
       disponivel: known ? available : null, enviado: known ? sent : null,
       pago: known ? payable.length ? payable.every(i => i.paga) : 'na' : null,

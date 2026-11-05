@@ -1,4 +1,6 @@
+import { lerOperacaoExterna, salvarOperacaoExterna } from '../../application/operacoes/OperationsExternalService.js';
 import { listarErrosConsultas, listarEvidenciasOperacoes } from '../../application/operacoes/OperationsConsultas.js';
+import { prepararCalculoOperacoes, executarCalculoOperacoes, lerResultadoCalculoOperacoes } from '../../application/operacoes/OperationsCalculationService.js';
 import { Router } from 'express';
 import { lerOperacao, salvarOperacao } from '../../application/operacoes/OperationsService.js';
 import { executarOperacao } from '../../application/operacoes/OperationsExecution.js';
@@ -11,7 +13,7 @@ import { GuideStorageService } from '../../application/guides/GuideStorageServic
 import { readTransmissionDocuments, downloadTransmissionDocument, prepareTransmissionArchive } from '../../application/operacoes/OperationsTransmissionDocuments.js';
 import { createOperationsGuideEvidence } from '../../application/operacoes/OperationsGuideEvidence.js';
 
-export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batchDependencies = {}, transmissionStorage = () => GuideStorageService.create() }) {
+export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batchDependencies = {}, calculationDependencies = {}, transmissionStorage = () => GuideStorageService.create() }) {
   const router = Router();
   let batchService;
   const batches = () => batchService ||= createOperationsBatchService({ ...batchDependencies, db: prisma });
@@ -33,6 +35,11 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batch
   router.post('/operacoes/lotes/aceitar', run(async req => ({ batch: await batches().accept({ userId: req.auth.user.id, previewId: req.body?.previewId, requestId: req.body?.requestId, confirmCompetencia: req.body?.confirmCompetencia }) })));
   router.get('/operacoes/lotes/:batchId', run(async req => ({ batch: await batches().get({ userId: req.auth.user.id, batchId: req.params.batchId }) })));
   const base = '/companies/:companyId/operacoes/:competencia';
+  router.get(`${base}/calculo/previa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => prepararCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, calculationDependencies)));
+  router.get(`${base}/calculo/resultado`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => lerResultadoCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, req.query.requestId)));
+  router.post(`${base}/calculo`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute('operacoes-calculo-nfse', run(req => executarCalculoOperacoes(prisma, { ...req.params, userId: req.auth.user.id, expectedRevision: req.body?.expectedRevision, requestId: req.body?.requestId, confirmCompetencia: req.body?.confirmCompetencia }, calculationDependencies)), 'Calcular NFS-e'));
+  router.get(`${base}/externa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => lerOperacaoExterna(prisma, req.params.companyId, req.params.competencia)));
+  router.post(`${base}/externa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarOperacaoExterna(prisma, { ...req.params, userId: req.auth.user.id, chave: req.body?.chave, versao: req.body?.versao, hash: req.body?.hash, confirmCompetencia: req.body?.confirmCompetencia })));
   const guideEvidence = createOperationsGuideEvidence({ db: prisma });
   router.get(`${base}/guide-evidence`, requireFirmCompanyAccess(), run(req => guideEvidence.read({ userId: req.auth.user.id, ...req.params, offset: Number(req.query.offset || 0) })));
   router.post(`${base}/guide-evidence/preview`, requireFirmCompanyAccess(), run(async req => ({ preview: await guideEvidence.preview({ userId: req.auth.user.id, ...req.params, items: req.body?.items, whatsappRequested: req.body?.whatsappRequested === true }) })));

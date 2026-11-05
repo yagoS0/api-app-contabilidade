@@ -1,3 +1,4 @@
+import { conferirCalculoManualOperacoes } from './OperationsCalculationService.js';
 import { createHash } from 'node:crypto';
 import { contextoOrigemCalculo, recuperarCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
 import { conferirProvaAutomatica } from '../notas/apuracao/v2/PreparacaoAutomaticaSimples.js';
@@ -59,6 +60,7 @@ export async function salvarOperacao(db, companyId, competencia, userId, input, 
       if (previousRequest.value.hash !== requestHash) throw fail('Solicitação já utilizada para outra alteração.');
       return previousRequest.value.result;
     }
+    if (['confirm', 'release'].includes(action)) await conferirCalculoManualOperacoes(tx, companyId, competencia);
     const before = await lerOperacao(tx, companyId, competencia, { rootDb });
     if (action !== 'schedule' && before.execution && before.execution.status !== 'DONE') throw fail('Há uma tentativa em andamento ou a conferir. Consulte Tarefas e a central de apuração antes de nova ação.');
     if (before.revision !== expectedRevision) throw fail('Os dados mudaram. Atualize e confira novamente antes de continuar.');
