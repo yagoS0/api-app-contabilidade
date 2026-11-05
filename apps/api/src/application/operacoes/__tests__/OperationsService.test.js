@@ -5,6 +5,10 @@ import { lerOperacao, salvarOperacao } from '../OperationsService.js';
 function database() {
   const settings = new Map();
   const db = {
+    portalClient: { findUnique: jest.fn(async () => ({ id: 'a', companyId: 'legacy' })) },
+    regimeHistorico: { findMany: jest.fn(async () => [{ regime: 'SIMPLES', vigenciaInicio: new Date('2020-01-01') }]) },
+    cadastroFiscal: { findUnique: jest.fn(async () => ({ regime: 'SIMPLES_NACIONAL', regimeApuracao: 'COMPETENCIA', dataOpcaoSN: new Date('2020-01-01') })) },
+    company: { findUnique: jest.fn(async () => ({ id: 'legacy', regimeTributario: 'SIMPLES' })) },
     apuracaoSnapshot: { findUnique: jest.fn(async () => ({ estado: 'calculada' })) },
     pendenciaPosFechamento: { findMany: jest.fn(async () => []) },
     companyFirmAccess: { findUnique: jest.fn(async () => ({ status: 'ACTIVE', role: 'ACCOUNTANT' })) },
@@ -59,4 +63,11 @@ test('prova automática usa raiz explícita, recusa captura divergente e não ac
   proof.mockClear();
   expect((await lerOperacao(db, 'a', '2026-09', { rootDb: {}, conferirProva: proof })).blocked).toMatch(/prova/);
   expect(proof).not.toHaveBeenCalled();
+});
+
+
+test('regime histórico alterado após confirmação recusa liberação sem modificar histórico', async()=>{
+ const db=database();await save(db,'confirm');const before=await lerOperacao(db,'a','2026-09');
+ db.regimeHistorico.findMany.mockResolvedValue([{regime:'LUCRO_PRESUMIDO',vigenciaInicio:new Date('2020-01-01')}]);
+ await expect(save(db,'release')).rejects.toThrow('Simples não comprovado');expect(await lerOperacao(db,'a','2026-09')).toEqual(before);expect(db.appSetting.create).toHaveBeenCalledTimes(1);
 });

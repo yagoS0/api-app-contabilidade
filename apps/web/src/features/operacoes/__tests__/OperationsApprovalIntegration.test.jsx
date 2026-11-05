@@ -12,7 +12,7 @@ beforeAll(() => {
 
 function fixture(status = 'CONFIRMED') {
   let resolveExecution, rejectExecution;
-  let current = { companyId: 'a', competencia: '2026-09', revision: 'r1', status, pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 } };
+  let current = { regime: 'SIMPLES', companyId: 'a', competencia: '2026-09', revision: 'r1', status, pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 } };
   const api = {
     listOperationsBatches: jest.fn(async () => ({ ok: true, items: [] })),
     previewOperationsBatch: jest.fn(async () => ({ ok: true, preview: { id: 'preview-batch', competencia: '2026-09', items: [{ companyId: 'a', name: 'CDA' }], blocked: [] } })),

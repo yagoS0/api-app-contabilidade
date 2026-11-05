@@ -265,6 +265,20 @@
 
 .operacoes-guia-linha { display:grid; grid-template-columns:minmax(100px,1fr) minmax(160px,1.4fr); gap:16px; padding:10px 0; border-bottom:1px solid var(--border); }
 .operacoes-stage-footer { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:flex-end; padding-top:16px; }
+.operacoes-dialogo .modal-rodape:has(.operacoes-stage-footer) { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.operacoes-dialogo .modal-rodape .operacoes-stage-footer { display:contents; }
+.operacoes-dialogo .modal-rodape .operacoes-guide-footer-slot:has(.operacoes-stage-footer) { display:contents; }
+.operacoes-dialogo .modal-rodape .operacoes-stage-footer > span { margin-right:auto; order:-1; }
+.operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) td > .btn { display:block; margin-top:8px; }
+@media(max-width:760px) {
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) { display:block; min-width:0; width:100%; }
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) tbody { display:block; }
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) tr { display:grid; grid-template-columns:minmax(0,1fr); padding:12px; margin-bottom:12px; border:1px solid var(--border); border-radius:8px; }
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) :is(th,td) { display:block; min-width:0!important; max-width:none!important; width:auto; border:0; padding:6px 0; }
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) td[data-label]::before { content:attr(data-label); display:block; font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:4px; }
+ .operacoes-dialogo :is(.operacoes-approval-cards,.operacoes-calculation-cards,.operacoes-external-cards) .btn { min-height:44px; }
+}
 .operacoes-filtros { display:flex; flex-wrap:wrap; gap:12px; margin-block:16px; }
 .operacoes-filtros label { display:grid; gap:6px; }
 .operacoes-filtros input,.operacoes-filtros select { min-height:44px; background:var(--bg-surface); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px; }
@@ -434,3 +448,6 @@
  .operacoes-dialogo .operacoes-selection-summary { gap:4px 8px; }
  .operacoes-dialogo .operacoes-selection-summary .btn { min-height:44px; }
 }
+
+.operacoes-dialogo .modal-rodape .operacoes-stage-footer { display:contents; }
+@media(max-width:760px) { .operacoes-dialogo .modal-rodape:has(.operacoes-stage-footer) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .operacoes-dialogo .modal-rodape:has(.operacoes-stage-footer) .btn { min-height:44px; white-space:normal; } }

@@ -1,3 +1,8 @@
+import { contextoOrigemCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
+import { regimeComprovado } from './OperationsEligibility.js';
+import { lerAutomacaoCicloFiscal } from '../fiscal/AutomacaoCicloFiscalService.js';
+import { lerPoliticaAutomacao } from '../fiscal/serpro/CompanyAutomationPolicy.js';
+import { contextosCarteira } from '../company/FluxoCarteiraService.js';
 import { lerOperacao, validarCompetencia } from './OperationsService.js';
 
 // Batch the inputs of the existing revision/fingerprint verifier. The adapter only
@@ -7,8 +12,8 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
   if (!companyIds.length) return { items: [], total: 0, competencia };
   const [ano, mes] = competencia.split('-').map(Number);
   const pas = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(ano, mes - 13 + i, 1)).toISOString().slice(0, 7));
-  const portals = await db.portalClient.findMany({ where: { id: { in: companyIds } }, select: { id: true, cnpj: true, companyId: true } });
-  const [cadastros, companies, notas, rbts, folha, snapshots, pendencias, settings] = await Promise.all([
+  const portals = await db.portalClient.findMany({ where: { id: { in: companyIds } }, select: { id: true, cnpj: true, companyId: true, razao: true, hasProlabore: true, temFolha: true, empresaZerada: true } });
+  const [cadastros, companies, notas, rbts, folha, snapshots, pendencias, settings, histories] = await Promise.all([
     db.cadastroFiscal.findMany({ where: { portalClientId: { in: companyIds } } }),
     db.company.findMany({ where: { id: { in: portals.map(p => p.companyId).filter(Boolean) } }, select: { id: true, cnpj: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true, cnaePrincipal: true, cnaesSecundarios: true } }),
     db.portalInvoice.findMany({ where: { clientId: { in: companyIds }, papel: 'EMIT', statusEfetivo: 'autorizada', competencia: { gte: new Date(Date.UTC(ano, mes - 13, 1)), lt: new Date(Date.UTC(ano, mes, 1)) } }, select: { clientId: true, id: true, competencia: true, total: true, itens: { select: { id: true, valor: true, tipoReceita: true, flagST: true, flagMonofasico: true, flagExportacao: true } } } }),
@@ -16,9 +21,12 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
     db.accountingEntry.findMany({ where: { portalClientId: { in: companyIds }, tipo: 'FOLHA', competencia: { in: pas } }, select: { portalClientId: true, id: true, competencia: true, lines: { select: { tipo: true, valor: true, conta: true } } } }),
     db.apuracaoSnapshot.findMany({ where: { portalClientId: { in: companyIds }, competencia } }),
     db.pendenciaPosFechamento.findMany({ where: { portalClientId: { in: companyIds }, competencia, resolvida: false }, orderBy: { id: 'asc' }, select: { portalClientId: true, id: true, motivo: true, observacoes: true, createdAt: true } }),
-    db.appSetting.findMany({ where: { key: { in: companyIds.map(id => `operations:v1:${id}:${competencia}`) } } }),
+    db.appSetting.findMany({ where: { key: { in: ['automacao_ciclo_fiscal', ...companyIds.flatMap(id => [`operations:v1:${id}:${competencia}`, `operations_calculation:${id}:${competencia}`, `ciclo_simples_config:${id}`, `company_automation_policy:${id}`])] } } }),
+    db.regimeHistorico.findMany({ where: { companyId: { in: portals.map(p => p.companyId).filter(Boolean) } } }),
   ]);
-  const executionKeys = settings.filter(s => s.value?.releaseId).map(s => `operations_execution:${s.key.slice('operations:v1:'.length, -(competencia.length + 1))}:${competencia}:${s.value.releaseId}`);
+  const externalCompanies = portals.filter(p => regimeComprovado(histories.filter(h => h.companyId === p.companyId), competencia, cadastros.find(c => c.portalClientId === p.id), companies.find(c => c.id === p.companyId)) === 'PRESUMIDO' && String(companies.find(c => c.id === p.companyId)?.regimeTributario || '').toUpperCase().includes('PRESUMIDO')).map(p => ({ ...p, companyId: p.id, legacyCompany: companies.find(c => c.id === p.companyId) }));
+  const externalMap = externalCompanies.length ? await contextosCarteira(externalCompanies, competencia, db) : new Map();
+  const executionKeys = settings.filter(s => s.key.startsWith('operations:v1:') && s.value?.releaseId).map(s => `operations_execution:${s.key.slice('operations:v1:'.length, -(competencia.length + 1))}:${competencia}:${s.value.releaseId}`);
   const executions = executionKeys.length ? await db.appSetting.findMany({ where: { key: { in: executionKeys } } }) : [];
   // One scoped read, never a per-company query. A capped result cannot establish
   // absence: expose that uncertainty instead of borrowing mutable operation dates.
@@ -53,7 +61,28 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
       && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value.result.changedAt) && Number.isFinite(Date.parse(value.result.changedAt)));
     const confirmationSummary = { status: confirmationTruncated ? 'INCOMPLETE' : confirmed ? 'AVAILABLE' : 'NOT_FOUND',
       confirmation: !confirmationTruncated && confirmed ? { at: confirmed.result.changedAt, by: confirmed.userId, fingerprint: confirmed.result.fingerprint } : null };
-    items.push({ ...evidence, confirmationSummary, calculationSummary: snapshot ? {
+    const portal = portals.find(p => p.id === companyId);
+    const regime = regimeComprovado(histories.filter(h => h.companyId === portal?.companyId), competencia, cadastros.find(c => c.portalClientId === companyId), companies.find(c => c.id === portal?.companyId));
+    const config = settings.find(s => s.key === `ciclo_simples_config:${companyId}`)?.value;
+    let routine;
+    try {
+      const global = await lerAutomacaoCicloFiscal(adapter), policy = await lerPoliticaAutomacao(adapter, companyId);
+      const status = global.paused || policy.paused ? 'PAUSED' : config?.enabled === true ? 'CONFIGURED' : 'DISABLED';
+      routine = { status, label: { PAUSED: 'Rotina pausada', CONFIGURED: 'Rotina selecionada', DISABLED: 'Rotina desligada' }[status] };
+    } catch { routine = { status: 'UNKNOWN', label: 'Rotina a conferir' }; }
+    const savedAttempt = settings.find(s => s.key === `operations_calculation:${companyId}:${competencia}`)?.value;
+    const attempt = savedAttempt?.companyId === companyId && savedAttempt.competencia === competencia && typeof savedAttempt.attemptId === 'string'
+      && ['COLLECTING', 'CALCULATING', 'CALCULATED', 'REVIEW', 'UNCERTAIN'].includes(savedAttempt.status) ? savedAttempt : null;
+    const currentContext = attempt?.status === 'CALCULATED' ? await contextoOrigemCalculo({ portalClientId: companyId, competencia }, adapter) : null;
+    const attemptCurrent = attempt?.status === 'CALCULATED' && !evidence.blocked && Boolean(snapshot?.idempotencyKey)
+      && snapshot.idempotencyKey === attempt.calculation?.calculoId && currentContext?.hash === attempt.proof?.context?.hash;
+    const calculation = attemptCurrent ? { calculoId: attempt.calculation.calculoId, receita: attempt.calculation.receita ?? null, imposto: attempt.calculation.imposto ?? null, origem: attempt.calculation.origem || null } : null;
+    const auditSummary = attemptCurrent && attempt.audit ? { status: attempt.audit.status, totalAchados: attempt.audit.totalAchados ?? null, reason: attempt.audit.reason || null, warnings: Array.isArray(attempt.audit.warnings) ? attempt.audit.warnings.filter(w => typeof w === 'string') : [] } : null;
+    const calculationWarnings = attemptCurrent && Array.isArray(attempt.warnings) ? attempt.warnings.filter(w => typeof w === 'string') : [];
+    const manualCalculation = attempt ? { status: attempt.status === 'CALCULATED' && !attemptCurrent ? 'STALE' : attempt.status, requestId: attempt.attemptId, attemptId: attempt.attemptId, reason: attempt.status === 'CALCULATED' && !attemptCurrent ? 'Cálculo anterior; confira a revisão atual.' : typeof attempt.reason === 'string' ? attempt.reason : null, calculation } : null;
+    const tasks = externalMap.get(companyId)?.fluxo.tarefas || [];
+    const external = regime === 'PRESUMIDO' ? { regime, apurar: tasks.find(t => t.chave === 'apurar') || null, transmitir: tasks.find(t => t.chave === 'transmitir') || null } : null;
+    items.push({ ...evidence, regime, routine, auditSummary, calculationWarnings, manualCalculation, externalSummary: external, confirmationSummary, calculationSummary: snapshot ? {
       receitaInterna: snapshot.receitaInterna ?? null,
       receitaExterna: snapshot.receitaExterna ?? null,
     } : null });

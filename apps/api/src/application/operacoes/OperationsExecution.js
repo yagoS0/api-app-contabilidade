@@ -1,3 +1,4 @@
+import { conferirCalculoManualOperacoes } from './OperationsCalculationService.js';
 import { contextoOrigemCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
 import { lerOperacao } from './OperationsService.js';
 import { procuracaoPermitePgdas, documentosPgdas } from '../fiscal/serpro/pgdasDocumentos.js';
@@ -38,6 +39,7 @@ export async function conferirEvolucaoDocumental(db, { companyId, competencia, r
   return evidence;
 }
 export async function conferirExecucao(db, { companyId, competencia, userId, isAdmin, contextHash }, procurador) {
+  await conferirCalculoManualOperacoes(db, companyId, competencia);
   if (!isAdmin) {
     const access = await db.companyFirmAccess.findUnique({ where: { companyId_userId: { companyId, userId: String(userId) } } });
     if (access?.status !== 'ACTIVE' || !['ACCOUNTANT', 'FIRM_ADMIN'].includes(access.role)) throw fail('Acesso à empresa alterado. Execução bloqueada.');

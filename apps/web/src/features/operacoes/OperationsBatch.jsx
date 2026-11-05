@@ -13,12 +13,13 @@ function BatchDialog({ footerTarget, embedded, titulo, children, rodape, ...prop
   return embedded ? <section className="operacoes-conferencia-detalhe" aria-label={titulo}><h3 ref={heading} tabIndex={-1}>{titulo}</h3>{children}{footerTarget ? createPortal(<div className="operacoes-acoes operacoes-destinos">{rodape}</div>,footerTarget) : <div className="operacoes-acoes operacoes-destinos">{rodape}</div>}</section>
     : <Modal titulo={titulo} rodape={rodape} {...props}>{children}</Modal>;
 }
-export function OperationsBatch({ api, competencia, disabled = false, onChanged, embedded = false, onBusyChange, onDetailChange, footerTarget }) {
+export function OperationsBatch({ api, competencia, disabled = false, onChanged, embedded = false, onBusyChange, onDetailChange, footerTarget, actionsVisible = true }) {
   const [preview, setPreview] = useState(null), [batches, setBatches] = useState([]), [error, setError] = useState('');
   const [busy, setBusy] = useState(false), [reading, setReading] = useState(true), [confirmation, setConfirmation] = useState('');
   const [task, setTask] = useState(null), [taskError, setTaskError] = useState('');
   const context = useRef(null), pending = useRef(false), sequence = useRef(0);
   const [conditions,setConditions]=useState(false);
+  const [showHistory,setShowHistory]=useState(false);
   const conditionsTrigger=useRef(null),conditionsHeading=useRef(null);
   useEffect(()=>{if(conditions)conditionsHeading.current?.focus();},[conditions]);
   const trigger = useRef(null), wasDetail = useRef(false);
@@ -92,12 +93,12 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
   }
   return <section className="operacoes-lote" aria-label="Liberação da rotina de transmissão">
     {!(embedded && detail) && <>
-    <div className="operacoes-acoes"><Button ref={trigger} disabled={disabled || busy} onClick={() => prepare()}>{busy ? 'Conferindo liberação…' : 'Liberar rotina'}</Button>
-      <Button variant="secondary" disabled={busy} onClick={() => { setError(''); void refresh(); }}>Atualizar liberações</Button></div>
+    <div className="operacoes-acoes">{actionsVisible && (footerTarget ? createPortal(<Button ref={trigger} variant="secondary" disabled={disabled || busy} onClick={() => prepare()}>{busy ? 'Conferindo liberação…' : 'Liberar rotina'}</Button>,footerTarget) : <Button ref={trigger} variant="secondary" disabled={disabled || busy} onClick={() => prepare()}>{busy ? 'Conferindo liberação…' : 'Liberar rotina'}</Button>)}
+      <Button variant="secondary" disabled={busy} aria-expanded={showHistory || batches.length > 0} onClick={() => { setShowHistory(true); setError(''); void refresh(); }}>{showHistory || batches.length ? 'Atualizar liberações' : 'Ver liberações'}</Button></div>
     {error && <p role="alert">{error}</p>}
     {!task && taskError && <p role="alert">{taskError}</p>}
     {reading && <p role="status">Carregando liberações…</p>}
-    {!reading && !batches.length && !error && <p>Nenhuma liberação registrada nesta competência.</p>}
+    {showHistory && !reading && !batches.length && !error && <p>Nenhuma liberação registrada nesta competência.</p>}
     {batches.map(batch => <details key={batch.id} className="operacoes-lote-resultado"><summary>Liberação de {batch.competencia} · {batch.items.length} empresa(s)</summary>
       {batch.schedulingError && <p role="alert">{batch.schedulingError}</p>}
       <ul>{batch.items.map(item => <li key={item.companyId}><strong>{item.name}</strong><span>{labels[item.state] || 'A verificar'}</span>{item.message && <p>{item.message}</p>}

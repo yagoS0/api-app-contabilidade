@@ -61,9 +61,9 @@ it('recusa mês inválido antes de consultar e não transforma erro em zero', as
 
 import { listarEvidenciasOperacoes, destinoErroConsulta } from '../OperationsConsultas.js';
 import { lerOperacao } from '../OperationsService.js';
-const withoutSummary = ({ calculationSummary, confirmationSummary, ...operation }) => operation;
+const withoutSummary = ({ calculationSummary, confirmationSummary, regime, routine, auditSummary, calculationWarnings, manualCalculation, externalSummary, ...operation }) => operation;
 function evidenceDb(ids, overrides = {}) {
- const records={portalClient:ids.map(id=>({id,cnpj:'12345678000190',companyId:null})),cadastroFiscal:[],company:[],portalInvoice:[],rbtExtratoCache:[],accountingEntry:[],apuracaoSnapshot:[],pendenciaPosFechamento:[],appSetting:[],...overrides};
+ const records={portalClient:ids.map(id=>({id,cnpj:'12345678000190',companyId:null})),cadastroFiscal:[],regimeHistorico:[],company:[],portalInvoice:[],rbtExtratoCache:[],accountingEntry:[],apuracaoSnapshot:[],pendenciaPosFechamento:[],appSetting:[],...overrides};
  const select=(row,fields)=>!row?null:!fields?row:Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v===true?row[k]:row[k]?.map(r=>select(r,v.select))]));
  const matches=(row,where={})=>Object.entries(where).every(([k,v])=>{
   if(k==='AND') return v.every(clause=>matches(row,clause));
@@ -195,14 +195,15 @@ test('projeção agregada não promove snapshot automático sem raiz/prova a cá
   expect(result.items[0].status).toBe('PENDING');
 });
 
-test('39 empresas mantêm dez leituras agrupadas e resumo monetário sem auditoria ou histórico por empresa',async()=>{
+test('39 empresas mantêm onze leituras agrupadas e resumo monetário sem auditoria ou histórico por empresa',async()=>{
  const ids=Array.from({length:39},(_,i)=>`empresa-${i}`);
  const db=evidenceDb(ids,{apuracaoSnapshot:[{portalClientId:ids[0],competencia:'2026-10',receitaInterna:'123.45',receitaExterna:0}]});
  const result=await listarEvidenciasOperacoes(db,ids,'2026-10');
  expect(result.total).toBe(39);
  expect(result.items[0].calculationSummary).toEqual({receitaInterna:'123.45',receitaExterna:0});
  expect(result.items[1].calculationSummary).toBeNull();
- expect(Object.values(db).reduce((n,model)=>n+model.findMany.mock.calls.length,0)).toBe(10);
+ expect(Object.values(db).reduce((n,model)=>n+model.findMany.mock.calls.length,0)).toBe(11);
+ expect(db.regimeHistorico.findMany).toHaveBeenCalledTimes(1);
  for(const model of Object.values(db)) expect(model.findUnique).not.toHaveBeenCalled();
 });
 
@@ -227,4 +228,31 @@ test('limite de confirmações deixa ausência e autoria inconclusivas, sem cons
  const result=await listarEvidenciasOperacoes(db,['a','b'],'2026-10');
  expect(result.items.map(item=>item.confirmationSummary)).toEqual([{status:'INCOMPLETE',confirmation:null},{status:'INCOMPLETE',confirmation:null}]);
  expect(db.appSetting.findMany).toHaveBeenCalledTimes(2);expect(db.appSetting.findUnique).not.toHaveBeenCalled();
+});
+
+
+test('resumo agrupado preserva pausa, regime histórico e resultado sem vazar prova', async()=>{
+ const db=evidenceDb(['a'],{portalClient:[{id:'a',companyId:'legacy',cnpj:'12345678000190'}],company:[{id:'legacy',regimeTributario:'SIMPLES'}],regimeHistorico:[{companyId:'legacy',regime:'SIMPLES',vigenciaInicio:new Date('2020-01-01')}],appSetting:[
+ {key:'ciclo_simples_config:a',value:{enabled:true,fontes:['NFSE']}},
+ {key:'operations_calculation:a:2026-10',value:{companyId:'a',competencia:'2026-10',attemptId:'test-request',status:'CALCULATED',audit:{status:'COMPLETE'},warnings:['Anexo alterado'],proof:{secret:'private'},calculation:{receita:100,imposto:6}}}
+ ]});
+ const result=await listarEvidenciasOperacoes(db,['a'],'2026-10');expect(result.items[0]).toMatchObject({regime:'SIMPLES',routine:{status:'CONFIGURED'},auditSummary:null,calculationWarnings:[],manualCalculation:{status:'STALE',requestId:'test-request',calculation:null}});expect(JSON.stringify(result)).not.toContain('private');expect(db.regimeHistorico.findMany).toHaveBeenCalledTimes(1);expect(db.appSetting.findUnique).not.toHaveBeenCalled();
+});
+
+
+test.each(['atual','empresa','competencia','snapshot','contexto'])('auditoria agrupada exige identidade e vínculo atual: %s', async scenario=>{
+ const sources={appSetting:[],apuracaoSnapshot:[]};const db=evidenceDb(['a'],sources);
+ const context=await contextoOrigemCalculo({portalClientId:'a',competencia:'2026-10'},db);
+ const proof=criarVinculoCalculo({portalClientId:'a',competencia:'2026-10',formulario:{atividades:[],folhaMensal12:[],regimeApuracao:'COMPETENCIA'},contribuinteCnpj:'12345678000190',contextoOrigem:context});
+ sources.apuracaoSnapshot.push({portalClientId:'a',competencia:'2026-10',estado:'calculada',idempotencyKey:proof.calculoId,dasSimuladoSerpro:6,simulacaoSerpro:{_portalCalculo:proof},atividadesEscolhidas:[],folhaMensal12:[]});
+ const attempt={companyId:scenario==='empresa'?'b':'a',competencia:scenario==='competencia'?'2026-09':'2026-10',attemptId:'test-request',status:'CALCULATED',calculation:{calculoId:scenario==='snapshot'?'older':proof.calculoId,receita:100,imposto:6},audit:{status:'COMPLETE',totalAchados:0,secret:'hidden'},warnings:['Conferir anexo'],proof:{context:scenario==='contexto'?{hash:'old'}:context}};
+ sources.appSetting.push({key:'operations_calculation:a:2026-10',value:attempt});
+ const item=(await listarEvidenciasOperacoes(db,['a'],'2026-10')).items[0];
+ if(scenario==='atual'){expect(item.auditSummary).toMatchObject({status:'COMPLETE',totalAchados:0});expect(item.calculationWarnings).toEqual(['Conferir anexo']);expect(item.manualCalculation.calculation.imposto).toBe(6);}
+ else {expect(item.auditSummary).toBeNull();expect(item.calculationWarnings).toEqual([]);if(['empresa','competencia'].includes(scenario))expect(item.manualCalculation).toBeNull();else expect(item.manualCalculation).toMatchObject({status:'STALE',calculation:null});}
+ expect(JSON.stringify(item)).not.toContain('hidden');
+});
+test('histórico Presumido divergente do cadastro não projeta conclusão externa',async()=>{
+ const db=evidenceDb(['a'],{portalClient:[{id:'a',companyId:'legacy',cnpj:'12345678000190'}],company:[{id:'legacy',regimeTributario:'SIMPLES'}],regimeHistorico:[{companyId:'legacy',regime:'LUCRO_PRESUMIDO',vigenciaInicio:new Date('2020-01-01')}]});
+ const item=(await listarEvidenciasOperacoes(db,['a'],'2026-10')).items[0];expect(item.regime).toBe('PRESUMIDO');expect(item.externalSummary).toMatchObject({apurar:null,transmitir:null});
 });

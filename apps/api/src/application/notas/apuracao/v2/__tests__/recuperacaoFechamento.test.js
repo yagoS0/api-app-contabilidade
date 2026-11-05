@@ -328,3 +328,16 @@ test.each(['removida', 'alterada', 'versao', 'insumo', 'tentativa'])('consumidor
   expect(mockSimular).toHaveBeenCalledTimes(1);
   expect(mockIndice).not.toHaveBeenCalled(); expect(mockTransmitir).not.toHaveBeenCalled();
 });
+
+
+test.each(['sucesso', 'antes', 'depois'])('atalho manual revalida junto ao transporte e antes de persistir: %s', async scenario => {
+ const original = snapshot(); prisma.apuracaoSnapshot.findUnique.mockResolvedValue(original);
+ prisma.apuracaoSnapshot.updateMany.mockImplementation(async ({where}) => ({count: where.id === original.id && where.idempotencyKey === original.idempotencyKey ? 1 : 0}));
+ const steps=[];
+ const manualOperation={beforeDispatch:jest.fn(async()=>{steps.push('antes');if(scenario==='antes')throw Error('base mudou antes');}),verify:jest.fn(async()=>{steps.push('depois');if(scenario==='depois')throw Error('base mudou depois');})};
+ mockSimular.mockImplementationOnce(async()=>{steps.push('transporte');return{dasValor:6,raw:{}};});
+ const call=calcularFechamento({...args,...form,atividades:[{...form.atividades[0],valorInterno:101}],manualOperation});
+ if(scenario==='sucesso'){await expect(call).resolves.toMatchObject({ok:true});expect(steps).toEqual(['antes','transporte','depois']);expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledTimes(1);}
+ else {await expect(call).rejects.toThrow('base mudou');expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();expect(mockSimular).toHaveBeenCalledTimes(scenario==='antes'?0:1);}
+ expect(mockTransmitir).not.toHaveBeenCalled();
+});

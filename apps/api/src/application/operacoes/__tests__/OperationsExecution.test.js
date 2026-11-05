@@ -9,7 +9,7 @@ test.each(['valido', 'empresa', 'cnpj', 'competencia', 'empresa-circular', 'arqu
   const originalProof = { calculoId: 'calc', fiscal: 'original' };
   const snapshot = { idempotencyKey: 'calc', estado: 'calculada', simulacaoSerpro: { _portalCalculo: originalProof } };
   db.apuracaoSnapshot = { findUnique: jest.fn(async () => snapshot) };
-  db.portalClient = { findUnique: jest.fn(async () => ({ id: 'a', cnpj: '123' })) };
+  db.portalClient = { findUnique: jest.fn(async () => ({ id: 'a', companyId: 'legacy', cnpj: '123' })) };
   values.set('operations:v1:a:2026-09', { status: 'RELEASED', releaseId: 'release', contextHash: 'fiscal' });
   const persisted = { id: 'circle', portalClientId: 'a', competencia: '2026-09', pgdasNumeroDeclaracao: 'declaration', pgdasDeclaracaoFileId: 'file-d', pgdasReciboFileId: 'file-r' };
   const sync = jest.fn(async () => {
@@ -64,7 +64,12 @@ function setup() {
     ['operations:v1:a:2026-09', { releaseId: 'release' }],
     ['serpro_procuration_status:a', { cnpj: '123', procuradorCnpj: '456', status: 'ATIVA', systems: ['PGDAS-D'], checkedAt: new Date().toISOString(), validUntil: new Date(Date.now() + 86400000).toISOString() }],
   ]);
-  const db = { appSetting: { findUnique: jest.fn(async ({ where }) => values.has(where.key) ? { value: values.get(where.key) } : null), create: jest.fn(async ({ data }) => { if (values.has(data.key)) throw Error('duplicate'); values.set(data.key, data.value); }), update: jest.fn(async ({ where, data }) => values.set(where.key, data.value)) },
+  const db = {
+    portalClient: { findUnique: jest.fn(async () => ({ id: 'a', companyId: 'legacy', cnpj: '123' })) },
+    regimeHistorico: { findMany: jest.fn(async () => [{ regime: 'SIMPLES', vigenciaInicio: new Date('2020-01-01') }]) },
+    cadastroFiscal: { findUnique: jest.fn(async () => ({ regime: 'SIMPLES_NACIONAL', regimeApuracao: 'COMPETENCIA', dataOpcaoSN: new Date('2020-01-01') })) },
+    company: { findUnique: jest.fn(async () => ({ id: 'legacy', regimeTributario: 'SIMPLES' })) },
+    appSetting: { findUnique: jest.fn(async ({ where }) => values.has(where.key) ? { value: values.get(where.key) } : null), create: jest.fn(async ({ data }) => { if (values.has(data.key)) throw Error('duplicate'); values.set(data.key, data.value); }), update: jest.fn(async ({ where, data }) => values.set(where.key, data.value)) },
     companyMonthlyCircular: { findUnique: jest.fn(async () => null) }, guide: { findFirst: jest.fn(async () => null) },
     pendenciaPosFechamento: { count: jest.fn(async () => 0) }, $queryRaw: jest.fn() };
   db.$transaction = fn => fn(db);
@@ -168,7 +173,7 @@ test.each(['DONE', 'ATTENTION'])('evidência suplementar da claim sobrevive ao t
   const proof = { calculoId: 'calc', prova: 'original' };
   const snapshot = { idempotencyKey: 'calc', estado: 'transmitida', simulacaoSerpro: { _portalCalculo: proof } };
   db.apuracaoSnapshot = { findUnique: jest.fn(async () => snapshot) };
-  db.portalClient = { findUnique: jest.fn(async () => ({ id: 'a', cnpj: '123' })) };
+  db.portalClient = { findUnique: jest.fn(async () => ({ id: 'a', companyId: 'legacy', cnpj: '123' })) };
   const circular = { id: 'circle', portalClientId: 'a', competencia: '2026-09', pgdasNumeroDeclaracao: 'declaration', pgdasDeclaracaoFileId: 'file-d', pgdasReciboFileId: 'file-r' };
   values.set('operations:v1:a:2026-09', { status: 'RELEASED', releaseId: 'release', contextHash: 'fiscal' });
   transmit.mockImplementation(async () => {
@@ -194,7 +199,7 @@ test('releitura JSONB da evidência não depende da ordem das propriedades e pre
   const proof = { z: 'original', a: 'fiscal' };
   const snapshot = { idempotencyKey: 'calc', estado: 'transmitida', simulacaoSerpro: { _portalCalculo: proof } };
   db.apuracaoSnapshot = { findUnique: jest.fn(async () => snapshot) };
-  db.portalClient = { findUnique: jest.fn(async () => ({ id: 'a', cnpj: '123' })) };
+  db.portalClient = { findUnique: jest.fn(async () => ({ id: 'a', companyId: 'legacy', cnpj: '123' })) };
   const circular = { id: 'circle', portalClientId: 'a', competencia: '2026-09', pgdasNumeroDeclaracao: 'declaration', pgdasDeclaracaoFileId: 'file-d', pgdasReciboFileId: 'file-r' };
   values.set('operations:v1:a:2026-09', { status: 'RELEASED', releaseId: 'release', contextHash: 'fiscal' });
   transmit.mockImplementation(async () => {
@@ -211,4 +216,11 @@ test('releitura JSONB da evidência não depende da ordem das propriedades e pre
     return { ok: true };
   });
   await executarOperacao(db, args, deps);
+});
+
+
+test.each(['antes','pre-despacho'])('regime alterado %s impede transmissão de cálculo legado sem tentativa manual', async momento=>{
+ const {db,transmit,args,deps}=setup();const change=()=>db.regimeHistorico.findMany.mockResolvedValue([{regime:'LUCRO_PRESUMIDO',vigenciaInicio:new Date('2020-01-01')}]);
+ const fiscal=jest.fn();if(momento==='antes')change();else transmit.mockImplementation(async args=>{change();await args.antesDeTransmitir();fiscal();return{ok:true};});
+ await expect(executarOperacao(db,args,deps)).rejects.toThrow('Simples não comprovado');expect(fiscal).not.toHaveBeenCalled();if(momento==='antes')expect(transmit).not.toHaveBeenCalled();
 });
