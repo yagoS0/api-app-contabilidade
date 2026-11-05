@@ -1,5 +1,11 @@
 # Certificados por operação
 
+## Distribuição ADN por representação — decisão de 05/11/2026
+
+A seção35 da referência operacional substitui a restrição histórica a A1 próprio somente para distribuição ADN: permitir seleção explícita de representação com poderes específicos NFS-e e identidade/validade conferidas. Não alterar `SERVICOS.NFSE` indiscriminadamente: emissão, DFe e parâmetros municipais conservam seus próprios requisitos. Não usar procuração SERPRO genérica nem fallback silencioso após erro. Preservar contexto do cursor, empresa dos documentos e controles de acesso. A confirmação manual de poderes não comprova aceitação remota. Implementação e testes ainda necessários; esta decisão não ativa consultas reais.
+
+Avisos de Operações/Apuração abrangem todas as competências autorizadas, independentemente do seletor mensal, com empresa/competência/nota no detalhe; preservar recortes das operações fiscais e distinguir revisão de retificação comprovadamente necessária. Coleta diária apenas no ADN direto comprovadamente gratuito, com agenda/pausas/autorização e sem fallback pago. Reimportação não duplica avisos e falha não encerra pendências.
+
 ## Limites do upload — 17/09/2026
 
 Produção registrou `MulterError: Too many files` antes do handler: o lote NF-e aceita 20 arquivos e NFS-e 50. `uploadNotas` converte excesso em 400 JSON e arquivo grande em 413 com orientação. Preservar tetos e armazenamento em disco do ZIP; o contador divide seleções maiores em requisições sequenciais. Regressão exercita multipart real nas duas rotas, sem banco ou chamadas fiscais.
