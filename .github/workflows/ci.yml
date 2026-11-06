@@ -94,6 +94,8 @@ jobs:
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='application/accounting/parcelamento/__tests__|estornoBaixa|saldoProvisaoEstorno'
       - name: Capture failures and closing results without external calls
         working-directory: apps/api
+        env:
+          DATABASE_URL: ${{ env.ALTAN_GOVERNANCE_TEST_DATABASE_URL }}
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='adn.*test|application/notas/apuracao/v2/__tests__|ManualTaskService|apuracaoTarefas'
       - name: Accountant frontend regression
         working-directory: apps/web

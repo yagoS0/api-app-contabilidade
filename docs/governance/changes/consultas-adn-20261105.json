@@ -4,6 +4,7 @@
   "domains": [
     "accounting",
     "api",
+    "ci",
     "commercial",
     "communication",
     "documentation",
@@ -14,17 +15,11 @@
     "portal",
     "web"
   ],
-  "affectedDomains": [
-    "api",
-    "fiscal",
-    "accounting",
-    "documentation",
-    "governance"
-  ],
   "baseCommit": "8cec458c3c3183dc4e312c005b8f01a219828911",
   "status": "validated_locally_complementary_record_no_publication",
   "operationalImpact": "Adequação às regras R01/R02/R05/R19/R20/R26: rejeição ou coleta incompleta não comprova ausência de notas; divergência anterior preservada; sucesso exige revisão atual. Cancelamento factual local, pendência e conferência atômicos; mês contábil fechado exige correção explícita. Sem alteração tributária, agenda, seleção de certificado, emissão ou procuração; suporte ADN por representação permanece pendente.",
   "tests": [
+    "CI de usabilidade: a etapa de captura recebe a mesma URL PostgreSQL descartável usada na migração, preservando a validação de identidade do banco na suíte de conferência ADN.",
     "R1: 745 suítes API cobertas por composição, 12574 testes aprovados, dez testes PostgreSQL condicionais não executados. Timeout original após 700 suítes preservado; 45 suítes restantes executadas separadamente. Não se declara gate original aprovado.",
     "Provas intactas reaproveitadas: governança85; interface6921; portal1610; builds web e portal aprovados. Nenhum arquivo de interface/portal/build/governança foi modificado por este complemento.",
     "Delta autorizado aplicado por hashes: cinco suítes,77 testes aprovados, zero falhas/ignorados. Inclui sete PostgreSQL: duas conexões e sucesso tardio, SQL NULL/JSON null, rollback, mês fechado/lançamentos intactos e ausência de snapshot. Transporte, certificado e parser fiscais simulados; banco descartável loopback real.",
