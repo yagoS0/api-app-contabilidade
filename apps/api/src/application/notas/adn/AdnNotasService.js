@@ -1,3 +1,4 @@
+import { erroAdnSeguro, falhaAdn, fimAdnComprovado } from "./adnErros.js";
 import { registrarPendenciaDoPeriodo } from "../pendenciasDoPeriodo.js";
 import { acquireGuideLease } from "../../guides/GuideLockService.js";
 import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
@@ -70,10 +71,9 @@ async function resolveCertWithFallback(portalClientId) {
   // Cada causa tem conserto diferente: trocar o arquivo × redigitar a senha × cadastrar o primeiro.
   const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
     .catch((err) => {
-      if (err?.code === "CERT_CNPJ_MISMATCH" || err?.code === "CERT_PASSWORD_DECRYPT_FAILED") {
-        throw new AdnNotasSyncError(err.code, err.message);
-      }
-      return { source: "none" };
+      if (err?.code === "NO_CERT_AVAILABLE") return { source: "none" };
+      const safe = erroAdnSeguro(err, "CERT_RESOLUTION_FAILED");
+      throw new AdnNotasSyncError(safe.code, safe.message);
     });
   if (r.source === "company_a1") {
     return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
@@ -282,22 +282,13 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod", som
         // Q12.B+++: na 1ª iteração com cursor=0, ativa autodescoberta (tenta NSU=0 e NSU=1)
         autoDiscover: cursor === 0n && iterations === 1,
       });
-      const status = r.status;
-      const items = r.items || [];
-      if (Array.isArray(r.errors) && r.errors.length) sourceErrors = true;
-
-      if (status === "REJEICAO") {
-        throw new AdnNotasSyncError("ADN_REJEICAO", "O ADN Nacional rejeitou a consulta. Confira o CNPJ e a autorização do certificado A1 desta empresa antes de uma nova tentativa.");
-      }
-      if (status === "NENHUM_DOCUMENTO_LOCALIZADO") {
-        complete = true;
-        break;
-      }
-      if (status !== 'DOCUMENTOS_LOCALIZADOS' || items.length === 0) {
-        if (somenteColeta) throw new AdnNotasSyncError('ADN_RESPOSTA_INCONCLUSIVA', 'A resposta não comprovou o término da captura. Confira a fonte antes de calcular.');
-        if (items.length === 0) break;
-      }
-
+      const status = r?.status;
+      const items = r?.items;
+      if (status === "REJEICAO") throw falhaAdn("ADN_REJEICAO", r.errors);
+      if (fimAdnComprovado(r)) { complete = true; break; }
+      if (r?.errors && (!Array.isArray(r.errors) || r.errors.length)) throw falhaAdn("ADN_COLETA_INCOMPLETA", r.errors);
+      if (!Array.isArray(items)) throw falhaAdn("ADN_RESPOSTA_INCONCLUSIVA");
+      if (status !== "DOCUMENTOS_LOCALIZADOS" || items.length === 0) throw falhaAdn("ADN_RESPOSTA_INCONCLUSIVA");
       let maxNsuThisIter = cursor;
       let loteDocs = 0;
       const loteStatus = {};
@@ -395,8 +386,7 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod", som
   } catch (err) {
     if (err?.code === "GUIDE_LEASE_LOST") throw err;
     lease.assertActive();
-    const code = err?.code || "ADN_SYNC_FAILED";
-    const msg = err?.message || String(err);
+    const { code, message: msg, errors } = erroAdnSeguro(err);
     // Falha após lotes confirmados conserva o progresso e a espera do provedor.
     const defaultMinutes = code === "HTTP_429" ? BACKOFF_MINUTES_ON_429 : BACKOFF_MINUTES_ON_ERROR;
     const requestedSeconds = Number(err?.retryAfterSec);
@@ -404,11 +394,11 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod", som
       ? Math.max(defaultMinutes, requestedSeconds / 60) : defaultMinutes;
     const backoffUntil = await setBackoff({ clientId: portalClientId, errorMsg: (`[${code}] ${msg}`).slice(0, 500), minutes });
     if (totalDocs > 0) {
-      return { ok: true, partial: true, reason: code, message: msg, backoffUntil,
+      return { ok: true, partial: true, reason: code, message: msg, errors, backoffUntil,
         cnpj: companyCnpj, certVia: cert.via, iterations, totalDocs, byStatus,
         newCursor: cursor.toString(), warning: [code, msg].join(": ") };
     }
-    return { ok: false, reason: code, message: msg, backoffUntil, iterations, totalDocs, byStatus, newCursor: cursor.toString() };
+    return { ok: false, reason: code, message: msg, errors, backoffUntil, iterations, totalDocs, byStatus, newCursor: cursor.toString() };
   }
   } finally {
     await lease.release();

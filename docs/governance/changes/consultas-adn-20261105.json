@@ -1,0 +1,52 @@
+{
+  "summary": "Diagnóstico seguro de rejeições ADN e conferência completa com conclusão transacional protegida contra respostas tardias.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "governance",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "baseCommit": "8cec458c3c3183dc4e312c005b8f01a219828911",
+  "status": "validated_locally_complementary_record_no_publication",
+  "operationalImpact": "Adequação às regras R01/R02/R05/R19/R20/R26: rejeição ou coleta incompleta não comprova ausência de notas; divergência anterior preservada; sucesso exige revisão atual. Cancelamento factual local, pendência e conferência atômicos; mês contábil fechado exige correção explícita. Sem alteração tributária, agenda, seleção de certificado, emissão ou procuração; suporte ADN por representação permanece pendente.",
+  "tests": [
+    "CI de usabilidade: a etapa de captura recebe a mesma URL PostgreSQL descartável usada na migração, preservando a validação de identidade do banco na suíte de conferência ADN.",
+    "R1: 745 suítes API cobertas por composição, 12574 testes aprovados, dez testes PostgreSQL condicionais não executados. Timeout original após 700 suítes preservado; 45 suítes restantes executadas separadamente. Não se declara gate original aprovado.",
+    "Provas intactas reaproveitadas: governança85; interface6921; portal1610; builds web e portal aprovados. Nenhum arquivo de interface/portal/build/governança foi modificado por este complemento.",
+    "Delta autorizado aplicado por hashes: cinco suítes,77 testes aprovados, zero falhas/ignorados. Inclui sete PostgreSQL: duas conexões e sucesso tardio, SQL NULL/JSON null, rollback, mês fechado/lançamentos intactos e ausência de snapshot. Transporte, certificado e parser fiscais simulados; banco descartável loopback real.",
+    "Contagens focais e gerais se sobrepõem e não devem ser somadas. Manifestos e logs locais em output/consultas-externas-adn-20261105. git diff --check sem erros."
+  ],
+  "reviewProcess": "Controlador iniciou três execuções, preservadas: primeira interrompida por defeitos; segunda por ambiente PostgreSQL ausente; terceira interrompida após nove chamadas por bloqueio de concorrência. Quatro chamadas anteriores mais nove da última execução mais duas revisões nativas complementares totalizam15/40. Usuário autorizou expressamente três arquivos e validação complementar, preservando timeout, sem publicação ou atos externos. Não altera estado bruto ou gates.",
+  "reviewEvidence": [
+    {
+      "reviewer": "pesquisa_adn_procuracao",
+      "verdict": "approved_scoped",
+      "scope": "API/fiscal/contabilidade: CAS, transação, mês fechado, isolamento, erros seguros, NSU e E2220; hashes e77 testes conferidos."
+    },
+    {
+      "reviewer": "revisao_publicacao",
+      "verdict": "approved_scoped",
+      "scope": "Sistêmico: rotas, tarefa, worker, consumidores contábeis, atomicidade e preservação do histórico; fontes atuais e evidências conferidas."
+    }
+  ],
+  "rollback": "Sem migração ou dependência nova. Reverter código por entrega revisada, preservando evidências, notas, divergências e pendências já gravadas. Não limpar cursor/backoff nem repetir consulta incerta como consequência da reversão.",
+  "humanDecisions": [
+    "Usuário confirmou poderes específicos NFS-e Nacional da procuração da Chaym. Isso não é resposta de validação remota e não alterou cadastro.",
+    "Autorizou aplicar candidato de três arquivos e concluir validação complementar, sem publicar, consultar o Fisco ou alterar dados reais."
+  ],
+  "limitations": [
+    "Não comprova causa original da rejeição da Chaym: códigos não foram preservados pela versão produtiva.",
+    "Representação com certificado do escritório não implementada neste incremento; emissão continua inalterada.",
+    "Não certifica funcionamento pleno de ADN/SERPRO/outros provedores. Nenhuma consulta real foi feita.",
+    "CI e publicação não executados; controlador original não convertido em ready_for_human."
+  ]
+}
