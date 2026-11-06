@@ -21,7 +21,8 @@ test("TLS não vaza OpenSSL e libera agente sem repetir transporte", async () =>
 });
 test("sucesso libera agente", async () => {
   get.mockResolvedValue({ status: 200, data: JSON.stringify({ StatusProcessamento: "NENHUM_DOCUMENTO_LOCALIZADO" }), headers: {} });
-  expect((await fetchDfeNFSe(opts)).status).toBe("NENHUM_DOCUMENTO_LOCALIZADO");
+  expect((await fetchDfeNFSe({ ...opts, cnpj: "53.742.042/0001-64" })).status).toBe("NENHUM_DOCUMENTO_LOCALIZADO");
+  expect(get).toHaveBeenCalledWith("/DFe/25", { params: { cnpjConsulta: opts.cnpj, lote: true } });
   expect(destroy).toHaveBeenCalledTimes(1);
 });
 test("429 preserva Retry-After e libera agente", async () => {

@@ -1,0 +1,9 @@
+{
+  "summary": "Enviar o CNPJ normalizado da empresa na consulta de distribuição ADN com A1 próprio.",
+  "risk": "high",
+  "domains": ["accounting", "api", "ci", "commercial", "communication", "documentation", "fiscal", "governance", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Adequação de transporte às regras R01/R02/R20 e seção 35. Preserva seleção do certificado, cursor, pausas e isolamento. Sem mudança de regra tributária ou ativação de agenda.",
+  "tests": ["Regressão do transporte verifica parâmetro normalizado, NSU e lote, com requisição simulada. CI executa as suítes de captura e conferência."],
+  "humanDecisions": ["Usuário autorizou corrigir a busca para todas as empresas e publicar após os testes."],
+  "rollback": "Reverter o commit do transporte, preservando cursores e documentos persistidos."
+}

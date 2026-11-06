@@ -41,10 +41,8 @@ const ENDPOINTS = {
 // comuns (Servlet/API/v1) antes de desistir.
 // ADN Contribuinte: GET /DFe/{NSU}
 //
-// CRÍTICO: cert ICP-Brasil identifica o tomador via SAN extension
-// (otherName OID 2.16.76.1.3.3). NÃO passar cnpjConsulta — é redundante.
-// cnpjConsulta SÓ deve ser usado quando o cert tem CNPJ-RAIZ diferente
-// (escritório consultando filial). Default: sem cnpjConsulta.
+// Envie a inscrição da empresa mesmo na consulta com A1 próprio. O ADN
+// pode rejeitar sem detalhes quando cnpjConsulta é omitido.
 //
 // Diferenças vs SEFAZ NF-e:
 // - Sem maxNSU (ADN não retorna teto)
@@ -145,7 +143,7 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
         await conferirContribuinteCicloFiscal(cleanCnpj);
         try {
           // Q42: lote=true → retorna até 50 docs por chamada (corrige a varredura 1-em-1).
-          res = await client.get(path, ADN_LOTE ? { params: { lote: true } } : undefined);
+          res = await client.get(path, { params: { cnpjConsulta: cleanCnpj, ...(ADN_LOTE ? { lote: true } : {}) } });
         } catch (err) {
           const tlsFailure = /SSL|TLS|bad record mac|decryption failed/i.test([err?.code, err?.message].join(" "));
           throw new AdnNacionalClientError("NETWORK_ERROR",
