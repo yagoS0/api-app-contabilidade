@@ -7,6 +7,8 @@ on:
       - 'apps/api/prisma/**'
       - 'apps/api/package.json'
       - 'apps/api/scripts/piloto-correcao.test.mjs'
+      - 'apps/api/scripts/guia-fechamento.postgres.test.mjs'
+      - 'apps/api/scripts/fechamento-coordenacao.postgres.test.mjs'
       - 'scripts/governance/arquitetura/**'
       - 'package*.json'
       - '.github/workflows/piloto-correcao.yml'
@@ -60,3 +62,4 @@ jobs:
           npm run prisma:migrate:deploy -w @contabilidade/api
           npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath src/application/guides/__tests__/corrigirValorGuia.test.js
           node --experimental-vm-modules --test apps/api/scripts/piloto-correcao.test.mjs
+          node --test --test-concurrency=1 apps/api/scripts/guia-fechamento.postgres.test.mjs apps/api/scripts/fechamento-coordenacao.postgres.test.mjs
