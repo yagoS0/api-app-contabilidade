@@ -1,0 +1,12 @@
+{
+  "summary": "Corrige a inicialização da CLI independente no Windows quando o controlador foi aberto pelo aplicativo desktop. O adaptador remove a variável de lançamento registrada do ambiente da CLI filha; mantém as opções de execução, permissões por papel, schema e política do repositório.",
+  "risk": "high",
+  "domains": ["governance"],
+  "operationalImpact": "Sem alteração do produto ou das regras fiscais/contábeis. O processo pai conserva seu ambiente. Planejador sem caminhos continua impedido de delegar a escrita e a mensagem indica o journal para diagnóstico.",
+  "tests": [
+    "23 testes focais locais do controlador passaram, incluindo modos de sandbox por papel, diferenças entre plataformas e manutenção da falha para plano vazio.",
+    "Validação Windows com a CLI real e sessão read-only: leitura de identificador de fixture confirmada; tentativa de escrita negada. No checkout do piloto, o adaptador real obteve o SHA, os caminhos das políticas e o modo diagnose do workflow. Revisão independente do diff sem bloqueios."
+  ],
+  "rollback": "Reverter o commit do adaptador, testes e registro no branch de governança. Não afeta os commits de Guias ou Contabilidade.",
+  "humanDecisions": ["O usuário solicitou resolver a falha do controlador e executar a CI hospedada. Revisão de integração separada da etapa 2; sem merge."]
+}
