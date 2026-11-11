@@ -60,6 +60,9 @@ jobs:
         run: |
           npm run prisma:generate -w @contabilidade/api
           npm run prisma:migrate:deploy -w @contabilidade/api
-          npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath src/application/guides/__tests__/corrigirValorGuia.test.js
+          npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath \
+            src/application/guides/__tests__/corrigirValorGuia.test.js \
+            src/modules/guides/domain/correcaoDeValor.test.js \
+            src/modules/accounting/domain/correcaoDeProvisao.test.js
           node --experimental-vm-modules --test apps/api/scripts/piloto-correcao.test.mjs
           node --test --test-concurrency=1 apps/api/scripts/guia-fechamento.postgres.test.mjs apps/api/scripts/fechamento-coordenacao.postgres.test.mjs

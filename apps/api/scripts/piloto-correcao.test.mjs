@@ -51,7 +51,15 @@ function synthetic(id, exports) {
     for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
   }, { context, identifier: id });
 }
-const real = new Set(['routes/firm/corrigirValorGuia.js','middlewares/requireFirmCompanyAccess.js','application/guides/CorrigirValorGuiaService.js','application/accounting/fechamentoContabil.js']);
+const real = new Set([
+  'routes/firm/corrigirValorGuia.js',
+  'middlewares/requireFirmCompanyAccess.js',
+  'application/guides/CorrigirValorGuiaService.js',
+  'application/accounting/fechamentoContabil.js',
+  'modules/guides/domain/correcaoDeValor.js',
+  'modules/accounting/public.js',
+  'modules/accounting/domain/correcaoDeProvisao.js'
+]);
 const doubles = new Map([
   ['express',{Router:express.Router}], ['node:crypto',crypto],
   ['infrastructure/db/prisma.js',{prisma:fakeDb}],
