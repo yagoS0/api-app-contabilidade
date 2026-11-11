@@ -1,0 +1,62 @@
+name: Piloto de correção de guia
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/src/**'
+      - 'apps/api/prisma/**'
+      - 'apps/api/package.json'
+      - 'apps/api/scripts/piloto-correcao.test.mjs'
+      - 'scripts/governance/arquitetura/**'
+      - 'package*.json'
+      - '.github/workflows/piloto-correcao.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  caracterizacao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: piloto
+          POSTGRES_PASSWORD: fixture_ci
+          POSTGRES_DB: altan_piloto_governance_test
+        ports: ['5432/tcp']
+        options: >-
+          --health-cmd "pg_isready -U piloto -d altan_piloto_governance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Testar o verificador
+        run: node --test scripts/governance/arquitetura/verificar.test.cjs
+      - name: Comparar a arquitetura com a base comum
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base=$(git merge-base "$BASE_SHA" HEAD)
+          git worktree add --detach "$RUNNER_TEMP/altan-base" "$base"
+          verifier=scripts/governance/arquitetura/verificar.cjs
+          node "$verifier" snapshot "$RUNNER_TEMP/altan-base" > "$RUNNER_TEMP/arquitetura.json"
+          node "$verifier" diagnose . "$RUNNER_TEMP/arquitetura.json"
+      - name: Caracterizar o piloto no PostgreSQL descartável
+        env:
+          DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+          ALTAN_TESTE_POSTGRES: '1'
+        run: |
+          npm run prisma:generate -w @contabilidade/api
+          npm run prisma:migrate:deploy -w @contabilidade/api
+          npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath src/application/guides/__tests__/corrigirValorGuia.test.js
+          node --experimental-vm-modules --test apps/api/scripts/piloto-correcao.test.mjs
