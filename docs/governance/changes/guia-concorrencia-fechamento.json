@@ -1,0 +1,21 @@
+{
+  "summary": "Caracterização adicional da Revisão 2, base 582bb8b. Rota efetiva de fechamento e serviço de correção usam sessões PostgreSQL independentes. O teste controla a sobreposição de transações e compara decisão, versão contábil, lançamentos, guia e auditoria após commit ou rollback.",
+  "risk": "high",
+  "domains": ["api", "ci", "portal", "web", "accounting", "guides"],
+  "operationalImpact": "Sem alteração em rotas, serviços, permissões, instruções permanentes, schema ou regra operacional. O histórico acessível mostra que a correção antecede o mecanismo compartilhado, acrescentado à recuperação documental em 6249856.",
+  "tests": [
+    "PostgreSQL 16.15 local descartável. Oito combinações de ordem de entrada, zero/uma provisão e presença/ausência de versão no fechamento. Em cada execução, o primeiro comando completa seu corpo transacional e aguarda o segundo obter snapshot antes do commit. Conferidos PIDs distintos, isolamento Serializable, estado de fechamento e sua versão, valores da guia, débito e crédito e auditoria.",
+    "Em três rodadas, com provisão, correção primeiro: correção confirmada e fechamento P2034; fechamento primeiro: fechamento confirmado e correção guia_alterada. Sem provisão, correção primeiro: ambas confirmadas, competência fechada sem lançamentos; fechamento primeiro: fechamento confirmado, correção recusada. A indicação opcional da versão não mudou o resultado observado.",
+    "Dois ensaios isolados da proteção existente, com dois clientes e observador em pg_blocking_pids. Commit da primeira transação levou a conflito P2034 na segunda; rollback liberou a segunda para commit. Cadastro da empresa preservado.",
+    "10/10 no ensaio final e 29/29 nos testes anteriormente aprovados (9 Jest, 16 contratos/PG e 4 verificações de arquitetura). Diagnóstico estático: 5053 ocorrências na base e na candidata. A suíte ampla e a CI hospedada não integraram a execução local."
+  ],
+  "conclusion": "Não foi demonstrada inconsistência do estado final. Manter Serializable e o protocolo atual no piloto. Conservar as leituras de lançamentos e linhas pelo fechamento e a releitura da competência pela correção na transação. Os testes verificam serialização observável, não precedência total por ordem de chegada. O documento e a autenticação foram controlados, a circular do mês já existia e tinha checklist completo. A proteção explícita serializa por empresa, inclusive entre competências distintas.",
+  "gatePromotion": [
+    "Manter diagnose nesta etapa. Para promover, definir os caminhos e regras obrigatórios e implementar filtro se o bloqueio for apenas do piloto; check hoje compara a API inteira.",
+    "Executar PRs de controle na CI hospedada com os mesmos baselines gerados do merge-base. Exigir saída 0 em candidato limpo, 1 para nova ocorrência e 2 para falha técnica. Verificar que a redução de legado é aceita e que a substituição por nova infração é reportada quando muda a chave.",
+    "Validar fixtures positivas e negativas por regra escolhida, classificar falsos positivos em PRs representativos e registrar exceções mínimas com dono e critério de remoção. O analisador estático não cobre todos os aliases dinâmicos, SQL ou efeitos de banco.",
+    "Tornar confiáveis as versões do parser e do verificador aplicadas às duas árvores. Exigir revisão independente para mudanças em workflow/verificador e documentar o comportamento do check obrigatório em PRs excluídos pelos filtros. Manter o ensaio de PostgreSQL independente."
+  ],
+  "rollback": "Reverter o commit de testes e workflow desta caracterização. Nenhuma mudança de produto ou dado operacional a desfazer.",
+  "humanDecisions": ["O usuário autorizou investigação e testes e determinou revisão prévia a qualquer correção funcional. Extração DDD segue em etapa posterior."]
+}

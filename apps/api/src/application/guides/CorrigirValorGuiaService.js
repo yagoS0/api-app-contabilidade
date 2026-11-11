@@ -3,41 +3,39 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { lerLinhaDigitavelDoPdf } from "./lerLinhaDigitavelDoPdf.js";
 import { competenciasFechadas } from "../accounting/fechamentoContabil.js";
+import { motivoImpedimentoDaGuia, valorDaCorrecaoEmCentavos, evidenciaConfirmaValor } from "../../modules/guides/domain/correcaoDeValor.js";
+import { motivoImpedimentoDaProvisao, motivoImpedimentoPorFechamento } from "../../modules/accounting/public.js";
 
 export class CorrecaoValorError extends Error {
   constructor(code, message, status = 409) { super(message); this.code = code; this.status = status; }
 }
 const recusar = (code, message, status) => { throw new CorrecaoValorError(code, message, status); };
-const centavos = value => Math.round(Number(value) * 100);
-function valorValido(valor) {
-  if (!["number", "string"].includes(typeof valor) || !/^\d+(\.\d{1,2})?$/.test(String(valor)) || !Number.isSafeInteger(centavos(valor)) || centavos(valor) <= 0) recusar("valor_invalido", "Informe o valor positivo da guia, com até duas casas decimais.", 400);
-  return centavos(valor) / 100;
-}
 async function carregar(db, companyId, guideId, novoValor) {
   const g = await db.guide.findFirst({ where: { id: guideId, portalClientId: companyId }, include: {
     accountingEntries: { include: { lines: { orderBy: { id: "asc" } }, baixas: { select: { id: true } } }, orderBy: { id: "asc" } },
     tributosParcela: { select: { id: true } },
   } });
   if (!g) recusar("guia_nao_encontrada", "Guia não encontrada.", 404);
-  if (g.tipo !== "OUTRA" || g.parcelamentoId || g.tributosParcela.length || g.status !== "PROCESSED" || !g.competencia) recusar("correcao_exige_revisao", "Esta guia exige revisão da composição antes de alterar o valor.");
-  if (g.baixada || g.paymentStatus === "PAID" || g.paymentConfirmedAt || g.clienteConfirmouEm || g.comprovantePdfFileId) recusar("guia_com_pagamento", "A guia tem registro de pagamento e exige revisão contábil.");
+  const impedimentoGuia = motivoImpedimentoDaGuia(g);
+  if (impedimentoGuia) recusar(impedimentoGuia.code, impedimentoGuia.message);
   const entradas = g.accountingEntries;
-  if (entradas.length > 1) recusar("provisao_composta", "Há mais de um lançamento vinculado. Revise a composição antes de corrigir.");
-  for (const e of entradas) {
-    if (e.portalClientId !== companyId || e.status !== "RASCUNHO" || e.tipo !== "PROVISAO" || e.statusPagamento === "PAGO" || e.baixas.length || e.parcelamentoId || e.circularId || e.openEntryId || e.estornoDeEntryId) recusar("provisao_nao_editavel", "O lançamento vinculado exige revisão contábil antes da correção.");
-    if (e.lines.length !== 2 || e.lines.filter(l => l.tipo === "D").length !== 1 || e.lines.filter(l => l.tipo === "C").length !== 1 || centavos(e.lines[0].valor) !== centavos(e.lines[1].valor) || ![centavos(g.valor), centavos(novoValor)].includes(centavos(e.lines[0].valor))) recusar("provisao_divergente", "Os valores do lançamento não correspondem à guia. Revise o lançamento.");
-  }
-  if ((await competenciasFechadas(companyId, [g.competencia, ...entradas.map(e => e.competencia)], db)).size) recusar("competencia_fechada", "A competência está fechada e não permite esta correção.");
+  const impedimentoProvisao = motivoImpedimentoDaProvisao(entradas, companyId, g.valor, novoValor);
+  if (impedimentoProvisao) recusar(impedimentoProvisao.code, impedimentoProvisao.message);
+  const fechadas = await competenciasFechadas(companyId, [g.competencia, ...entradas.map(e => e.competencia)], db);
+  const impedimentoFechamento = motivoImpedimentoPorFechamento(fechadas);
+  if (impedimentoFechamento) recusar(impedimentoFechamento.code, impedimentoFechamento.message);
   const revisao = createHash("sha256").update(JSON.stringify(g)).digest("hex");
   return { g, revisao };
 }
 
 export async function preverCorrecaoValorGuia({ companyId, guideId, valor }, { db = prisma, carregarPdf = getGuidePdfBuffer, ler = lerLinhaDigitavelDoPdf } = {}) {
-  const novoValor = valorValido(valor);
+  const centavos = valorDaCorrecaoEmCentavos(valor);
+  if (centavos === null) recusar("valor_invalido", "Informe o valor positivo da guia, com até duas casas decimais.", 400);
+  const novoValor = centavos / 100;
   const { g, revisao } = await carregar(db, companyId, guideId, novoValor);
   const pdf = await carregarPdf(g);
   const leitura = await ler(pdf, { valorTotal: novoValor, vencimento: g.vencimento });
-  if (!leitura.linhaDigitavel || leitura.linhaDigitavelMotivo) recusar("pdf_nao_confirma_valor", "O PDF original não confirmou este valor pela linha digitável. Corrija após revisar o documento.");
+  if (!evidenciaConfirmaValor(leitura)) recusar("pdf_nao_confirma_valor", "O PDF original não confirmou este valor pela linha digitável. Corrija após revisar o documento.");
   return { guideId, companyId, valorAtual: Number(g.valor), novoValor, revisao, lancamentosAfetados: g.accountingEntries.length,
     pdfPreservado: true, linhaConfirmada: true, _leitura: leitura };
 }
