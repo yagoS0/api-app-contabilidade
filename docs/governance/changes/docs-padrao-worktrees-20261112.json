@@ -1,0 +1,14 @@
+{
+  "summary": "Documenta o ambiente Windows para criar ou reutilizar worktrees na instalação autorizada e inclui um link nas instruções da raiz.",
+  "baseCommit": "4b1b071b6593be5a33be79c1aced5464dc980c43",
+  "risk": "high",
+  "domains": ["documentation", "governance"],
+  "operationalImpact": "Orientação para agentes e desenvolvedores. Preserva controlador, fonte de regras, papéis de revisão, fluxos do produto e checkouts anteriores.",
+  "tests": [
+    "37 testes de check, orchestrate, bootstrap e data-gate aprovados. O resolvedor do controlador retornou canonical via junção e repositoryFallback no modo de CI, com o mesmo SHA-256 registrado na referência.",
+    "Ambos os exemplos PowerShell passaram por ParseFile. Preflight somente leitura aceitou o checkout canônico e a base anunciada pelo remoto e recusou o clone homônimo, a worktree como checkout principal, destino ocupado, nome reservado, travessia de caminho e divergência de SHA simulada.",
+    "O plano classificou documentation e governance, com risco high e sem caminhos desconhecidos. O link do AGENTS.md resolve para o guia."
+  ],
+  "rollback": "Reverter o commit documental. A junção local precede o commit e continua reservada à fonte canônica. Não mover nem excluir checkouts, dados ou evidências.",
+  "humanDecisions": ["A revisão e a integração da documentação dependem de decisão própria. Arquivamento, remoção e descarte não foram autorizados."]
+}
