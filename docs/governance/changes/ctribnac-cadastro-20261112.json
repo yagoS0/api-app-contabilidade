@@ -18,6 +18,9 @@
   ],
   "reviewProcess": "O controlador iniciou a execução 2026-11-12T12-46-53-706Z-b7597363 e escalou por tempo limite do executor. Revisão independente posterior identificou a necessidade de rejeitar dados inválidos antes de armazenar a tabela em cache e de manter a carteira atualizada quando o salvamento termina após trocar de empresa. Ambos tratados na candidata. A execução formal do controlador não chegou à aprovação.",
   "rollback": "Reverter os commits desta branch na ordem inversa. Dados salvos ficam preservados. A versão anterior do catálogo não permite escolher os três códigos adicionados; conferir empresas que os habilitaram antes de eventual reversão. Não alterar registros nem reenviar documentos.",
+  "humanDecisions": [
+    "A integração do PR depende da revisão do diff final, da conclusão da CI hospedada e de autorização explícita para merge. O deploy exige autorização separada."
+  ],
   "limitations": [
     "Sem acesso a registros da sessão de produção da captura. O estado de lista vazia e a falha de leitura foram reproduzidos separadamente.",
     "Validação com dados sintéticos, sem homologação municipal externa. Integração e publicação exigem autorização."
