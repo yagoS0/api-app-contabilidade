@@ -60,3 +60,21 @@ node scripts/governance/arquitetura/verificar.cjs diagnose "$PR_CHECKOUT" baseli
 Use o merge-base efetivo do PR como referência. Em `diagnose`, os acréscimos aparecem no relatório; um erro técnico de execução falha o diagnóstico. O legado conhecido não concede licença para novas violações. Revise os achados no diff, registre a decisão e preserve a linha de base. O modo bloqueante `check` só deve ser promovido após aprovação específica.
 
 Imports dinâmicos, apelidos do cliente, efeitos indiretos, propriedade por campo, permissões, segurança dos SDKs, comportamento de frontend e atomicidade não são integralmente verificáveis por essa análise. Para esses pontos, a evidência vem do diff, dos testes e dos revisores do fluxo normal. Instruções arquiteturais não mudam os poderes do controlador nem substituem a política de risco.
+
+## Não regressão e exceções temporárias
+
+Avalie cada acréscimo ou ampliação de uma dependência indevida por regra, origem e destino. A remoção de um achado em outro ponto não compensa uma regressão. Durante o diagnóstico, o autor e os revisores tratam cada achado novo no PR: corrigem a violação, demonstram um falso positivo com evidência reproduzível ou registram uma exceção temporária pelo fluxo de risco vigente. Um PR pode ter CI verde em `diagnose` e ainda exigir correção na revisão.
+
+Quando uma restrição concreta de compatibilidade impedir a correção no incremento, registre no arquivo da mudança em `docs/governance/changes/`: regra, caminho e operação exatos; motivo e alternativas avaliadas; domínios e consumidores afetados; risco e teste compensatório; responsável pela remoção; data limite e tarefa rastreável com critério de encerramento. Submeta o registro aos mesmos revisores e à aprovação humana aplicável. Uma exceção arquitetural não dispensa autorização por empresa, proteção de dados, atomicidade contratada ou regras operacionais.
+
+O achado permanece visível. Não altere o baseline, o verificador ou a abrangência do diagnóstico para ocultá-lo. Quem revisa uma mudança no trecho consulta também as exceções ainda abertas: após a integração a ocorrência pode já fazer parte do baseline. O responsável verifica a pendência até a data limite; no vencimento, a autorização expirou. Remova a violação ou apresente nova justificativa, prazo e revisão antes de continuar se apoiando nela. Registre o encerramento com o diff da remoção e o teste correspondente. O verificador atual não lê registros de exceção nem controla prazos.
+
+## Condições para promover o diagnóstico a bloqueio
+
+A promoção requer uma mudança separada de governança. Antes de aprová-la:
+
+1. Nomear as regras, diretórios e eventos cobertos. O `check` atual avalia toda a API; um bloqueio restrito a um piloto exige antes um filtro testado. Definir o resultado esperado para PRs fora do escopo e preservar a CI existente.
+2. Comprovar em CI hospedada, no SHA candidato e sobre o merge-base efetivo, que o comando proposto retorna **0** em diff limpo ou que só reduz legado, **1** em fixture com nova violação e **2** em erro técnico. Ter casos aceitos e recusados para cada regra a promover, inclusive substituição de uma ocorrência por outra de chave diferente.
+3. Classificar os achados das mudanças representativas de cada regra e resolver todos os falsos positivos impeditivos antes da promoção. Documentar os limites de detecção. Para cada exceção aberta no escopo, demonstrar sua remoção ou testar o tratamento explícito, restrito à ocorrência e com expiração. Sem esse mecanismo, um acréscimo excepcional continua reprovando em `check`.
+4. Usar uma versão confiável e identificada do analisador e do parser nas duas árvores; exigir revisão independente de mudanças no verificador e no workflow. Ensaiar retorno a `diagnose` sem perder o relatório, os testes ou o histórico das exceções.
+5. Anexar os SHAs, logs e pareceres ao registro da mudança e obter aprovação explícita para ativação. Só então configurar o check obrigatório correspondente. Até lá, o workflow permanece em `diagnose`.

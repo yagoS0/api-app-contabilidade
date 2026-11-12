@@ -17,5 +17,6 @@
   ],
   "rollback": "Reverter os commits desta entrega em ordem inversa. Se o piloto já estiver integrado, conservar os arquivos e a dependência comuns ao #259 e retirar apenas o job geral, a fixture nova e os complementos exclusivos desta entrega. Nenhuma reversão de dados.",
   "humanDecisions": ["Escopo aprovado: preparar e testar a governança arquitetural em branch independente. A ativação de bloqueio de novas violações, o merge e o deploy exigem decisão posterior."],
-  "limitations": ["A análise estática automatizada cobre apps/api/src. Propriedade semântica, isolamento por empresa, transações, segurança e fronteiras de frontend exigem testes e revisão de escopo. Verificação local; CI hospedada desta entrega não acionada."]
+  "finalReview": "O complemento documental explicita não regressão por ocorrência, gestão e vencimento de exceções e evidências para futura promoção a bloqueio. Não concede exceções nem ativa check. A preparação do PR não altera o runtime ou os critérios de autoridade vigentes.",
+  "limitations": ["A análise estática automatizada cobre apps/api/src. Propriedade semântica, isolamento por empresa, transações, segurança, exceções temporárias e fronteiras de frontend exigem testes e revisão de escopo. Consultar as execuções hospedadas vinculadas ao SHA final do PR."]
 }
