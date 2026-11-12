@@ -1268,10 +1268,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   async function handleUpdateEmissaoNfse(companyId, campos) {
     if (!companyId) return { ok: false };
+    const tela = telaAtual.current;
     setEmissaoNfseSaving(true);
     feedback.clearFeedback();
     try {
       const res = await api.updateEmissaoNfse(companyId, campos);
+      if (res?.ok !== true || !res.emissaoNfse) throw new Error("A gravação da configuração de emissão não foi confirmada.");
+      if (contextoEmpresas.current.page === "login" || contextoEmpresas.current.api !== api) return res;
+      if (empresaAtualGuias.current !== companyId) {
+        await loadCompanies();
+        return res;
+      }
       // ⚠ O FORMULÁRIO DO CADASTRO É ATUALIZADO JUNTO, e sem isto haveria um jeito de desfazer o
       // que acabou de ser salvo: o `editCompanyForm` é remapeado só quando MUDA DE EMPRESA, então
       // ele continuaria segurando a série antiga — e o "Salvar alterações" da aba Cadastro, que
@@ -1300,10 +1307,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // A aba lê o que está gravado a partir do payload da empresa — sem recarregar, ela mostraria
       // o valor anterior até a próxima navegação.
       await loadCompanies();
-      feedback.setMessage("Configuração de emissão de NFS-e salva.");
+      if (telaAtual.current === tela) feedback.setMessage("Configuração de emissão de NFS-e salva.");
       return res;
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao salvar a configuração de emissão de NFS-e.");
+      if (telaAtual.current === tela) feedback.setError(err?.message || "Falha ao salvar a configuração de emissão de NFS-e.");
       throw err;
     } finally {
       setEmissaoNfseSaving(false);
