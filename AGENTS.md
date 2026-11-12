@@ -1,5 +1,7 @@
 # Interface ALTAN
 
+Antes de implementar ou revisar uma funcionalidade, aplique [Arquitetura da Altan](docs/governance/ARQUITETURA.md) e as instruções locais. Registre no fluxo de governança os contextos donos, os consumidores afetados e a evidência de compatibilidade ou alteração de cada contrato.
+
 Ao modificar a interface, siga os tokens e componentes existentes e os critérios de `docs/design-review.md`. Leia as decisões específicas em CLAUDE.md do módulo; decisões posteriores do usuário prevalecem sobre planos antigos.
 
 Verifique pesos tipográficos, textos auxiliares, posição/tamanho de ações, sequência dos campos, separação de seções e responsividade. Preserve consequências, avisos fiscais, estados de erro e acessibilidade. Valide as telas afetadas em computador e celular quando houver mudança de layout.
