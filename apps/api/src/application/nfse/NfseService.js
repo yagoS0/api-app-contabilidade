@@ -381,9 +381,8 @@ function resolverCLocEmi(company) {
     );
     err.code = "NFSE_MUNICIPIO_NAO_CONFIGURADO";
     err.correcao =
-      "Cadastre o código IBGE de 7 dígitos do município da empresa. ⚠ O sistema guarda hoje apenas " +
-      "o NOME do município (PortalClient.municipio), e converter nome→IBGE por conta própria erra " +
-      "em homônimo — o código tem de ser informado, não deduzido.";
+      "Em Editar cadastro → Inscrições → Município emissor da nota, selecione o município do " +
+      "estabelecimento pelo código IBGE e salve as alterações. O município da prestação é um campo separado.";
     throw err;
   }
   return bruto;
