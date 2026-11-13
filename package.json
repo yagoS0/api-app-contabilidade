@@ -22,5 +22,8 @@
     "governance:run": "node scripts/governance/orchestrate.mjs",
     "governance:test": "node --test scripts/governance/check.test.mjs scripts/governance/orchestrate.test.mjs scripts/governance/bootstrap.test.mjs scripts/governance/data-gate.test.mjs",
     "governance:acceptance": "node scripts/governance/acceptance.mjs"
+  },
+  "devDependencies": {
+    "@babel/parser": "7.29.0"
   }
 }
