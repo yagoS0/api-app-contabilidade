@@ -126,8 +126,8 @@ const FRASE_DO_CLIENTE = Object.freeze({
     correcao: "Quem corrige esse cadastro é o seu contador. Fale com ele.",
   },
   NFSE_MUNICIPIO_NAO_CONFIGURADO: {
-    message: "O município da sua empresa não está configurado para emitir.",
-    correcao: "Quem preenche isso é o seu contador, no cadastro da empresa. Fale com ele.",
+    message: "Falta um código de município emissor válido no cadastro da empresa.",
+    correcao: "Peça ao contador para selecionar o município do estabelecimento em Editar cadastro → Inscrições → Município emissor da nota (código IBGE) e salvar. O município da prestação é preenchido separadamente.",
   },
   NFSE_REGIME_INDEFINIDO: {
     message: "O regime tributário desta empresa não está cadastrado.",

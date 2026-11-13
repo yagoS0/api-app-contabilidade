@@ -906,6 +906,7 @@ function CompanyDetailContent({
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
               <NotasFiscaisTab
+                canEditCompany={canEditCompany}
                 hrefIntegracoes={companyTabPath(companyId, 'integracoes')}
                 onAbrirIntegracoes={() => switchTab('integracoes')}
                 notasPanel={notasPanel}

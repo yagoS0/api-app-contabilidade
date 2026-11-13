@@ -294,6 +294,7 @@ function buildCompanyPayload(input) {
                 regime: String(r?.regime || "").trim(),
                 apuracaoIbsCbs: r?.apuracaoIbsCbs || null,
                 comprovanteOpcaoIbsCbs: String(r?.comprovanteOpcaoIbsCbs || "").trim() || null,
+                observacao: r?.observacao ?? null,
                 vigenciaInicio: String(r?.vigenciaInicio || "").trim(),
                 vigenciaFim: String(r?.vigenciaFim || "").trim() || null,
                 // O form guarda "ISS/PIS/COFINS" (como a ficha escreve); a API quer array.
