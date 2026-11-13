@@ -8,6 +8,7 @@ import { MunicipioDoPerfil } from "./MunicipioDoPerfil";
 import { completudePerfilEmissao } from './completudePerfilEmissao';
 import { CampoCatalogo } from '../../../notas/components/CampoCatalogo';
 import { catalogosDoPerfil } from '../../../../lib/nfse/catalogosDoPerfil';
+import { carregarServicosNacionais } from '../../../../lib/servicosNacionais/servicoNacional';
 import { itemDoCatalogo } from '../../../../lib/nfse/buscaCatalogo';
 
 const GRUPOS = [
@@ -18,7 +19,7 @@ const GRUPOS = [
 ];
 
 
-export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, salvando }) {
+export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, salvando, catalogoPendente, onHabilitarServico }) {
   const [form, setForm] = useState(null);
   const [erro, setErro] = useState("");
   const novoRef = useRef(null), editoresRef = useRef(new Map()), retornoRef = useRef(null);
@@ -29,7 +30,21 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
     retornoRef.current = null;
   }, [form]);
   const campos = dados?.campos || CAMPOS_PERFIL_EMISSAO;
-  const catalogos = catalogosDoPerfil(dados, campos);
+  const temHabilitados = Boolean(dados?.sugestoes?.porServico?.length);
+  const [descricoes, setDescricoes] = useState(null);
+  const [falhaLista, setFalhaLista] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
+  useEffect(() => {
+    if (!temHabilitados || descricoes) return;
+    let ativo = true;
+    carregarServicosNacionais().then(({ servicos }) => {
+      if (!servicos.length) throw new Error('Lista oficial vazia');
+      if (ativo) setDescricoes(new Map(servicos));
+    }).catch(() => { if (ativo) setFalhaLista(true); });
+    return () => { ativo = false; };
+  }, [temHabilitados, descricoes, tentativa]);
+  const aguardandoCatalogo = catalogoPendente || (temHabilitados && !descricoes);
+  const catalogos = catalogosDoPerfil(dados, campos, descricoes);
   const original = form?.id ? dados?.perfis?.find((p) => p.id === form.id) : { ...dados?.derivadoDoCadastro, nome: '', ativo: true, padrao: false };
   useEdicaoPendente(Boolean(form && (form._buscaMunicipio?.trim() || JSON.stringify(corpoDoPerfil(form, campos)) !== JSON.stringify(corpoDoPerfil(original || {}, campos)))));
   const servico = dados?.sugestoes?.porServico?.find((s) => s.codigo === form?.codigoServicoNacional);
@@ -38,6 +53,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
     ...(id === 'codigoServicoNacional' && valor !== anterior.codigoServicoNacional ? { _revisarServico: true } : {}) }));
   async function salvar(e) {
     e.preventDefault();
+    if (aguardandoCatalogo) return;
     setErro("");
     if (form._revisarIa) { setErro('Confira a sugestão da IA e confirme a revisão antes de salvar.'); return; }
     const normalizado = { ...form };
@@ -47,7 +63,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
       const item = itemDoCatalogo(itens, valor);
       // Compatibilidade com respostas antigas sem o catálogo completo: preserva
       // somente o valor já salvo; buscas novas exigem uma escolha verificável.
-      if (!item && valor !== String(original?.[id] ?? '')) {
+      if (!item && (valor !== String(original?.[id] ?? '') || (id === 'codigoServicoNacional' && !form.id))) {
         setErro(`Selecione uma sugestão para ${campos.find(c => c.id === id)?.rotulo || id}, ou limpe o campo.`);
         return;
       }
@@ -86,7 +102,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
       {!dados.perfis?.length && <p className="nfse-empty">Nenhum perfil cadastrado. Crie um perfil para organizar os parâmetros de cada serviço.</p>}
       <ul className="nfse-profile-list">{(dados.perfis || []).map((p) => <li key={p.id}>
         <div><strong>{p.nome}</strong><span>{p.codigoServicoNacional || "Serviço não configurado"} {p.padrao ? "· Padrão" : ""} {p.ativo === false ? "· Inativo" : "· Ativo"}</span>
-          <small>{dados.sugestoes?.porServico?.find(s => s.codigo === p.codigoServicoNacional)?.descricao}</small><p>{completudePerfilEmissao(p)}</p></div>
+          <small>{catalogos.codigoServicoNacional.find(s => s.codigo === p.codigoServicoNacional)?.descricao}</small><p>{completudePerfilEmissao(p)}</p></div>
         <Button ref={el => { if (el) editoresRef.current.set(p.id, el); else editoresRef.current.delete(p.id); }} type="button" variant="secondary" aria-label={`Editar ${p.nome}`} onClick={() => { setErro(""); setForm({ ...p }); }}>Editar</Button>
       </li>)}</ul>
     </> : <form onSubmit={salvar} className="nfse-profile-form" onInvalidCapture={e => { const secao = e.target.closest("details"); if (secao) secao.open = true; }}>
@@ -103,6 +119,17 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
           {ids.map((id) => {
             const c = campos.find((v) => v.id === id);
             if (!c) return null;
+            if (id === 'codigoServicoNacional' && (aguardandoCatalogo || !catalogos[id].length)) return <div key={id}>
+              <label htmlFor="perfil-codigoServicoNacional">{c.rotulo}</label>
+              <input id="perfil-codigoServicoNacional" value={form[id] ?? ''} readOnly />
+              {catalogoPendente ? <p role="status">Aguardando a consulta dos serviços habilitados da empresa.</p>
+                : temHabilitados && !descricoes ? (falhaLista ? <>
+                  <p role="alert">Não foi possível carregar a lista oficial de códigos de serviço.</p>
+                  <Button type="button" variant="secondary" onClick={() => { setFalhaLista(false); setTentativa(n => n + 1); }}>Recarregar lista oficial</Button>
+                </> : <p role="status">Carregando a lista oficial de códigos de serviço…</p>)
+                : <><p>{temHabilitados ? 'Os serviços habilitados não constam do Anexo B vigente. Confira os códigos no cadastro.' : 'Nenhum serviço habilitado para esta empresa. Escolha um serviço no cadastro e salve a configuração de emissão.'}</p>
+                {onHabilitarServico && <Button type="button" variant="secondary" onClick={onHabilitarServico}>Habilitar serviço no cadastro</Button>}</>}
+            </div>;
             if (id === "cLocPrestacao") return <MunicipioDoPerfil compacto key={id}
               codigo={form.cLocPrestacao} busca={form._buscaMunicipio}
               onBuscar={texto => setForm(anterior => ({ ...anterior, cLocPrestacao: null, _buscaMunicipio: texto }))}
@@ -113,6 +140,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
             if (catalogos[id]) return <div key={id} className={id === 'ibscbsCClassTrib' ? 'full' : undefined}>
               <CampoCatalogo compacto id={`perfil-${id}`} rotulo={c.rotulo} valor={form[id]}
                 itens={catalogos[id]} required={c.obrigatorio} onChange={valor => mudar(id, valor)} />
+              {id === 'codigoServicoNacional' && form[id] && form[id] === original?.[id] && !descricoes?.has(form[id]) && <small>Código cadastrado fora do Anexo B vigente. Confira o cadastro.</small>}
               {id === 'cAtvSN' && <small>Usado na preparação de 2027. A emissão permanece bloqueada até a homologação.</small>}
             </div>;
             return <div key={id} className={id === "codigoServicoNacional" || id === "codigoNbs" ? "full" : undefined}>
@@ -153,7 +181,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, onSugerir, podeEditar, sa
         {erro && <p role="alert">{erro}</p>}
         <div className="nfse-profile-actions">
           <Button type="button" variant="secondary" disabled={salvando} onClick={fecharFormulario}>Cancelar edição</Button>
-          <Button variant="primary" type="submit" disabled={salvando}>{salvando ? "Salvando…" : "Salvar perfil"}</Button>
+          <Button variant="primary" type="submit" disabled={salvando || aguardandoCatalogo || ((!form.id || !form.codigoServicoNacional) && !catalogos.codigoServicoNacional.length)}>{salvando ? "Salvando…" : "Salvar perfil"}</Button>
         </div>
       </fieldset>
     </form>}

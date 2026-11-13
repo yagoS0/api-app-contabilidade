@@ -1,6 +1,6 @@
 // A REGRA do código de tributação nacional (`cTribNac`). O DADO (a lista oficial) mora ao lado, em
 // `servicosNacionais.data.js`, e é carregado por `import()` dinâmico — regra e dado separados pelo
-// mesmo motivo da lista de municípios: são 335 códigos com descrições longas, e a tabela não pode
+// mesmo motivo da lista de municípios: são centenas de códigos com descrições longas, e a tabela não pode
 // entrar no bundle inicial só para que a regra seja testável.
 //
 // ⚠ O QUE MUDOU, E POR QUÊ. Até 15/08/2026 o `cTribNac` era um campo DIGITADO, e a razão escrita em
@@ -209,10 +209,12 @@ let promessaDaLista = null;
 export function carregarServicosNacionais() {
   if (!promessaDaLista) {
     promessaDaLista = import("./servicosNacionais.data.js")
-      .then((m) => ({
-        servicos: m.SERVICOS_NACIONAIS || [],
-        grupos: m.GRUPOS_SERVICO_NACIONAL || [],
-      }))
+      .then(({ SERVICOS_NACIONAIS: servicos, GRUPOS_SERVICO_NACIONAL: grupos }) => {
+        if (!Array.isArray(servicos) || !servicos.length || !Array.isArray(grupos) || !grupos.length) {
+          throw new Error("A lista oficial de serviços nacionais está incompleta.");
+        }
+        return { servicos, grupos };
+      })
       .catch((err) => {
         // Falha de carga não pode virar "lista vazia" permanente: sem zerar a promessa, a próxima
         // abertura da tela repetiria o erro sem nunca tentar de novo.

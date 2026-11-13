@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { EditorPerfilEmissao } from '../EditorPerfilEmissao';
+import * as tabelaNacional from '../../../../../lib/servicosNacionais/servicoNacional';
 import { corpoDoPerfil } from '../EditorPerfilEmissao.shared.js';
 import { CAMPOS_PERFIL_EMISSAO } from "../../../../../lib/nfse/perfilEmissao";
 
@@ -16,10 +17,48 @@ const dados = {
   ] },
 };
 
+it('preserva o rascunho na falha da lista oficial e restringe a busca aos serviços habilitados após tentar novamente', async () => {
+  const carga = jest.spyOn(tabelaNacional, 'carregarServicosNacionais').mockRejectedValueOnce(new Error('Offline'));
+  const onSalvar = jest.fn();
+  try {
+    render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+    fireEvent.change(screen.getByLabelText('Nome do perfil'), { target: { value: 'Rascunho' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar');
+    expect(screen.getByRole('button', { name: 'Salvar perfil' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recarregar lista oficial' }));
+    const codigo = await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
+    expect(codigo).toHaveValue('171901');
+    expect(screen.getByLabelText('Nome do perfil')).toHaveValue('Rascunho');
+    fireEvent.change(codigo, { target: { value: '070103' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Selecione uma sugestão');
+    expect(onSalvar).not.toHaveBeenCalled();
+  } finally {
+    carga.mockRestore();
+  }
+});
+
+it('mantém visível o código legado já salvo e permite conferi-lo sem sugeri-lo como escolha nova', async () => {
+  const legado = '999999';
+  const onSalvar = jest.fn();
+  render(<EditorPerfilEmissao dados={{ ...dados, perfis: [{ ...dados.perfis[0], codigoServicoNacional: legado }],
+    sugestoes: { ...dados.sugestoes, porServico: [...dados.sugestoes.porServico, { codigo: legado }] } }} podeEditar onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  const codigo = await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
+  expect(codigo).toHaveValue(legado);
+  expect(screen.getByText(/fora do Anexo B vigente/)).toBeVisible();
+  fireEvent.focus(codigo);
+  expect(screen.queryByRole('option', { name: /999999/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  await waitFor(() => expect(onSalvar).toHaveBeenCalledWith('p1', expect.objectContaining({ codigoServicoNacional: legado })));
+});
+
 it('busca todos os catálogos por descrição, seleciona código e nunca salva o texto da pesquisa', async () => {
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   for (const [rotulo, termo, codigo] of [
     ['Item da NBS', 'contabilidade', '1.1302.21.00'],
     ['Código indicador da operação (IBS/CBS)', 'domicilio', '100301'],
@@ -52,6 +91,7 @@ it('alterar serviço preserva os códigos mas exige revisão explícita antes de
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={{ ...dados, sugestoes: { ...dados.sugestoes, porServico: [...dados.sugestoes.porServico, { codigo: '170601', descricao: 'Publicidade' }] } }} podeEditar onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   fireEvent.change(document.getElementById('perfil-codigoServicoNacional'), { target: { value: '170601' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
   expect(onSalvar).not.toHaveBeenCalled();
@@ -66,6 +106,7 @@ it("busca município por nome e UF e salva o código IBGE da escolha", async () 
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   fireEvent.change(screen.getByRole("combobox", { name: "Município da prestação" }), { target: { value: "sao paulo sp" } });
   fireEvent.click(await screen.findByRole("option", { name: /São Paulo \/ SP.*3550308/ }));
   expect(screen.getByRole("combobox", { name: "Município da prestação" })).toHaveValue("São Paulo / SP");
@@ -78,6 +119,7 @@ it("mostra a cidade do código salvo e exige seleção ao trocar o nome", async 
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={{ ...dados, perfis: [{ ...dados.perfis[0], cLocPrestacao: "3304557" }] }} podeEditar onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   await waitFor(() => expect(screen.getByRole("combobox", { name: "Município da prestação" })).toHaveValue("Rio de Janeiro / RJ"));
   fireEvent.change(screen.getByRole("combobox", { name: "Município da prestação" }), { target: { value: "Bom Jesus" } });
   fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
@@ -93,6 +135,7 @@ it('salva a categoria do prazo sem inferir pelo serviço e informa integrações
   render(<EditorPerfilEmissao dados={{ ...dados, integracaoLigada: false, ibscbsLigado: false }} podeEditar onSalvar={onSalvar} />);
   expect(screen.getByText(/O envio de IBS\/CBS está desativado/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Editar Contabilidade' }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   expect(screen.getByLabelText('Categoria da operação para o prazo de IBS/CBS')).toHaveValue('');
   fireEvent.change(screen.getByLabelText('Categoria da operação para o prazo de IBS/CBS'), { target: { value: 'SERVICO_ISS' } });
   fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
@@ -103,6 +146,7 @@ it("sugestão só preenche após escolha; CST permanece decisão do contador", a
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
   fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   expect(screen.getByLabelText("Item da NBS")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("Sugestões de NBS para o serviço"), { target: { value: "1.1302.21.00" } });
   expect(screen.getByLabelText("Sugestões de NBS para o serviço")).toHaveValue("1.1302.21.00");
@@ -119,6 +163,7 @@ it("sugestão só preenche após escolha; CST permanece decisão do contador", a
 it("mostra erro de gravação e preserva edição", async () => {
   render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={async () => { throw new Error("Perfil inválido"); }} />);
   fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
+  await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
   fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Perfil inválido");
   expect(screen.getByLabelText("Nome do perfil")).toHaveValue("Contabilidade");
@@ -142,5 +187,5 @@ it.each(['Novo perfil','Editar Contabilidade'])('foco entra no nome e retorna ao
  render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn()}/>);fireEvent.click(screen.getByRole('button',{name:gatilho}));expect(screen.getByLabelText('Nome do perfil')).toHaveFocus();fireEvent.click(screen.getByRole('button',{name:'Cancelar edição'}));expect(screen.getByRole('button',{name:gatilho})).toHaveFocus();
 });
 it('salvar edição devolve foco ao perfil editado',async()=>{
- render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn(async()=>{})}/>);fireEvent.click(screen.getByRole('button',{name:'Editar Contabilidade'}));fireEvent.click(screen.getByRole('button',{name:'Salvar perfil'}));await waitFor(()=>expect(screen.getByRole('button',{name:'Editar Contabilidade'})).toHaveFocus());
+ render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn(async()=>{})}/>);fireEvent.click(screen.getByRole('button',{name:'Editar Contabilidade'}));await screen.findByRole('combobox',{name:'Código de Tributação Nacional'});fireEvent.click(screen.getByRole('button',{name:'Salvar perfil'}));await waitFor(()=>expect(screen.getByRole('button',{name:'Editar Contabilidade'})).toHaveFocus());
 });

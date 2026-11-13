@@ -3,14 +3,14 @@
 // ⚠ ARQUIVO GERADO. Não editar à mão.
 //   node apps/api/scripts/gerar-lista-servico-nacional.mjs
 //
-// FONTE: https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx
-//        (página: https://www.gov.br/nfse/pt-br/mei-e-demais-empresas/codigos-de-tributacao-nacional-nbs)
-// ARQUIVO: docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx
-//          SHA-256 a588fea05010a037826d826dd74520e32651bee926f2faa1ffd2794fba55d424
+// FONTE: https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx
+//        (página: https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual)
+// ARQUIVO: docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx
+//          SHA-256 e74b0be8ad204e458932efb1716225a3fb5703a84e5475ce5c4c6789d1c61b1a
 // ABA: LISTA.SERV.NAC.
-// EXTRAÍDO EM: 2026-08-16
-// REGISTROS: 335 códigos selecionáveis + 242 linhas de agrupamento
-//            (577 linhas de dados na planilha).
+// EXTRAÍDO EM: 2026-11-12
+// REGISTROS: 338 códigos selecionáveis + 242 linhas de agrupamento
+//            (580 linhas de dados na planilha).
 //
 // ⚠ O cTribNac NÃO É O ITEM DA LC 116. Ele é `item(2) + subitem(2) + desdobro nacional(2)` = 6
 // dígitos. O item LC 116 `31.01` é "serviços técnicos em … telecomunicações e congêneres"; o
@@ -21,7 +21,7 @@
 // ⚠ A ARMADILHA DA PLANILHA, MEDIDA: a coluna do código é NUMÉRICA, e `010101` sai do arquivo
 // como o número `10101` — o zero à esquerda some. Os códigos abaixo estão com padding para 6, e
 // o gerador PROVA o padding conferindo cada um contra as colunas ITEM/SUBITEM/DESDOBRO da própria
-// planilha (335/335 conferem; qualquer divergência aborta a geração).
+// planilha (338/338 conferem; qualquer divergência aborta a geração).
 //
 // ⚠ LINHAS SEM CÓDIGO NA PLANILHA SÃO AGRUPAMENTO, não serviço. Elas dão o nome do ITEM e do
 // SUBITEM, e é por isso que estão aqui em `GRUPOS_SERVICO_NACIONAL` em vez de descartadas: é o
@@ -34,7 +34,7 @@
 //   4. rode `npm test -w @contabilidade/web` — há teste travando contagem, padding e o primeiro
 //      código da lista (`010101`, nunca `10101`).
 //
-// Formato: `[código (6 dígitos), descrição]`. Tupla em vez de objeto porque são 335 linhas;
+// Formato: `[código (6 dígitos), descrição]`. Tupla em vez de objeto porque são 338 linhas;
 // o arquivo é carregado por import() dinâmico e não entra no bundle inicial.
 
 export const SERVICOS_NACIONAIS = [
@@ -220,6 +220,8 @@ export const SERVICOS_NACIONAIS = [
   ["141302","Serralheria."],
   ["141401","Guincho intramunicipal."],
   ["141402","Guindaste e içamento."],
+  ["141403","Guincho intramunicipal em construção civil."],
+  ["141404","Guindaste e içamento em construção civil."],
   ["150101","Administração de fundos quaisquer e congêneres."],
   ["150102","Administração de consórcio e congêneres."],
   ["150103","Administração de cartão de crédito ou débito e congêneres."],
@@ -335,7 +337,8 @@ export const SERVICOS_NACIONAIS = [
   ["180103","Serviços de prevenção e gerência de riscos seguráveis e congêneres."],
   ["190101","Serviços de distribuição e venda de bilhetes e demais produtos de loteria, cartões, pules ou cupons de apostas, sorteios, prêmios, inclusive os decorrentes de títulos de capitalização e congêneres."],
   ["190102","Serviços de distribuição e venda de bingos e congêneres."],
-  ["200101","Serviços portuários, ferroportuários, utilização de porto, movimentação de passageiros, reboque de embarcações, rebocador escoteiro, atracação, desatracação, serviços de praticagem, capatazia, armazenagem de qualquer natureza, serviços acessórios, movimentação de mercadorias, serviços de apoio marítimo, de movimentação ao largo, serviços de armadores, estiva, conferência, logística e congêneres."],
+  ["200101","Serviços portuários, ferroportuários, utilização de porto, movimentação de passageiros, reboque de embarcações, rebocador escoteiro, atracação, desatracação, serviços de praticagem, capatazia, armazenagem de qualquer natureza, serviços acessórios, movimentação de mercadorias, serviços de apoio marítimo, de movimentação ao largo, serviços de armadores, estiva, conferência, logística e congêneres. (prestado em terra)"],
+  ["200102","Serviços portuários, ferroportuários, utilização de porto, movimentação de passageiros, reboque de embarcações, rebocador escoteiro, atracação, desatracação, serviços de praticagem, capatazia, armazenagem de qualquer natureza, serviços acessórios, movimentação de mercadorias, serviços de apoio marítimo, de movimentação ao largo, serviços de armadores, estiva, conferência, logística e congêneres. (prestado em águas marinhas)"],
   ["200201","Serviços aeroportuários, utilização de aeroporto, movimentação de passageiros, armazenagem de qualquer natureza, capatazia, movimentação de aeronaves, serviços de apoio aeroportuários, serviços acessórios, movimentação de mercadorias, logística e congêneres."],
   ["200301","Serviços de terminais rodoviários, ferroviários, metroviários, movimentação de passageiros, mercadorias, inclusive suas operações, logística e congêneres."],
   ["210101","Serviços de registros públicos, cartorários e notariais."],

@@ -278,6 +278,41 @@ describe("GET — o painel do que a próxima DPS vai levar", () => {
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("company_legada_ausente");
   });
+
+  it("responde 404 quando o portal da empresa realmente não existe", async () => {
+    prismaMock.portalClient.findUnique.mockResolvedValue(null);
+    const r = await request(app).get(URL);
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe("portal_company_not_found");
+  });
+
+  it("responde 409 quando o vínculo aponta para um Company inexistente", async () => {
+    prismaMock.company.findUnique.mockResolvedValue(null);
+    const r = await request(app).get(URL);
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("company_legada_ausente");
+  });
+
+  it.each(["portalClient", "company"])("falha de leitura em %s resulta em 503 mesmo com perfil já salvo", async modelo => {
+    prismaMock.perfilEmissaoNfse.findMany.mockResolvedValue([{ id: "perfil", ativo: true, codigoServicoNacional: "171901" }]);
+    prismaMock[modelo].findUnique.mockRejectedValue(new Error("diagnóstico interno"));
+    const r = await request(app).get(URL);
+    expect(r.status).toBe(503);
+    expect(r.body).toEqual({
+      ok: false, error: "cadastro_emissao_indisponivel", message: "Não foi possível carregar o cadastro de emissão da empresa. Tente novamente.",
+    });
+    expect(prismaMock.perfilEmissaoNfse.findMany).not.toHaveBeenCalled();
+  });
+
+  it("empresa lida sem códigos mantém lista vazia, mesmo com perfil e catálogo NBS", async () => {
+    prismaMock.company.findUnique.mockResolvedValue({ ...COMPANY, codigoServicoNacional: null, codigosServicoNacional: [] });
+    prismaMock.perfilEmissaoNfse.findMany.mockResolvedValue([{ id: "perfil", ativo: true, codigoServicoNacional: "171901" }]);
+    const r = await request(app).get(URL);
+    expect(r.status).toBe(200);
+    expect(r.body.perfis).toHaveLength(1);
+    expect(r.body.sugestoes.nbs.length).toBeGreaterThan(0);
+    expect(r.body.sugestoes.porServico).toEqual([]);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════

@@ -1,7 +1,7 @@
 import { DESCRICAO_DO_VALOR } from './perfilEmissao';
 import { ATIVIDADES_SIMPLES } from '@contabilidade/shared/atividades-simples';
 
-export function catalogosDoPerfil(dados, campos) {
+export function catalogosDoPerfil(dados, campos, descricoesOficiais) {
   const sugestoes = dados?.sugestoes || {};
   const rtc = sugestoes.tabelasRtc || {};
   return {
@@ -11,7 +11,8 @@ export function catalogosDoPerfil(dados, campos) {
     ],
     ...Object.fromEntries(campos.filter(c => c.valores).map(c => [c.id,
       c.valores.map(codigo => ({ codigo: String(codigo), descricao: DESCRICAO_DO_VALOR[c.id]?.[codigo] || 'Sem descrição na fonte' }))])),
-    codigoServicoNacional: (sugestoes.porServico || []).map(s => ({ codigo: s.codigo, descricao: s.descricao })),
+    codigoServicoNacional: (sugestoes.porServico || []).filter(({ codigo }) => descricoesOficiais?.has(codigo))
+      .map(({ codigo }) => ({ codigo, descricao: descricoesOficiais.get(codigo) })),
     codigoNbs: sugestoes.nbs || [...new Map((sugestoes.porServico || []).flatMap(s => s.nbs || []).map(n => [n.codigo, n])).values()],
     cAtvSN: sugestoes.atividadesSimples || ATIVIDADES_SIMPLES,
     ibscbsCIndOp: (rtc.operacoes || []).map(o => ({ codigo: o.codigo, descricao: o.local })),
