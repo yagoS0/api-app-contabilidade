@@ -1,14 +1,22 @@
 {
-  "summary": "Criar um índice de navegação para a documentação da Altan, com atalhos por finalidade e catálogo dos 243 arquivos Markdown existentes na base 4b1b071.",
+  "summary": "Criar um índice de navegação para a documentação da Altan, com atalhos por finalidade e catálogo dos 243 arquivos Markdown existentes na base b90b837.",
   "risk": "low",
-  "domains": ["documentation"],
+  "domains": [
+    "documentation"
+  ],
   "operationalImpact": "Somente navegação documental. Agentes e equipes de Produto, Operações e Engenharia consultam os arquivos existentes nos caminhos de origem. Regras fiscais, permissões, controlador, perfis de agentes e execução do produto permanecem sob as fontes atuais.",
   "tests": [
-    "Conferidos 280 links relativos a arquivos contra a árvore Git de 4b1b071, com grafia e caixa exatas, e os oito links internos contra os títulos do índice.",
+    "Conferidos 280 links relativos a arquivos contra a árvore Git de b90b837, com grafia e caixa exatas, e os oito links internos contra os títulos do índice.",
     "A seção de acervo contém os 243 arquivos Markdown da base, uma entrada por caminho. Os oito perfis TOML referenciados foram analisados com tomllib e seus nomes conferidos.",
-    "O SHA-256 das regras operacionais da base coincide com o manifesto versionado. GitHub confirmou o PR #262 aberto, em rascunho e ainda fora da main no momento da preparação."
+    "O SHA-256 das regras operacionais da base coincide com o manifesto versionado. GitHub confirmou o PR #262 aberto, em rascunho e ainda fora da main no momento da preparação.",
+    "37 testes de governança aprovados sem skips após a integração do #264 na base."
   ],
   "rollback": "Reverter o commit que adiciona o índice e este registro.",
-  "humanDecisions": ["Submeter o índice à revisão independente antes de encaminhar sua integração."],
-  "sourcePaths": ["docs/INDEX.md"]
+  "humanDecisions": [
+    "A integração por squash na main depende de autorização específica."
+  ],
+  "sourcePaths": [
+    "docs/INDEX.md"
+  ],
+  "reviewProcess": "Revisão independente sobre b90b837 aprovada. Cobertura integral, âncoras, perfis e destino do README fiscal confirmados. O caminho do Anexo B continua válido e a norma do #262 segue pendente."
 }
