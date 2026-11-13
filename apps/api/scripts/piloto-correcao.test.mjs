@@ -15,6 +15,19 @@ const request = requireRepo('supertest');
 const context = vm.createContext({ Buffer, Date });
 const cache = new Map();
 let state;
+// Contrato da consulta anterior à extração. A ordem das relações participa da revisão.
+function consultaOriginal(companyId, guideId) {
+  return {
+    where: { id: guideId, portalClientId: companyId },
+    include: {
+      accountingEntries: {
+        include: { lines: { orderBy: { id: 'asc' } }, baixas: { select: { id: true } } },
+        orderBy: { id: 'asc' }
+      },
+      tributosParcela: { select: { id: true } }
+    }
+  };
+}
 const fakeDb = {
   companyFirmAccess: {
     findUnique: async ({where}) => {
@@ -24,7 +37,10 @@ const fakeDb = {
     }
   },
   guide: {
-    findFirst: async ({ where }) => where.id === 'g' && where.portalClientId === 'A' ? structuredClone(state.guide) : null,
+    findFirst: async (args) => {
+      state.reads.push(['guia', JSON.stringify(args)]);
+      return args.where.id === 'g' && args.where.portalClientId === 'A' ? structuredClone(state.guide) : null;
+    },
     updateMany: async ({ where, data }) => {
       assert.equal(where.portalClientId, 'A');
       assert.equal(where.id, 'g');
@@ -35,7 +51,10 @@ const fakeDb = {
       return { count: state.count };
     }
   },
-  companyMonthlyCircular: { findMany: async () => state.closed ? [{ competencia: '2026-08', fechadoContabilEm: new Date() }] : [] },
+  companyMonthlyCircular: { findMany: async (args) => {
+    state.reads.push(['fechamento', JSON.stringify(args)]);
+    return state.closed ? [{ competencia: '2026-08', fechadoContabilEm: new Date() }] : [];
+  } },
   accountingEntryLine: { updateMany: async ({data}) => { assert.equal(data.valor, 125.25); state.writes.push('linhas'); } },
   accountingEntry: { update: async () => state.writes.push('provisão') },
   appSetting: { create: async ({data}) => { assert.equal(data.value.userId, 'u'); state.writes.push('auditoria'); } },
@@ -57,6 +76,9 @@ const real = new Set([
   'application/guides/CorrigirValorGuiaService.js',
   'application/accounting/fechamentoContabil.js',
   'modules/guides/domain/correcaoDeValor.js',
+  'modules/guides/infrastructure/prisma/leituraGuiaCorrecaoValor.js',
+  'modules/accounting/infrastructure/prisma/leituraProvisoesCorrecaoValor.js',
+  'composition/leiturasCorrecaoValorGuia.js',
   'modules/accounting/public.js',
   'modules/accounting/domain/correcaoDeProvisao.js'
 ]);
@@ -91,10 +113,22 @@ const url = '/firm/companies/A/guides/g/corrigir-valor';
 const preview = (endpoint=url) => request(app).get(endpoint).set('x-fixture-user','u').query({valor:'125.25'});
 const confirm = (revisao, fields = {}) => request(app).post(url).set('x-fixture-user','u').send({valor:'125.25',revisao, ...fields});
 test.beforeEach(() => {
-  state = { role:'user', accessChecks:[], linkedCompanies:['A'], link:{role:'ACCOUNTANT',status:'ACTIVE',scopes:[]}, writes:[], count:1, pdf:true,
+  state = { role:'user', accessChecks:[], linkedCompanies:['A'], link:{role:'ACCOUNTANT',status:'ACTIVE',scopes:[]}, reads:[], writes:[], count:1, pdf:true,
     guide:{id:'g',portalClientId:'A',valor:100,competencia:'2026-08',tipo:'OUTRA',status:'PROCESSED',
       updatedAt:new Date('2026-09-01Z'),tributosParcela:[],accountingEntries:[{id:'e',portalClientId:'A',tipo:'PROVISAO',
       competencia:'2026-08',status:'RASCUNHO',baixas:[],lines:[{tipo:'D',valor:100},{tipo:'C',valor:100}]}]} };
+});
+test('prévia lê o agregado uma vez e consulta os períodos da guia e da provisão em conjunto', async () => {
+  state.guide.accountingEntries[0].competencia = '2026-09';
+  const {body} = await preview().expect(200);
+  assert.equal(body.revisao, crypto.createHash('sha256').update(JSON.stringify(state.guide)).digest('hex'));
+  assert.deepEqual(state.reads, [
+    ['guia', JSON.stringify(consultaOriginal('A', 'g'))],
+    ['fechamento', JSON.stringify({
+      where: { portalClientId: 'A', competencia: { in: ['2026-08', '2026-09'] } },
+      select: { competencia: true, fechadoContabilEm: true }
+    })]
+  ]);
 });
 test('prévia pública e confirmação com provisão balanceada', async () => {
   const {body} = await preview().expect(200);
@@ -242,7 +276,16 @@ if (process.env.ALTAN_TESTE_POSTGRES === '1') {
       const entry = await db.accountingEntry.create({data:{portalClientId:company.id,sourceGuideId:guide.id,data:new Date('2026-08-01Z'),competencia:'2026-08',historico:'Fixture',tipo:'PROVISAO',status:'RASCUNHO',lines:{create:['D','C'].map(tipo=>({conta:'fixture',tipo,valor:100}))}}});
       const args={companyId:company.id,guideId:guide.id,valor:125.25,userId:'fixture'};
       const deps={db,carregarPdf:async()=>Buffer.from('fixture'),ler:async()=>({linhaDigitavel:'8'.repeat(48),linhaDigitavelMotivo:null,linhaDigitavelLidaEm:new Date()})};
-      const {revisao}=await service.preverCorrecaoValorGuia(args,deps);
+      const original = await db.guide.findFirst(consultaOriginal(company.id, guide.id));
+      const jsonOriginal = JSON.stringify(original);
+      const revisao = crypto.createHash('sha256').update(jsonOriginal).digest('hex');
+      const previa = await service.preverCorrecaoValorGuia(args,{
+        ...deps, carregarPdf: async (atual) => {
+          assert.equal(JSON.stringify(atual), jsonOriginal);
+          return deps.carregarPdf(atual);
+        }
+      });
+      assert.equal(previa.revisao, revisao);
       const command={...args,revisao};
       const auditCount=()=>db.appSetting.count({where:{key:{startsWith:'guide_value_correction:'},value:{path:['guideId'],equals:guide.id}}});
       const failedDb={
