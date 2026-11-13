@@ -9835,12 +9835,19 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     async getPerfisEmissao(companyId) {
       // O modo de demonstração não comprova uma liberação real.
       await delay();
+      const empresa = mockCompanies.find(item => item.companyId === companyId);
+      if (!empresa) throw new Error('Empresa não encontrada.');
+      const cadastro = empresa.legacyCompany || {};
+      const nacional = cadastro.codigoServicoNacional || null;
+      const municipal = cadastro.codigoServicoMunicipal || null;
+      const habilitados = cadastro.codigosServicoNacional?.length
+        ? cadastro.codigosServicoNacional : [nacional].filter(Boolean);
       const perfis = this._perfisEmissao[companyId] || [];
       const escolhido = perfis.find((p) => p.padrao && p.ativo) || (perfis.length === 1 ? perfis[0] : null);
       const cravado = (id, valor) => ({ valor, fonte: "CRAVADO", valorHoje: valor, mudariaComPerfil: false, cravadoHoje: true });
       const doCadastro = {
-        codigoServicoNacional: { valor: "171901", fonte: "COMPANY", valorHoje: "171901", mudariaComPerfil: false, cravadoHoje: false },
-        codigoServicoMunicipal: { valor: "001", fonte: "COMPANY", valorHoje: "001", mudariaComPerfil: false, cravadoHoje: false },
+        codigoServicoNacional: { valor: nacional, fonte: nacional ? "COMPANY" : "INDEFINIDO", valorHoje: nacional, mudariaComPerfil: false, cravadoHoje: false },
+        codigoServicoMunicipal: { valor: municipal, fonte: municipal ? "COMPANY" : "INDEFINIDO", valorHoje: municipal, mudariaComPerfil: false, cravadoHoje: false },
         cLocPrestacao: { valor: null, fonte: "INDEFINIDO", valorHoje: null, mudariaComPerfil: false, cravadoHoje: false },
         regEspTrib: { ...cravado("regEspTrib", "0"), cravadoHoje: false },
         regApTribSN: cravado("regApTribSN", "1"),
@@ -9865,12 +9872,12 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         ok: true,
         integracaoLigada: false,
         ibscbsLigado: false,
-        sugestoes: { fonte: "Modo de demonstração — consulte o catálogo no ambiente real", url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica", porServico: [{ codigo: "171901", descricao: "Contabilidade", nbs: [], combinacoes: [] }] },
+        sugestoes: { fonte: "Modo de demonstração", porServico: [...new Set(habilitados)].map(codigo => ({ codigo, nbs: [], combinacoes: [] })) },
         perfis,
         derivadoDoCadastro: {
           origem: "DERIVADO_DO_CADASTRO",
-          codigoServicoNacional: "171901",
-          codigoServicoMunicipal: "001",
+          codigoServicoNacional: nacional,
+          codigoServicoMunicipal: municipal,
           cLocPrestacao: null,
           regEspTrib: "0",
           regApTribSN: "1",

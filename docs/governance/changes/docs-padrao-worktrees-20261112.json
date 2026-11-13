@@ -1,0 +1,15 @@
+{
+  "summary": "Documenta o ambiente Windows para criar ou reutilizar worktrees e referencia o guia no AGENTS.md da raiz e no índice integrado pelo PR #266.",
+  "baseCommit": "af66536571cfc7438545553da053579cdebecd16",
+  "risk": "high",
+  "domains": ["documentation", "governance"],
+  "operationalImpact": "Orientação para agentes e desenvolvedores. Preserva controlador, fonte de regras, papéis de revisão, fluxos do produto e checkouts anteriores.",
+  "tests": [
+    "37 testes de check, orchestrate, bootstrap e data-gate aprovados. O resolvedor do controlador retornou canonical via junção e repositoryFallback no modo de CI, com o mesmo SHA-256 registrado na referência.",
+    "Ambos os exemplos PowerShell passaram por ParseFile. Preflight somente leitura aceitou o checkout canônico e a base anunciada pelo remoto e recusou o clone homônimo, a worktree como checkout principal, destino ocupado, nome reservado, travessia de caminho e divergência de SHA simulada.",
+    "O plano classificou documentation e governance, com risco high e sem caminhos desconhecidos. O link do AGENTS.md resolve para o guia."
+  ],
+  "reviewProcess": "A revisão independente sobre af66536 aprovou os quatro arquivos documentais, os links do índice e do AGENTS.md, os exemplos PowerShell e a resolução canônica e de CI.",
+  "rollback": "Reverter a entrega documental. A junção local precede o commit e continua reservada à fonte canônica. Não mover nem excluir checkouts, dados ou evidências.",
+  "humanDecisions": ["A revisão e a integração da documentação dependem de decisão própria. Arquivamento, remoção e descarte não foram autorizados."]
+}

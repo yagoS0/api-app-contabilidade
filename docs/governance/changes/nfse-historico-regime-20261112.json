@@ -1,0 +1,32 @@
+{
+  "summary": "Explica o bloqueio por competência, corrige a orientação de IBS/CBS ao salvar a ficha e distingue município emissor e município da prestação.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web"
+  ],
+  "baseCommit": "4b1b071b6593be5a33be79c1aced5464dc980c43",
+  "operationalImpact": "Cadastro da empresa é proprietário das vigências, da inscrição municipal e do código IBGE do estabelecimento. Emissão consome o período que cobre a competência. O escritório acessa o histórico da empresa em outra aba e atualiza a prévia mantendo o rascunho. A apresentação do erro aponta o ajuste e preserva o comprovante até retirada explícita. Mantidos os códigos de erro, a recusa integral do PATCH inválido, o isolamento e o XML fiscal.",
+  "tests": [
+    "Prova PostgreSQL descartável em duas empresas sintéticas: PATCH com IM e opção pré-2027 devolve 400 sem escrita; PATCH corrigido retorna 200, GET reabre os valores, prévia e PATCH cruzados devolvem 403. Dia, mês, mudança de regime, falta e conflito de cobertura e XML real da DPS verificados. Zero transmissão.",
+    "Suítes de cadastro, preparação fiscal, prévia, competência, emissor, portal e UI; casos explícitos de datas, preservação da observação, permissão do atalho e nova consulta.",
+    "Revisão independente do backend, competência, isolamentos e UX. Após revisão foram separados data inválida e histórico pendente, e o atalho do escritório passou a exigir permissão de edição."
+  ],
+  "reviewProcess": "Controlador local interrompeu no planejamento, primeiro por paths/risks inválidos e depois por classificar a proposta de registro de impacto como mudança de governança. A candidata altera produto e seu relato de impacto. Não houve alteração das políticas ou dos gates. A revisão independente e as provas subsequentes foram conduzidas separadamente, sem atribuir aprovação formal a esses runs.",
+  "rollback": "Reverter os commits do PR em ordem inversa. Nenhuma migração ou edição de produção. Preservar os históricos, documentos e dados já salvos.",
+  "humanDecisions": [
+    "Revisar a candidata e os resultados hospedados antes de eventual integração. Merge e deploy dependem de autorizações explícitas."
+  ],
+  "limitations": [
+    "Diagnóstico individual baseado nos códigos devolvidos pela tela, sem acesso direto à ficha de produção. Testes em empresas sintéticas; não confirmam o canal externo de recepção de uma prefeitura."
+  ]
+}

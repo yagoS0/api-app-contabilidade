@@ -11,7 +11,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { useManageCompaniesWorkspace } from "../../../../../app/hooks/useManageCompaniesWorkspace";
+import { createApiClient } from "../../../../../api/client";
 import "@testing-library/jest-dom";
 import { CompanySectionHeader } from "../renderCompanyDetailHeader";
 import { EmissaoNfseTab } from "../renderEmissaoNfseTab";
@@ -23,6 +26,74 @@ const EMPRESA = {
   cnpj: "12.345.678/0001-90",
   legacyCompany: { regimeTributario: "SIMPLES" },
 };
+
+jest.mock('../../../../../api/client', () => {
+  const { createMockApi } = jest.requireActual('../../../../../api/mock/mockApi');
+  const api = createMockApi({ delay: async () => {} });
+  return { createApiClient: () => api };
+});
+
+it('habilita no cadastro, relê após o PATCH e persiste o perfil da mesma empresa', async () => {
+  const api = createApiClient();
+  const empresa = (await api.listCompanies()).find(e => !e.legacyCompany.codigoServicoNacional);
+  const feedback = { clearFeedback: jest.fn(), setMessage: jest.fn(), setError: jest.fn() };
+  const leitura = jest.spyOn(api, 'getPerfisEmissao');
+  function Aba() {
+    const workspace = useManageCompaniesWorkspace({ api, feedback, page: 'companyDetail' });
+    if (!workspace.selectedCompany) return null;
+    return <EmissaoNfseTab company={workspace.selectedCompany} salvando={workspace.emissaoNfseSaving}
+      onSalvar={campos => workspace.handleUpdateEmissaoNfse(empresa.companyId, campos)} />;
+  }
+  render(<MemoryRouter initialEntries={[`/companies/${empresa.companyId}/emissao-nfse`]}><Aba /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Novo perfil' }));
+  fireEvent.change(screen.getByLabelText('Nome do perfil'), { target: { value: 'Topografia' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Habilitar serviço no cadastro' }));
+  const seletor = screen.getByLabelText('Códigos de serviço (tributação nacional)');
+  expect(seletor).toHaveFocus();
+  fireEvent.change(seletor, { target: { value: '070103' } });
+  fireEvent.click(await screen.findByRole('button', { name: /07\.01\.03.*Agrimensura/ }));
+  expect(screen.getByRole('button', { name: 'Salvar perfil' })).toBeDisabled();
+  leitura.mockRejectedValueOnce(new Error('Offline'));
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar configuração de emissão' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Recarregar perfis' }));
+  const codigo = await screen.findByRole('combobox', { name: 'Código de Tributação Nacional' });
+  expect(screen.getByLabelText('Nome do perfil')).toHaveValue('Topografia');
+  expect(codigo).toHaveValue('');
+  fireEvent.change(codigo, { target: { value: '07.01.03' } });
+  fireEvent.click(await screen.findByRole('option', { name: /070103.*Agrimensura e congêneres/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /Revisei complemento/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar perfil' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar Topografia' }));
+  expect(screen.getByLabelText('Código de Tributação Nacional')).toHaveValue('070103');
+  expect((await api.getPerfisEmissao(empresa.companyId)).perfis[0]).toMatchObject({
+    nome: 'Topografia', codigoServicoNacional: '070103', padrao: false, codigoNbs: null,
+  });
+  leitura.mockRestore();
+});
+
+it('descarta leitura antiga da mesma empresa e isola os rascunhos na troca de empresa', async () => {
+  const api = createApiClient();
+  const empresas = await api.listCompanies();
+  const dados = { perfis: [], sugestoes: { porServico: [] } };
+  let concluirAntiga;
+  const leitura = jest.spyOn(api, 'getPerfisEmissao')
+    .mockImplementationOnce(() => new Promise(resolve => { concluirAntiga = resolve; }))
+    .mockResolvedValueOnce(dados);
+  const onSalvar = jest.fn(async () => ({ ok: true }));
+  const { rerender } = render(<EmissaoNfseTab company={empresas[0]} onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByText('Serviços habilitados e configurações gerais'));
+  fireEvent.change(screen.getByLabelText(/Série da DPS/), { target: { value: '7' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar configuração de emissão' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Novo perfil' }));
+  fireEvent.change(screen.getByLabelText('Nome do perfil'), { target: { value: 'Rascunho A' } });
+  await act(async () => concluirAntiga({ ...dados, sugestoes: { porServico: [{ codigo: '070103' }] } }));
+  expect(screen.getByText(/Nenhum serviço habilitado/)).toBeVisible();
+  rerender(<EmissaoNfseTab company={empresas[1]} onSalvar={onSalvar} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Novo perfil' }));
+  expect(screen.getByLabelText('Nome do perfil')).toHaveValue('');
+  expect(screen.getByLabelText(/Série da DPS/)).not.toHaveValue('7');
+  leitura.mockRestore();
+});
 
 describe("peça 1 — a ENTRADA é a engrenagem da aba Notas Fiscais, não uma aba no GROUPS", () => {
   // ⚠⚠ ESTE BLOCO FOI INVERTIDO EM 19/08/2026, no mesmo dia em que a aba nasceu, e a inversão é o

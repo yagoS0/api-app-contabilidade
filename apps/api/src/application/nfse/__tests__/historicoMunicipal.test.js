@@ -48,6 +48,18 @@ test('sobreposição e mudança dentro de mês pedem conferência', () => {
   expect(regimeDaCompetencia({ historico: periodos, competencia: '2026-01' }).ok).toBe(false);
   expect(regimeDaCompetencia({ historico: periodos, competencia: '2026-01-16' }).regime).toBe('LUCRO_PRESUMIDO');
 });
+test.each([
+  ['2026-11-12', [], /12\/11\/2026.*vazio/],
+  ['2026-11-12', [['2026-01-01','2026-10-31']], /já terminaram/],
+  ['2026-11-12', [['2026-12-01',null]], /começam depois/],
+  ['2026-11-12', [['2026-01-01','2026-11-11'], ['2026-11-13',null]], /entre vigências/],
+  ['2026-11', [['2026-11-12',null]], /11\/2026.*parte do mês/],
+])('explica falta de cobertura para %s, períodos %j', (competencia, datas, esperado) => {
+  const periodos = datas.map(([vigenciaInicio,vigenciaFim]) => ({ regime: 'SIMPLES', vigenciaInicio, vigenciaFim }));
+  expect(regimeDaCompetencia({ historico: periodos, competencia })).toMatchObject({
+    ok: false, codigo: 'NFSE_REGIME_SEM_VIGENCIA', message: expect.stringMatching(esperado),
+  });
+});
 test('não normaliza data impossível', () => {
   expect(regimeDaCompetencia({ historico, competencia: '2026-02-30' }).ok).toBe(false);
   expect(regimeDaCompetencia({ historico: [{ ...historico[0], vigenciaInicio: '2025-02-30' }], competencia: '2025-12-01' }).ok).toBe(false);

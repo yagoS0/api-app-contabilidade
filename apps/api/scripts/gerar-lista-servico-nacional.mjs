@@ -8,7 +8,7 @@
 // ⚠ POR QUE UM GERADOR, se a lista de municípios do IBGE só tem instruções no cabeçalho.
 // Porque esta planilha tem UMA ARMADILHA MEDIDA: a coluna "CÓDIGO DE TRIBUTAÇÃO NACIONAL" é
 // NUMÉRICA, e `010101` sai do arquivo como o número `10101` — o zero à esquerda some. Transcrever
-// à mão (ou "olhar e copiar") produz 335 códigos dos quais dezenas ficam com 5 dígitos, e o
+// à mão (ou "olhar e copiar") produz códigos com 5 dígitos, e o
 // `cTribNac` da DPS tem 6. Um gerador com autoverificação não erra isso duas vezes.
 //
 // ⚠ A AUTOVERIFICAÇÃO É O PONTO. O código nacional é `item(2) + subitem(2) + desdobro nacional(2)`,
@@ -32,7 +32,7 @@ const RAIZ = resolve(AQUI, "../../..");
 
 const XLSX_PATH = resolve(
   RAIZ,
-  "docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx",
+  "docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx",
 );
 // ⚠ DOIS DESTINOS, E ELES SÃO O MESMO ARQUIVO. Os dois portais consomem a lista e não compartilham
 // código (mesmo arranjo de `municipiosIbge.data.js`, `consultaTomador.js` e `reaproveitarNota.js`).
@@ -51,12 +51,12 @@ const SAIDAS = [
 
 const ABA = "LISTA.SERV.NAC.";
 const URL_OFICIAL =
-  "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx";
+  "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx";
 const PAGINA_OFICIAL =
-  "https://www.gov.br/nfse/pt-br/mei-e-demais-empresas/codigos-de-tributacao-nacional-nbs";
+  "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual";
 
 // A data da extração do arquivo que está em `docs/`. Trocar SÓ quando o XLSX for rebaixado.
-const EXTRAIDO_EM = "2026-08-16";
+const EXTRAIDO_EM = "2026-11-12";
 
 function pad2(v) {
   return String(v ?? "").trim().padStart(2, "0");
@@ -144,7 +144,7 @@ const conteudo = `// LISTA OFICIAL DE CÓDIGOS DE TRIBUTAÇÃO NACIONAL (cTribNa
 //
 // FONTE: ${URL_OFICIAL}
 //        (página: ${PAGINA_OFICIAL})
-// ARQUIVO: docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx
+// ARQUIVO: docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx
 //          SHA-256 ${sha256}
 // ABA: ${ABA}
 // EXTRAÍDO EM: ${EXTRAIDO_EM}
