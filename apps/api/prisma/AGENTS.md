@@ -1,5 +1,7 @@
 # Governança do domínio
 
+Consulte a [norma de arquitetura](../../../docs/governance/ARQUITETURA.md). Para cada modelo ou campo compartilhado, identifique o dono da escrita, os leitores e a invariante transacional antes de alterar a persistência.
+
 Aplicam-se AGENTS.md da raiz e docs/governance/POLICY.md.
 Leia também as decisões CLAUDE.md deste escopo antes de editar.
 

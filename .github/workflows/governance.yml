@@ -9,6 +9,35 @@ permissions:
   contents: read
 
 jobs:
+  arquitetura:
+    name: Diagnóstico arquitetural da API
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Instalar o parser fixado no lockfile
+        run: npm ci --workspaces=false --ignore-scripts --no-audit --no-fund
+      - name: Validar as regras do verificador
+        run: node --test scripts/governance/arquitetura/*.test.cjs
+      - name: Relatar acréscimos sobre a base comum
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base=$(git merge-base "$BASE_SHA" HEAD)
+          git worktree add --detach "$RUNNER_TEMP/arquitetura-base" "$base"
+          verificador=scripts/governance/arquitetura/verificar.cjs
+          node "$verificador" snapshot "$RUNNER_TEMP/arquitetura-base" > "$RUNNER_TEMP/arquitetura-base.json"
+          node "$verificador" diagnose . "$RUNNER_TEMP/arquitetura-base.json"
+
   governance:
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -1,5 +1,7 @@
 # Governança do domínio
 
+Aplique a [norma de arquitetura](../../docs/governance/ARQUITETURA.md) às features do escritório. Identifique a API consumida e mantenha o cálculo de apresentação separado da decisão de negócio validada pelo servidor.
+
 Aplicam-se AGENTS.md da raiz e docs/governance/POLICY.md.
 Leia também as decisões CLAUDE.md deste escopo antes de editar.
 

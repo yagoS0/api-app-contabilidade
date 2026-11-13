@@ -1,5 +1,7 @@
 # CLAUDE.md — Portal Contábil
 
+Para alterações de código, leia o [AGENTS.md da raiz](AGENTS.md), os AGENTS.md e CLAUDE.md do escopo e a [norma de arquitetura](docs/governance/ARQUITETURA.md). Ela complementa as decisões operacionais registradas abaixo.
+
 ## Consentimento no WhatsApp — 13/10/2026
 
 Recusa explícita bloqueia saídas para o número em todos os canais e empresas. “Não” sozinho só vale como resposta à apresentação que pergunta “Podemos enviar por este número?”. “Não paguei” não é recusa. Somente mensagem nova do próprio destinatário com autorização explícita (por exemplo “Autorizo receber as guias pelo WhatsApp”) restaura o consentimento. Editar contato, reativá-lo ou marcar opt-in manualmente não desfaz recusa. Evidência e estado ficam em AppSetting com mensagem, data do provedor e origem; eventos antigos/duplicados não sobrescrevem decisões novas, e recusa vence empate. WhatsappCloudClient verifica o bloqueio antes de qualquer chamada de envio, inclusive humano e filas antigas. O cadastro mostra a orientação de liberação. Sem concessão de papéis, sem envio de prova em produção. Ensaio de banco: scripts/run-consentimento-whatsapp-dev.mjs.
