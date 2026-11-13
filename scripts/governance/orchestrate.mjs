@@ -112,11 +112,17 @@ export function runCommand(command, args, {cwd, timeoutMs, logPrefix, input, env
   });
 }
 
+export function codexChildEnvironment(env = process.env, platform = process.platform) {
+  if (platform !== 'win32') return env;
+  // The desktop host owns the registered-core launcher. A separate CLI must launch its own sandbox.
+  return Object.fromEntries(Object.entries(env).filter(([key]) => key.toUpperCase() !== 'CODEX_WINDOWS_REGISTERED_CORE'));
+}
+
 export function createCodexAdapter({command = 'codex'} = {}) {
   return async ({kind,prompt,schema,root,runDir,callId,timeoutMs}) => {
     const prefix = resolve(runDir,callId), schemaPath = prefix + '.schema.json', output = prefix + '.result.json';
     save(schemaPath,schema);
-    const result = await runCommand(command,['exec','--strict-config','--json','--ephemeral','--sandbox',kind === 'executor' ? 'workspace-write' : 'read-only','--output-schema',schemaPath,'-o',output,'-C',root,'-'],{cwd:root,timeoutMs,logPrefix:prefix,input:prompt});
+    const result = await runCommand(command,['exec','--strict-config','--json','--ephemeral','--sandbox',kind === 'executor' ? 'workspace-write' : 'read-only','--output-schema',schemaPath,'-o',output,'-C',root,'-'],{cwd:root,timeoutMs,logPrefix:prefix,input:prompt,env:codexChildEnvironment()});
     if (result.code !== 0 || result.timedOut) throw Error(`Codex call ${callId} failed (exit ${result.code}, timeout ${result.timedOut}); see ${prefix}.stderr.log`);
     return json(output);
   };
@@ -125,7 +131,10 @@ export function createCodexAdapter({command = 'codex'} = {}) {
 function validateResponse(kind, result, domains) {
   if (!result || typeof result.summary !== 'string' || !result.summary.trim()) throw Error(`Invalid ${kind} summary`);
   const list = value => Array.isArray(value) && value.every(v => typeof v === 'string');
-  if (kind === 'planner' && (!list(result.paths) || !result.paths.length || !result.paths.every(safePath) || !list(result.risks))) throw Error('Invalid planner paths/risks');
+  if (kind === 'planner') {
+    if (!list(result.paths) || !result.paths.every(safePath) || !list(result.risks)) throw Error('Invalid planner paths/risks');
+    if (!result.paths.length) throw Error('Planner returned an empty write allowlist; inspect the planner result and stderr in the run journal.');
+  }
   if (kind === 'reviewer' && (!['approved','rejected','inconclusive'].includes(result.verdict) || !list(result.findings) || !list(result.reviewedDomains) || domains.some(d => !result.reviewedDomains.includes(d)))) throw Error('Invalid or incomplete reviewer response');
 }
 

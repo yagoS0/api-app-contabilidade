@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runOrchestration, runCommand } from './orchestrate.mjs';
+import { codexChildEnvironment, createCodexAdapter, runOrchestration, runCommand } from './orchestrate.mjs';
 import { resolveOperationalReference } from './operational.mjs';
 import { createHash } from 'node:crypto';
 
@@ -37,6 +37,50 @@ function adapterFor(root, hooks = {}) {
     return await hooks.reviewer?.(context,executions) || {summary:'Inspected current implementation',verdict:'approved',findings:[],reviewedDomains:context.domains};
   };
 }
+test('Windows CLI child drops only the desktop launcher marker and preserves the parent environment', () => {
+  const parent = Object.freeze({ Path:'tools', CODEX_WINDOWS_REGISTERED_CORE:'1', CODEX_HOME:'fixture' });
+  assert.deepEqual(codexChildEnvironment(parent,'win32'), {Path:'tools',CODEX_HOME:'fixture'});
+  assert.equal(parent.CODEX_WINDOWS_REGISTERED_CORE,'1');
+  assert.deepEqual(codexChildEnvironment(parent,'linux'), parent);
+  assert.deepEqual(codexChildEnvironment({Path:'tools',Codex_Windows_Registered_Core:'1'},'win32'), {Path:'tools'});
+});
+
+test('Codex adapter passes the role sandbox to the child CLI', async t => {
+  const root = fixture(t);
+  // Node executes this file when the adapter invokes the CLI's "exec" subcommand.
+  writeFileSync(resolve(root,'exec'), `
+    const args = process.argv.slice(2);
+    require('node:fs').writeFileSync(args[args.indexOf('-o') + 1], JSON.stringify({
+      sandbox: args[args.indexOf('--sandbox') + 1],
+      strict: args.includes('--strict-config'),
+      marker: process.env.CODEX_WINDOWS_REGISTERED_CORE ?? null
+    }));
+  `);
+  const parentMarker = process.env.CODEX_WINDOWS_REGISTERED_CORE;
+  process.env.CODEX_WINDOWS_REGISTERED_CORE = '1';
+  t.after(() => {
+    if (parentMarker === undefined) delete process.env.CODEX_WINDOWS_REGISTERED_CORE;
+    else process.env.CODEX_WINDOWS_REGISTERED_CORE = parentMarker;
+  });
+  const run = createCodexAdapter({command:process.execPath});
+  for (const [kind,sandbox] of [['planner','read-only'],['executor','workspace-write'],['reviewer','read-only']]) {
+    const result = await run({kind,root,runDir:root,callId:kind,prompt:'fixture',schema:{},timeoutMs:10000});
+    assert.deepEqual(result,{sandbox,strict:true,marker:process.platform === 'win32' ? null : '1'});
+  }
+  assert.equal(process.env.CODEX_WINDOWS_REGISTERED_CORE,'1');
+});
+
+test('planner with an empty write allowlist stops before the executor and points to diagnostic evidence', async t => {
+  const root = fixture(t);
+  const result = await runOrchestration({root,request:'Fix',adapter:adapterFor(root,{
+    planner:() => ({summary:'Source files unavailable',paths:[],risks:['Read failed']})
+  })});
+  assert.equal(result.status,'escalated');
+  assert.match(result.error,/empty write allowlist.*journal/);
+  assert.deepEqual(result.calls.map(call => call.kind),['planner']);
+  assert.equal(readFileSync(resolve(root,'src/value.txt'),'utf8'),'initial');
+});
+
 test('real gate and separate cross-domain reviews certify only current fingerprint',async t => {
   const root = fixture(t), result = await runOrchestration({root,request:'Fix value',adapter:adapterFor(root)});
   assert.equal(result.status,'ready_for_human');
