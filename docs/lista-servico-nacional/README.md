@@ -6,22 +6,24 @@ oficial, com URL, data, contagem e hash, e o código é gerado a partir dela.
 
 ## O que está aqui
 
-| Arquivo | Origem | Baixado em |
+| Arquivo | Origem | Extraído em |
 |---|---|---|
 | `anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx` | `https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx` | 2026-08-16 |
+| `anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx` | [Anexo B v1.01 de 22/01/2026](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx) | 2026-11-12 |
 
-83.277 bytes, `Microsoft Excel 2007+`,
+O gerador de cTribNac usa a v1.01, com 85.008 bytes e SHA-256 `e74b0be8ad204e458932efb1716225a3fb5703a84e5475ce5c4c6789d1c61b1a`. A versão acrescenta 141403, 141404 e 200102 e atualiza a descrição de 200101. A aba NBS é idêntica à anterior.
+
+O arquivo histórico usado por outros consumidores tem 83.277 bytes e
 SHA-256 `a588fea05010a037826d826dd74520e32651bee926f2faa1ffd2794fba55d424`.
 
-Página de origem: **`https://www.gov.br/nfse/pt-br/mei-e-demais-empresas/codigos-de-tributacao-nacional-nbs`**
-("Códigos de Tributação Nacional / NBS", portal `gov.br/nfse`).
+O Portal Nacional publica a versão vigente na [Documentação Atual de Produção](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual), em **Anexos de Domínio**. A página [Códigos de Tributação Nacional / NBS](https://www.gov.br/nfse/pt-br/mei-e-demais-empresas/codigos-de-tributacao-nacional-nbs) foi a origem da cópia histórica.
 
 Duas abas:
 
 | Aba | Linhas | Colunas |
 |---|---|---|
-| **`LISTA.SERV.NAC.`** | 578 (1 cabeçalho + 577 dados) | `CÓDIGO DE TRIBUTAÇÃO NACIONAL · ITEM · SUBITEM · DESDOBRO NACIONAL · DESCRIÇÃO` |
-| `LISTA.NBS_v2.0` | 1.211 | `CÓDIGO NBS · DESCRIÇÃO` — **não usada** (o `cNBS` é campo opcional da DPS e ninguém o preenche neste projeto) |
+| **`LISTA.SERV.NAC.`** | 581 (1 cabeçalho + 580 dados) | `CÓDIGO DE TRIBUTAÇÃO NACIONAL · ITEM · SUBITEM · DESDOBRO NACIONAL · DESCRIÇÃO` |
+| `LISTA.NBS_v2.0` | 1.211 | `CÓDIGO NBS · DESCRIÇÃO` |
 
 ## ⚠ O `cTribNac` NÃO é o item da LC 116
 
@@ -32,7 +34,7 @@ telecomunicações e congêneres"* — e é ele que aparece no DANFSe.
 
 Carregar só o anexo da LC 116 daria a **granularidade errada**, e o erro sairia como nota emitida
 com o serviço errado — que é silencioso. Medido nesta planilha: **41 itens**, **201 subitens** e
-**335 desdobramentos selecionáveis**.
+**338 desdobramentos selecionáveis**.
 
 ## ⚠ A armadilha: `010101` sai da planilha como `10101`
 
@@ -42,7 +44,7 @@ lista vira `10101` (5 dígitos), e o `cTribNac` da DPS tem 6 — a nota seria re
 
 O gerador normaliza com padding para 6 **e prova o padding**: o código de cada linha é conferido
 contra a concatenação das colunas `ITEM`/`SUBITEM`/`DESDOBRO NACIONAL` da própria planilha. Medido:
-**335/335 conferem**; qualquer divergência **aborta** a geração em vez de gravar dado torto.
+**338/338 conferem**; qualquer divergência **aborta** a geração em vez de gravar dado torto.
 
 Há teste travando isso do lado do front
 (`apps/web/src/lib/servicosNacionais/__tests__/servicoNacional.test.js`): o primeiro código da
@@ -50,7 +52,7 @@ lista é `"010101"`, nunca `"10101"`.
 
 ## ⚠ Linha com código VAZIO é cabeçalho de agrupamento, não serviço
 
-242 das 577 linhas de dados não têm código: são o **nome do ITEM** (subitem 0) e o **nome do
+242 das 580 linhas de dados não têm código: são o **nome do ITEM** (subitem 0) e o **nome do
 SUBITEM** (subitem > 0, desdobro 0). Elas **não são selecionáveis** — mas não foram descartadas:
 é o texto do grupo que faz alguém achar o código certo na tela. Vão para
 `GRUPOS_SERVICO_NACIONAL`, com a chave sendo o **prefixo do próprio código** (2 dígitos = item,
@@ -59,7 +61,7 @@ SUBITEM** (subitem > 0, desdobro 0). Elas **não são selecionáveis** — mas n
 ## Como isso vira código
 
 ```
-docs/lista-servico-nacional/*.xlsx
+docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse-v1-01-20260122.xlsx
         │
         │  node apps/api/scripts/gerar-lista-servico-nacional.mjs   (só leitura, zero rede)
         ▼
@@ -78,9 +80,9 @@ a consolidação de uma não consolidou a outra.
 
 ## Para atualizar
 
-1. baixe o XLSX da URL acima para esta pasta;
-2. recalcule o SHA-256 e troque a data e o hash **nesta tabela**;
-3. ajuste `EXTRAIDO_EM` em `apps/api/scripts/gerar-lista-servico-nacional.mjs` e rode-o;
+1. localize o Anexo B vigente na documentação de produção e baixe o XLSX com o nome da versão;
+2. registre URL, data, SHA-256 e diferenças da aba `LISTA.SERV.NAC.` nesta página antes de substituir o catálogo;
+3. ajuste o caminho da fonte, a URL e `EXTRAIDO_EM` em `apps/api/scripts/gerar-lista-servico-nacional.mjs` e rode-o. O gerador de NBS continua usando seu próprio caminho versionado;
 4. `npm test -w @contabilidade/web` — os testes travam contagem, padding e o primeiro código.
 
 ## ⚠ O que esta lista NÃO resolve
