@@ -3,6 +3,7 @@
 | Preciso de… | Começar por |
 |---|---|
 | Entender o produto e seus módulos | [Apresentação do repositório](../README.md) e [mapa por módulo](modules/README.md) |
+| Escolher uma worktree ou abrir o projeto no Zed | [Guia do ambiente de desenvolvimento](development/AMBIENTE.md) |
 | Decidir como executar ou revisar uma alteração | [Normas de desenvolvimento](#normas-de-desenvolvimento) |
 | Conferir uma regra de negócio | [Regras operacionais](#regras-operacionais) |
 | Localizar contratos, fontes e procedimentos | [Referências técnicas](#referências-técnicas) |
@@ -164,6 +165,7 @@ Os caminhos são relativos à raiz do repositório. Cada arquivo aparece na clas
 
 - [docs/auth-rbac-setup.md](auth-rbac-setup.md)
 - [docs/contingencia-comercial-20261013.md](contingencia-comercial-20261013.md)
+- [docs/development/AMBIENTE.md](development/AMBIENTE.md)
 - [docs/deploy-digitalocean.md](deploy-digitalocean.md)
 - [docs/desenvolvimento-windows.md](desenvolvimento-windows.md)
 
