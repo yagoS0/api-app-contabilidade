@@ -1,0 +1,29 @@
+{
+  "summary": "Incremento 3.2. A aplicação de Guias coordena a prévia e depende das leituras de guia, fechamento e evidência documental. O adaptador usa getGuidePdfBuffer e lerLinhaDigitavelDoPdf. A fachada mantém os exports e as dependências opcionais anteriores.",
+  "operationalImpact": "Sem mudança de regra operacional. GET e POST de correção mantêm autorização, erros e DTOs usados pelo escritório e portal. Guias e Contabilidade mantêm suas regras de impedimento e a ordem de validação. A prévia não escreve; a confirmação relê com tx e mantém o callback Serializable, atualização condicional e auditoria. Sem mudança em Comunicação, Comercial ou Operações, banco ou storage.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "Base 29d68833: 79 testes Jest e 17 do piloto, mais 10 cenários PostgreSQL de concorrência/fechamento. Candidato: 79 Jest, 21 do piloto (incluindo HTTP, empresa, token fixo e rollback em PostgreSQL 16), 10 de concorrência. A mesma suíte ampliada do piloto passou 21/21 contra o código da base e contra o candidato.",
+    "PDF incorporado precede storageKey; bytes vazios usam storage; documento ausente, incompatível, reclassificado e falha de download mantêm os contratos. Ensaio local com PDF sintético em memória e parser real confirmou valor correspondente e recusou valor divergente.",
+    "Verificador: 5 testes aprovados; diagnose contra a base 5051 para 5051, zero acréscimos."
+  ],
+  "rollback": "Reverter a entrega como unidade. Sem restauração de dados ou conversão de tokens. A versão anterior pode consumir a mesma guia.",
+  "humanDecisions": [
+    "Entrega restrita ao incremento 3.2. Revisão humana e autorização separada para integração."
+  ],
+  "finalReview": "Parecer independente favorável ao diff. Conferidos limites de leitura, precedência, hash, identidade de erros, montagem das dependências e corpo da confirmação, além dos testes documentais. Sem impedimentos identificados.",
+  "limitations": [
+    "O piloto hospedado simula o armazenamento e a extração de texto. O teste local adicional usa PDF sintético e parser real, sem acessar armazenamento externo. Revisões futuras da projeção Prisma exigem paridade de serialização.",
+    "O controlador local foi interrompido após o gate amplo da API apontar ausência da URL do PostgreSQL descartável no ambiente do próprio controlador. O gate foi reiniciado com a URL local. A execução interrompida não produziu ready_for_human. Revisão independente e resultados hospedados vinculados ao PR."
+  ]
+}
