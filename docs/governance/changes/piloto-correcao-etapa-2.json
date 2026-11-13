@@ -1,5 +1,8 @@
 {
   "summary": "Etapa 2 na base ac94b318cca514a65b8ecd6762b072dd79ca2549. O serviço legado continua coordenando a operação. Guias decide validade do valor, composição, pagamento e suficiência da evidência lida. Contabilidade expõe as decisões de editabilidade da provisão, equilíbrio das linhas e impedimento por competência fechada. As políticas são síncronas, puras e independentes entre si.",
+  "integrationBase": "a53102c94406374407330a1b3a15d5b8bd3b2ed9",
+  "integrationReview": "Revisão independente sobre a main após o #260 aprovada. O patch do piloto foi preservado na reconciliação. No PostgreSQL 16 isolado e nas suítes do piloto: 69 testes de políticas/serviço, 16 de caracterização HTTP/transação e 10 de fechamento/concorrência passaram. Quatro testes do verificador passaram; diagnose registrou 5053 ocorrências nas duas árvores, zero acréscimos. Comparação diferencial com a main: 768 cenários, 1536 chamadas, zero diferenças.",
+  "remainingRisk": "A conversão monetária com Number e Math.round mantém as limitações de precisão do legado; não define uma política definitiva de arredondamento. A evidência de concorrência se limita à correção de guia e ao fechamento exercitados.",
   "risk": "high",
   "domains": ["accounting", "api", "ci", "commercial", "communication", "guides", "operations", "portal", "web"],
   "operationalImpact": "Sem nova regra operacional. Preservados GET/POST, autorização, classe de erro e exports legados, consulta ordenada, formato do token e validações na mesma precedência. A confirmação relê guia, provisão, fechamento e revisão no cliente transacional, com Serializable, escrita condicional e auditoria originais. Acesso a documentos, schema, migrações e fechamento por empresa não foram alterados.",
