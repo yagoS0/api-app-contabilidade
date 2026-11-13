@@ -1,0 +1,12 @@
+{
+  "summary": "Validação do PR cumulativo do piloto de correção contra main (4b1b071b6). Reúne a caracterização, a investigação de concorrência e a extração aprovada das políticas puras até 105307b. Os registros das entregas individuais continuam documentando os respectivos recortes.",
+  "risk": "high",
+  "domains": ["accounting", "api", "ci", "commercial", "communication", "governance", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Sem mudança de regra operacional. A dimensão governança abrange a instrução de API e o verificador introduzidos nas etapas anteriores. Guias coordena, Contabilidade decide a elegibilidade contábil e a releitura permanece na transação Serializable. O verificador arquitetural permanece em diagnose.",
+  "tests": [
+    "Evidência local registrada nas três entregas: 99 testes aprovados na etapa 2, zero novas ocorrências arquiteturais e 1536 comparações de paridade com a versão anterior.",
+    "Comparação do impacto entre main e a ponta do piloto: o conjunto cumulativo também inclui governance, ausente no registro isolado da etapa 2. O job Altan governance verifica o registro cumulativo no PR."
+  ],
+  "rollback": "Este registro contém somente evidência de integração; pode ser revertido isoladamente. A reversão do produto está descrita nos registros de cada incremento.",
+  "humanDecisions": ["O usuário aprovou a etapa 2 e autorizou executar a CI hospedada. O PR permanece sem merge; a etapa 3 não faz parte desta entrega."]
+}

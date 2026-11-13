@@ -1,0 +1,22 @@
+{
+  "summary": "Etapa 2 na base ac94b318cca514a65b8ecd6762b072dd79ca2549. O serviço legado continua coordenando a operação. Guias decide validade do valor, composição, pagamento e suficiência da evidência lida. Contabilidade expõe as decisões de editabilidade da provisão, equilíbrio das linhas e impedimento por competência fechada. As políticas são síncronas, puras e independentes entre si.",
+  "integrationBase": "a53102c94406374407330a1b3a15d5b8bd3b2ed9",
+  "integrationReview": "Revisão independente sobre a main após o #260 aprovada. O patch do piloto foi preservado na reconciliação. No PostgreSQL 16 isolado e nas suítes do piloto: 69 testes de políticas/serviço, 16 de caracterização HTTP/transação e 10 de fechamento/concorrência passaram. Quatro testes do verificador passaram; diagnose registrou 5053 ocorrências nas duas árvores, zero acréscimos. Comparação diferencial com a main: 768 cenários, 1536 chamadas, zero diferenças.",
+  "remainingRisk": "A conversão monetária com Number e Math.round mantém as limitações de precisão do legado; não define uma política definitiva de arredondamento. A evidência de concorrência se limita à correção de guia e ao fechamento exercitados.",
+  "risk": "high",
+  "domains": ["accounting", "api", "ci", "commercial", "communication", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Sem nova regra operacional. Preservados GET/POST, autorização, classe de erro e exports legados, consulta ordenada, formato do token e validações na mesma precedência. A confirmação relê guia, provisão, fechamento e revisão no cliente transacional, com Serializable, escrita condicional e auditoria originais. Acesso a documentos, schema, migrações e fechamento por empresa não foram alterados.",
+  "tests": [
+    "29 testes das etapas 0 e 1 aprovados: 9 Jest do serviço original, 16 do contrato HTTP/transação e 4 do verificador.",
+    "10 testes da investigação de concorrência aprovados no PostgreSQL 16 local descartável, incluindo ambas as ordens e rollback. Os 26 testes de contrato, transação e concorrência também passaram antes da extração.",
+    "60 novos testes unitários aprovados: 38 Guias e 22 Contabilidade. Ambos os arquivos foram incluídos no workflow focal.",
+    "Comparação com a fonte do serviço em ac94b31: 768 cenários aplicados aos dois exports, 1536 comparações pareadas, zero diferenças. Inclui token SHA-256, identidade da classe legada dentro de cada execução, código/status/mensagem, precedência, retornos e ordem e argumentos de I/O. Relógio, UUID e adaptadores controlados. O mesmo conjunto passou no controle base/base.",
+    "Diagnóstico arquitetural: 5053 ocorrências na base, 5053 na candidata, zero acréscimos; modo diagnose preservado."
+  ],
+  "limitations": [
+    "Revisão independente do diff e testes focais locais concluídos. O controlador foi iniciado antes das edições e escalou no planejamento sem executar rodadas: Invalid planner paths/risks após falha de inicialização do ambiente auxiliar. O seu ciclo completo de gates e a CI hospedada permanecem pendentes. O check estrutural de impacto não os substitui.",
+    "O ensaio diferencial cobre as entradas exercitadas e usa colaboradores controlados. Os testes PostgreSQL complementam a comparação para transações e concorrência; as conclusões permanecem restritas ao piloto."
+  ],
+  "rollback": "Reverter os commits desta etapa do mais recente para o mais antigo. A fachada volta a executar as condições anteriores antes da retirada dos módulos. Nenhum dado, migração ou alteração operacional a reverter.",
+  "humanDecisions": ["Usuário autorizou somente a etapa 2. Manter Serializable e releitura transacional, sem bloqueio por empresa no piloto. Diagnóstico de arquitetura permanece informativo; etapa 3 e integração não iniciadas."]
+}

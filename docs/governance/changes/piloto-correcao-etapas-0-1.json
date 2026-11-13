@@ -1,0 +1,18 @@
+{
+  "summary": "Etapas 0 e 1 da Revisão 2. Base de integração 4b1b071b6593be5a33be79c1aced5464dc980c43, conferida no remoto. A rota de correção, o serviço e o teste original coincidem entre a árvore inicial e a base. Schema e proteção de fechamento divergem. A worktree nova parte do commit remoto, sem transportar alterações locais.",
+  "risk": "high",
+  "domains": ["api", "ci", "governance", "portal", "web", "guides", "accounting"],
+  "operationalImpact": "Sem alteração funcional, de schema, contratos públicos, permissões ou regras operacionais. Referências canônica e versionada idênticas na base. Preservadas as regras de auditoria, acesso por empresa e fechamento. Asserções de contrato documentam o comportamento observado.",
+  "tests": [
+    "Suíte Jest original de correção: 9/9.",
+    "Especificação do piloto: 16/16, incluindo 15 casos HTTP e um ensaio composto em PostgreSQL 16 exclusivo com 213 migrações. Falha antes da auditoria desfez os writes; competência fechada após a prévia impediu a confirmação; duas confirmações da mesma revisão resultaram em um sucesso, um conflito e uma auditoria.",
+    "Verificador de arquitetura: 4/4 testes; comparação com os fontes do SHA-base: 5053 ocorrências na base e 5053 na candidata, zero acréscimo. Modo de diagnóstico reporta ocorrências e distingue falha de execução."
+  ],
+  "rollback": "Reverter os commits deste incremento na ordem inversa. Antes da integração, basta manter a branch isolada. Não há alteração de dados de negócio ou migração para desfazer.",
+  "humanDecisions": ["Revisão 2 aprovada para preparação do piloto. Esta entrega encerra antes da extração das regras."],
+  "limitations": [
+    "O teste HTTP monta o roteador isoladamente e controla autenticação e PDF. O ensaio concorrente não força o interleaving do banco. A disputa simultânea com o comando real de fechamento permanece por caracterizar.",
+    "O verificador analisa imports e operações Prisma reconhecíveis estaticamente. O número do baseline representa ocorrências, não defeitos independentes.",
+    "Verificações locais; execução hospedada de CI e revisão de integração pendentes."
+  ]
+}
