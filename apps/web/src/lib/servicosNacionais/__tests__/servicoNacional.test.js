@@ -44,10 +44,16 @@ describe("a lista oficial (Anexo B, gov.br/nfse) — o DADO", () => {
     expect(SERVICOS_NACIONAIS.filter((s) => !String(s[1]).trim())).toEqual([]);
   });
 
-  it("contagem medida na planilha: 335 códigos e 242 grupos", () => {
+  it("contagem e desdobramentos do Anexo B v1.01 de 22/01/2026", () => {
     // Se a Receita publicar uma versão nova, este teste cai — é o aviso de que o artefato em
     // `docs/lista-servico-nacional/` mudou e o hash do README precisa mudar junto.
-    expect(SERVICOS_NACIONAIS).toHaveLength(335);
+    expect(SERVICOS_NACIONAIS).toHaveLength(338);
+    const porCodigo = new Map(SERVICOS_NACIONAIS);
+    expect(porCodigo.get('070103')).toBe('Agrimensura e congêneres.');
+    expect(porCodigo.get('141403')).toBe('Guincho intramunicipal em construção civil.');
+    expect(porCodigo.get('141404')).toBe('Guindaste e içamento em construção civil.');
+    expect(porCodigo.get('200101')).toMatch(/\(prestado em terra\)$/);
+    expect(porCodigo.get('200102')).toMatch(/\(prestado em águas marinhas\)$/);
     expect(GRUPOS_SERVICO_NACIONAL).toHaveLength(242);
   });
 
@@ -74,6 +80,32 @@ describe("a lista oficial (Anexo B, gov.br/nfse) — o DADO", () => {
     // `docs/nfse-preenchimento.md` §12. Se a lista não o tivesse, ela não serviria para o que o
     // projeto já emitiu uma vez.
     expect(servicoPorCodigo(SERVICOS_NACIONAIS, "171201")).not.toBeNull();
+  });
+});
+
+describe("recuperação da carga da lista oficial", () => {
+  afterEach(() => {
+    jest.dontMock("../servicosNacionais.data.js");
+    jest.resetModules();
+  });
+
+  it.each([
+    ["serviços ausentes", undefined, GRUPOS_SERVICO_NACIONAL],
+    ["grupos com formato inválido", SERVICOS_NACIONAIS, {}],
+    ["serviços vazios", [], GRUPOS_SERVICO_NACIONAL],
+    ["grupos vazios", SERVICOS_NACIONAIS, []],
+  ])("permite tentar novamente após receber %s", async (_caso, servicos, grupos) => {
+    const dados = { __esModule: true, SERVICOS_NACIONAIS: servicos, GRUPOS_SERVICO_NACIONAL: grupos };
+    jest.resetModules();
+    jest.doMock("../servicosNacionais.data.js", () => dados);
+    const { carregarServicosNacionais } = require("../servicoNacional.js");
+    await expect(carregarServicosNacionais()).rejects.toThrow("lista oficial");
+
+    dados.SERVICOS_NACIONAIS = SERVICOS_NACIONAIS;
+    dados.GRUPOS_SERVICO_NACIONAL = GRUPOS_SERVICO_NACIONAL;
+    await expect(carregarServicosNacionais()).resolves.toEqual({
+      servicos: SERVICOS_NACIONAIS, grupos: GRUPOS_SERVICO_NACIONAL,
+    });
   });
 });
 
