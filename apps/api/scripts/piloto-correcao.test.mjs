@@ -76,9 +76,9 @@ const real = new Set([
   'application/guides/CorrigirValorGuiaService.js',
   'application/accounting/fechamentoContabil.js',
   'modules/guides/domain/correcaoDeValor.js',
-  'modules/guides/infrastructure/leituraGuiaCorrecaoValor.js',
-  'modules/accounting/infrastructure/leituraProvisoesCorrecaoValor.js',
-  'modules/accounting/infrastructure/leituraCompetenciasFechadas.js',
+  'modules/guides/infrastructure/prisma/leituraGuiaCorrecaoValor.js',
+  'modules/accounting/infrastructure/prisma/leituraProvisoesCorrecaoValor.js',
+  'composition/leiturasCorrecaoValorGuia.js',
   'modules/accounting/public.js',
   'modules/accounting/domain/correcaoDeProvisao.js'
 ]);
