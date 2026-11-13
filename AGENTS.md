@@ -6,6 +6,8 @@ Verifique pesos tipográficos, textos auxiliares, posição/tamanho de ações, 
 
 Há outros chats trabalhando nesta árvore. Preserve alterações preexistentes e evite editar arquivos que estejam sendo alterados em paralelo. O chat de revisão contínua de design acompanha mudanças periodicamente; isso não substitui a validação da própria alteração.
 
+Para escolher ou criar uma worktree e conferir a fonte operacional efetiva, siga o [guia de ambiente](docs/development/AMBIENTE.md).
+
 
 ## Governança multiagente do repositório
 
