@@ -24,6 +24,7 @@ import { BotaoAuditoria } from "./BotaoAuditoria";
 const nfseApi = createApiClient();
 
 export function NotasFiscaisTab({
+  canEditCompany = false,
   notasPanel,
   competencia: competenciaGlobal,
   regime,
@@ -257,6 +258,7 @@ export function NotasFiscaisTab({
 
       {emissao && (
         <EmitirNfseWizard
+          canEditCompany={canEditCompany}
           apiPerfis={nfseApi}
           companyId={companyId}
           /* O REGIME É MOSTRADO, não escolhido: o backend declara o mesmo `opSimpNac` para toda

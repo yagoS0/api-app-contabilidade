@@ -83,6 +83,14 @@ const TEXTOS = Object.freeze({
     "A data de fim de um regime do histórico é inválida.",
   company_regime_historico_vigencia_invertida:
     "No histórico de regimes, há um período que termina antes de começar.",
+  company_ibscbs_opcao_vigencia_invalid:
+    "No Histórico de regime, a opção de IBS/CBS só pode ser informada em períodos do Simples Nacional iniciados em 01/01/2027 ou depois. Confira o período antes de salvar o cadastro.",
+  company_ibscbs_opcao_invalid:
+    "Confira a opção de apuração de IBS/CBS no Histórico de regime.",
+  company_ibscbs_comprovante_required:
+    "Informe a referência do comprovante no período com opção pelo regime regular de IBS/CBS.",
+  company_ibscbs_comprovante_invalid:
+    "No Histórico de regime, a referência do comprovante exige uma opção de IBS/CBS e aceita até 300 caracteres.",
 
   // ── endereço ─────────────────────────────────────────────────────────────────────────────
   // ⚠ Este é o único que usa `details` — ver `mensagemDoErroDeCadastro`.

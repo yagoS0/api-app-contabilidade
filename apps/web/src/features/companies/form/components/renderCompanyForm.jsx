@@ -164,7 +164,7 @@ function SociosEditor({ socios, onChange }) {
 export function RegimeHistoricoEditor({ historico, onChange }) {
   const linhas = Array.isArray(historico) ? historico : [];
   function setLinha(i, campo, valor) {
-    onChange(linhas.map((r, idx) => (idx === i ? { ...r, [campo]: valor, ...(campo === "regime" && valor !== "SIMPLES" ? { apuracaoIbsCbs: "", comprovanteOpcaoIbsCbs: "" } : {}), ...(campo === "apuracaoIbsCbs" && !valor ? { comprovanteOpcaoIbsCbs: "" } : {}) } : r)));
+    onChange(linhas.map((r, idx) => (idx === i ? { ...r, [campo]: valor, ...(campo === "apuracaoIbsCbs" && !valor ? { comprovanteOpcaoIbsCbs: "" } : {}) } : r)));
   }
   function add() {
     onChange([...linhas, { regime: "SIMPLES", vigenciaInicio: "", vigenciaFim: "", impostos: "", desoneracao: false }]);
@@ -196,7 +196,12 @@ export function RegimeHistoricoEditor({ historico, onChange }) {
               </tr>
             </thead>
             <tbody>
-              {linhas.map((r, i) => (
+              {linhas.map((r, i) => {
+                const podeInformarOpcao = r.regime === 'SIMPLES' && r.vigenciaInicio >= '2027-01-01';
+                const opcaoIncompativel = !podeInformarOpcao && Boolean(r.apuracaoIbsCbs);
+                const orientacao = `Período ${i + 1}: a opção de IBS/CBS exige Simples Nacional e início da vigência em 01/01/2027 ou depois.`;
+                const ajudaId = `ibs-cbs-vigencia-${i}`;
+                return (
                 <tr key={i}>
                   <td style={{ padding: 3 }}>
                     <select aria-label={`Regime do período ${i + 1}`} style={MINI_INPUT} value={r.regime} onChange={(e) => setLinha(i, "regime", e.target.value)}>
@@ -209,10 +214,14 @@ export function RegimeHistoricoEditor({ historico, onChange }) {
                   <td style={{ padding: 3 }}><input aria-label={`Início da vigência do período ${i + 1}`} style={MINI_INPUT} type="date" value={r.vigenciaInicio} onChange={(e) => setLinha(i, "vigenciaInicio", e.target.value)} /></td>
                   <td style={{ padding: 3 }}><input aria-label={`Fim da vigência do período ${i + 1}`} style={MINI_INPUT} type="date" value={r.vigenciaFim} onChange={(e) => setLinha(i, "vigenciaFim", e.target.value)} placeholder="vigente" /></td>
                   <td style={{ padding: 3 }}>
-                    {r.regime === 'SIMPLES' ? <>
-                      <select aria-label={`Apuração de IBS/CBS do período ${i + 1}`} style={MINI_INPUT} value={r.apuracaoIbsCbs || ''} onChange={e => setLinha(i, 'apuracaoIbsCbs', e.target.value)}>
-                        <option value="">Não informado</option><option value="NO_DAS">Dentro do DAS</option><option value="REGULAR">Regime regular — Simples híbrido</option>
+                    {r.regime === 'SIMPLES' || r.apuracaoIbsCbs ? <>
+                      <select aria-label={`Apuração de IBS/CBS do período ${i + 1}`} style={MINI_INPUT} value={r.apuracaoIbsCbs || ''} onChange={e => setLinha(i, 'apuracaoIbsCbs', e.target.value)}
+                        disabled={!podeInformarOpcao && !opcaoIncompativel} aria-invalid={opcaoIncompativel || undefined}
+                        aria-describedby={!podeInformarOpcao ? ajudaId : undefined}
+                        ref={el => { el?.setCustomValidity(opcaoIncompativel ? orientacao : ''); }}>
+                        <option value="">Não informado</option><option disabled={!podeInformarOpcao} value="NO_DAS">Dentro do DAS</option><option disabled={!podeInformarOpcao} value="REGULAR">Regime regular — Simples híbrido</option>
                       </select>
+                      {!podeInformarOpcao && <small id={ajudaId}>{orientacao} {opcaoIncompativel && 'Confira as datas e o regime ou selecione “Não informado” para retirar a opção e o comprovante deste período.'}</small>}
                       {r.apuracaoIbsCbs && <input aria-label={`Referência do comprovante de IBS/CBS do período ${i + 1}`} style={{ ...MINI_INPUT, marginTop: 6 }} maxLength={300} required={r.apuracaoIbsCbs === 'REGULAR'} value={r.comprovanteOpcaoIbsCbs || ''} onChange={e => setLinha(i, 'comprovanteOpcaoIbsCbs', e.target.value)} placeholder="Protocolo ou referência do comprovante" />}
                     </> : <span>Não se aplica</span>}
                   </td>
@@ -224,7 +233,8 @@ export function RegimeHistoricoEditor({ historico, onChange }) {
                     <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer" }}>×</button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

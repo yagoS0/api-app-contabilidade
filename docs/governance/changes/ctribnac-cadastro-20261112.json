@@ -1,0 +1,28 @@
+{
+  "summary": "Corrige a seleção do cTribNac no perfil de emissão e a releitura dos serviços habilitados após salvar a configuração fiscal da empresa.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "documentation",
+    "fiscal",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "baseCommit": "4b1b071b6593be5a33be79c1aced5464dc980c43",
+  "operationalImpact": "Configuração fiscal por empresa é proprietária dos serviços habilitados. O perfil e o emissor consomem a seleção explícita. API distingue 503 de leitura, 404 de empresa inexistente, 409 de vínculo ausente e 200 de lista vazia. As duas interfaces consomem a edição de produção do Anexo B de 22/01/2026. Nenhuma mudança de schema, regra municipal, autorização ou transmissão.",
+  "tests": [
+    "Reprodução em Chrome com empresas sintéticas, perfil aberto, habilitação e gravação, seleção explícita, reabertura e troca de empresa. Recuperação da tabela após interrupção da carga sem perder o rascunho.",
+    "PostgreSQL 16 descartável com 213 migrações: salvar, reler em nova sessão, recusar outra empresa e código fora da lista, gerar XML com/sem perfil. Serviço 200102 exigiu município da prestação. Nenhuma nota assinada ou transmitida.",
+    "Suítes selecionadas da API, escritório e portal para NFS-e, serviços, perfis, DPS e NBS; quatro suítes da API reexecutadas com a URL PostgreSQL de teste. Builds do escritório e portal. Geração do catálogo reproduzível e conferência da tabela histórica NBS."
+  ],
+  "reviewProcess": "O controlador iniciou a execução 2026-11-12T12-46-53-706Z-b7597363 e escalou por tempo limite do executor. Revisão independente posterior identificou a necessidade de rejeitar dados inválidos antes de armazenar a tabela em cache e de manter a carteira atualizada quando o salvamento termina após trocar de empresa. Ambos tratados na candidata. A execução formal do controlador não chegou à aprovação.",
+  "rollback": "Reverter os commits desta branch na ordem inversa. Dados salvos ficam preservados. A versão anterior do catálogo não permite escolher os três códigos adicionados; conferir empresas que os habilitaram antes de eventual reversão. Não alterar registros nem reenviar documentos.",
+  "humanDecisions": [
+    "A integração do PR depende da revisão do diff final, da conclusão da CI hospedada e de autorização explícita para merge. O deploy exige autorização separada."
+  ],
+  "limitations": [
+    "Sem acesso a registros da sessão de produção da captura. O estado de lista vazia e a falha de leitura foram reproduzidos separadamente.",
+    "Validação com dados sintéticos, sem homologação municipal externa. Integração e publicação exigem autorização."
+  ]
+}

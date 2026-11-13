@@ -230,6 +230,7 @@ export function mapCompanyToEditForm(company) {
           regime: String(r.regime || "SIMPLES"),
           apuracaoIbsCbs: r.apuracaoIbsCbs || "",
           comprovanteOpcaoIbsCbs: r.comprovanteOpcaoIbsCbs || "",
+          observacao: r.observacao ?? null,
           vigenciaInicio: toDateInput(r.vigenciaInicio),
           vigenciaFim: toDateInput(r.vigenciaFim),
           impostos: Array.isArray(r.impostos) ? r.impostos.join("/") : "",

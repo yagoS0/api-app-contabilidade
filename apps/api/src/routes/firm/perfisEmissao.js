@@ -143,29 +143,37 @@ export function createPerfisEmissaoRouter({ log } = {}) {
 
   /** Resolve o `PortalClient` e a `Company` legada — as duas são necessárias. */
   async function carregarEmpresa(portalClientId, res) {
-    const portal = await prisma.portalClient
-      .findUnique({ where: { id: portalClientId }, select: { id: true, companyId: true, emissaoClienteLiberada: true } })
-      .catch(() => null);
+    let portal, company;
+    try {
+      portal = await prisma.portalClient.findUnique({
+        where: { id: portalClientId },
+        select: { id: true, companyId: true, emissaoClienteLiberada: true },
+      });
+      if (portal?.companyId) {
+        company = await prisma.company.findUnique({
+          where: { id: portal.companyId },
+          select: {
+            codigoServicoNacional: true,
+            codigosServicoNacional: true,
+            codigoServicoMunicipal: true,
+            regimeEspecialTributacao: true,
+          },
+        });
+      }
+    } catch (err) {
+      log?.warn?.({ code: err?.code, portalClientId }, "Falha ao ler cadastro de emissão da empresa");
+      bad(res, 503, "cadastro_emissao_indisponivel", "Não foi possível carregar o cadastro de emissão da empresa. Tente novamente.");
+      return null;
+    }
     if (!portal?.id) { bad(res, 404, "portal_company_not_found", "Empresa não encontrada."); return null; }
     // ⚠ SEM LINHA LEGADA NÃO HÁ CADASTRO DE ONDE DERIVAR, e a resposta DIZ ISSO. Responder 200 aqui
     // deixaria o contador configurando um perfil que nunca teria contra o que ser comparado.
-    if (!portal.companyId) {
+    if (!company) {
       bad(res, 409, "company_legada_ausente",
         "Esta empresa não tem cadastro legado (Company) — não há configuração de emissão de onde "
           + "derivar o perfil. Salve o cadastro da empresa antes.");
       return null;
     }
-    const company = await prisma.company
-      .findUnique({
-        where: { id: portal.companyId },
-        select: {
-          codigoServicoNacional: true,
-          codigosServicoNacional: true,
-          codigoServicoMunicipal: true,
-          regimeEspecialTributacao: true,
-        },
-      })
-      .catch(() => null);
     return { portal, company };
   }
 
