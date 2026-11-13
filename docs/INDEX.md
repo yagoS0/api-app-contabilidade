@@ -16,7 +16,7 @@
 - [Funcionamento do controlador](governance/README.md), [política de risco e aprovação](governance/POLICY.md), [contrato de revisão](governance/REVIEW-CONTRACT.md) e [dependências entre áreas](governance/DEPENDENCIES.md).
 - **Perfis usados pelo controlador.** [Orquestrador](../.codex/agents/altan_orchestrator.toml), [executor](../.codex/agents/altan_implementer.toml) e revisores de [domínio](../.codex/agents/altan_domain_reviewer.toml), [backend](../.codex/agents/altan_backend_reviewer.toml), [dados](../.codex/agents/altan_data_reviewer.toml), [interface](../.codex/agents/altan_ui_reviewer.toml), [experiência de uso](../.codex/agents/altan_ux_reviewer.toml) e [impacto sistêmico](../.codex/agents/altan_system_reviewer.toml).
 - **Produto e interface.** [Orientações iniciais](../LEIA_ME_PRIMEIRO.md), [plano mestre](../PLANO_MESTRE_CODEX.md), [sistema de design](../DESIGN_SYSTEM.md), [regras de usabilidade](../UX_RULES.md) e [critérios de revisão visual](design-review.md).
-- **Proposta de arquitetura.** O PR de governança reúne a proposta de DDD, Clean Architecture e regras de não regressão. A incorporação à main está pendente. [PR #262](https://github.com/yagoS0/api-app-contabilidade/pull/262)
+- [Arquitetura da Altan](governance/ARQUITETURA.md) orienta a propriedade dos dados, as dependências entre contextos e camadas e a revisão de novas violações.
 
 ## Regras operacionais
 
@@ -108,6 +108,7 @@ Os caminhos são relativos à raiz do repositório. Cada arquivo aparece na clas
 
 ### Governança
 
+- [docs/governance/ARQUITETURA.md](governance/ARQUITETURA.md)
 - [docs/governance/DEPENDENCIES.md](governance/DEPENDENCIES.md)
 - [docs/governance/POLICY.md](governance/POLICY.md)
 - [docs/governance/README.md](governance/README.md)

@@ -1,5 +1,7 @@
 {
   "summary": "Complementar as instruções permanentes de arquitetura a partir de main 4b1b071b6593be5a33be79c1aced5464dc980c43. Inventário inicial: 15 AGENTS.md e 31 CLAUDE.md versionados. A norma central é vinculada pelas entradas de AGENTS e CLAUDE da raiz e por quatro entradas de escopo. Um job diagnóstico reutiliza os blobs do verificador, dos seus testes originais e dos manifestos de desenvolvimento de 7985f08.",
+  "integrationBase": "1dd7da3caf40b805e3889914f6d9fdf2700ea7fe",
+  "integrationReview": "A revisão independente confirmou que o conteúdo anterior das instruções foi preservado. Os manifestos, o verificador e os testes originais são idênticos aos da main após #259. O índice referencia a norma; o job geral executa diagnose. Na etapa 2 as decisões são puras e as escritas continuam na fachada legada.",
   "risk": "high",
   "domains": ["governance", "documentation", "ci", "api", "web", "portal", "data", "accounting", "commercial", "communication", "fiscal", "guides", "operations"],
   "operationalImpact": "Sem alteração de regra operacional, código de produto, permissões, banco, deploy ou integração externa. As instruções orientam autores e revisores. A CI passa a executar diagnóstico de dependências da API nos PRs; acréscimos são informativos. Falhas técnicas do diagnóstico permanecem visíveis.",
@@ -7,9 +9,10 @@
     "api e infraestrutura": "Os próximos incrementos devem declarar o coordenador, os donos das escritas e a autorização por empresa. Rotas, workers e contratos existentes mantêm o comportamento atual.",
     "domínios de negócio e shared": "Aplicam a regra de propriedade e a fronteira pública quando alterados. Não há alteração de modelos, de regras fiscais, de fechamento, de folha ou de export público nesta entrega.",
     "web e portal": "As instruções locais passam a referenciar a norma. Não há mudança de UI ou payload.",
-    "governança e CI": "A geração do plano, a hierarquia, o catálogo de gates, as políticas e o controlador continuam versionados como na base. Adiciona-se um job de diagnóstico a governance.yml. Quando o workflow focal de #259 estiver integrado, ambos poderão executar diagnóstico da mesma API."
+    "governança e CI": "A geração do plano, a hierarquia, o catálogo de gates, as políticas e o controlador continuam versionados como na base. O job geral em governance.yml e o workflow focal do piloto já integrado podem diagnosticar a mesma API."
   },
   "tests": [
+    "Revalidação sobre 1dd7da3: 88 testes de governança e 5 do verificador aprovados sem pulos; diagnose comparado com a main registrou 5053 ocorrências em cada árvore e nenhum acréscimo.",
     "85/85 testes locais da governança na base main (check, orchestrate, bootstrap, data-gate e Jest em lotes).",
     "5/5 testes do verificador, incluindo fixture de imports de Express, Prisma e SDK no domínio e acesso indevido à infraestrutura.",
     "Diagnóstico comparativo: 5053 ocorrências na base e na candidata, zero acréscimos.",

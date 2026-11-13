@@ -37,6 +37,8 @@ Defina nos contratos públicos os dados mínimos de entrada e saída, empresa, i
 
 ## Aplicação nos componentes
 
+No piloto de correção de guia, as políticas puras já estão em `modules/guides/domain` e `modules/accounting/domain` sob `apps/api/src`. Guias consulta as decisões contábeis por `modules/accounting/public.js`. A fachada `application/guides/CorrigirValorGuiaService.js` ainda executa as leituras e escritas com Prisma. A extração dos adaptadores de persistência é um incremento posterior.
+
 - **API e workers.** Validar autorização no servidor antes da operação e filtrar dados por empresa também na persistência. O ator vem da sessão ou da identidade de serviço autorizada. Tratar conta global somente conforme a regra existente. Workers preservam reserva, deduplicação e política de retomada quando houver efeito externo incerto.
 - **Frontend do escritório e portal do cliente.** Organizar a funcionalidade por fluxo; componentes apresentam estados e disparam operações, e a camada de acesso da feature traduz o contrato HTTP. Validar troca de empresa, respostas atrasadas, estados vazio/erro e sessão expirada quando pertinentes. Não copiar regra fiscal/contábil para autorizar uma escrita na tela. Preservar as revisões UI/UX e os critérios visuais já vigentes.
 - **Infraestrutura de runtime e implantação.** Manter Prisma e SDKs nos adaptadores; regras operacionais ficam no módulo dono. Em `infra/`, delimitar serviços consumidores, compatibilidade de configuração, tratamento de segredos e forma de reversão. Não registrar credenciais, PDFs, tokens ou dados de cliente em logs de diagnóstico. Alterações de schema seguem a governança de Prisma, com tratamento explícito dos dados existentes.
