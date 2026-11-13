@@ -62,7 +62,11 @@ function mesmoValor(a, b) {
   return String(a ?? "") === String(b ?? "");
 }
 
-export function EmissaoNfseTab({
+export function EmissaoNfseTab(props) {
+  return <ConfiguracaoEmissao key={props.company?.companyId} {...props} />;
+}
+
+function ConfiguracaoEmissao({
   company,
   onSalvar,
   salvando = false,
@@ -109,7 +113,12 @@ export function EmissaoNfseTab({
     // campo é uma intenção legítima (desfazer uma configuração errada), e ela viaja como `""`.
     const campos = {};
     for (const c of CAMPOS) campos[c] = form[c];
-    await onSalvar(campos);
+    try {
+      const resposta = await onSalvar(campos);
+      if (resposta?.ok === true) await carregarPerfis();
+    } catch {
+      // O workspace apresenta o erro do PATCH e conserva os campos para nova tentativa.
+    }
   }
 
   // ── O PAINEL DA PRÓXIMA DPS ────────────────────────────────────────────────────────────────
@@ -129,29 +138,33 @@ export function EmissaoNfseTab({
   // defeito que o `legacyCompanySelect` já pagou três vezes.
   const portalClientId = company?.companyId || null;
   const [perfis, setPerfis] = useState(null);
-  const [carregandoPerfis, setCarregandoPerfis] = useState(false);
+  const [estadoPerfis, setEstadoPerfis] = useState('carregando');
+  const carregandoPerfis = estadoPerfis === 'carregando';
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
-  const empresaAtual = useRef(portalClientId);
-  empresaAtual.current = portalClientId;
-  const [empresaDosPerfis, setEmpresaDosPerfis] = useState(null);
+  const leitura = useRef(0);
 
   const carregarPerfis = useCallback(async () => {
     if (!portalClientId) return;
-    setCarregandoPerfis(true);
+    const pedido = ++leitura.current;
+    setEstadoPerfis('carregando');
     try {
       const resposta = await api.getPerfisEmissao(portalClientId);
-      if (empresaAtual.current !== portalClientId) return;
+      if (pedido !== leitura.current) return;
+      if (!Array.isArray(resposta?.sugestoes?.porServico) || resposta.ok === false) {
+        setEstadoPerfis('erro');
+        return;
+      }
       setPerfis(resposta);
-      setEmpresaDosPerfis(portalClientId);
+      setEstadoPerfis('pronto');
     } catch {
-      // ⚠ `null` é o estado "não recebida", que a lib distingue de "esta empresa não tem perfil".
-      if (empresaAtual.current === portalClientId) setPerfis(null);
-    } finally {
-      if (empresaAtual.current === portalClientId) setCarregandoPerfis(false);
+      if (pedido === leitura.current) setEstadoPerfis('erro');
     }
   }, [portalClientId]);
 
-  useEffect(() => { carregarPerfis(); }, [carregarPerfis]);
+  useEffect(() => {
+    carregarPerfis();
+    return () => { leitura.current++; };
+  }, [carregarPerfis]);
 
   async function salvarPerfil(perfilId, corpo) {
     setSalvandoPerfil(true);
@@ -174,10 +187,16 @@ export function EmissaoNfseTab({
         painel.querySelector('#beneficioMunicipalNumero')?.focus();
       }}>Configurar benefício municipal</Button>}
 
-      {carregandoPerfis ? <p role="status">Carregando perfis de emissão…</p> : empresaDosPerfis !== portalClientId || !perfis ? <div role="status"><p>Não foi possível carregar os perfis de emissão.</p><Button variant="secondary" onClick={carregarPerfis}>Recarregar perfis</Button></div> : null}
+      {carregandoPerfis ? <p role="status">Carregando perfis de emissão…</p> : estadoPerfis === 'erro' && <div role="status"><p>Não foi possível carregar os perfis e serviços habilitados.</p><Button variant="secondary" onClick={carregarPerfis}>Recarregar perfis</Button></div>}
       <EditorPerfilEmissao
         key={portalClientId}
-        dados={empresaDosPerfis === portalClientId ? perfis : null}
+        dados={perfis}
+        catalogoPendente={estadoPerfis !== 'pronto'}
+        onHabilitarServico={() => {
+          const painel = configuracoesGerais.current;
+          painel.open = true;
+          painel.querySelector('#codigosServicoNacional')?.focus();
+        }}
         podeEditar={podeEditar}
         salvando={salvandoPerfil}
         onSalvar={salvarPerfil}
@@ -186,7 +205,7 @@ export function EmissaoNfseTab({
       <details className="nfse-section nfse-municipal-disclosure"><summary>Consultar parâmetros municipais de ISS</summary><ParametrosMunicipais key={`municipais-${portalClientId}`} companyId={portalClientId} api={api} podeConsultar={podeEditar} /></details>
 
       <details className="nfse-section nfse-diagnostics"><summary>Conferir os dados da próxima nota</summary>
-        <PainelProximaDps dados={empresaDosPerfis === portalClientId ? perfis : null} carregando={carregandoPerfis} mostrarPerfis={false} />
+        <PainelProximaDps dados={estadoPerfis === 'pronto' ? perfis : null} carregando={carregandoPerfis} mostrarPerfis={false} />
       </details>
 
       {!podeEditar ? (

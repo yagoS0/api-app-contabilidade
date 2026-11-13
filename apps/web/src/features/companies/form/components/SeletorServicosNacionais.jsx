@@ -21,7 +21,7 @@
 // mostra os DESDOBRAMENTOS (335), que é a granularidade que a nota carrega; o nome do item/subitem
 // aparece como GRUPO, para orientar a busca, e não é selecionável.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   buscarServicos,
   carregarServicosNacionais,
@@ -53,17 +53,17 @@ export function SeletorServicosNacionais({
   const [dados, setDados] = useState(null);
   const [erroCarga, setErroCarga] = useState(null);
   const [termo, setTermo] = useState("");
-  const vivo = useRef(true);
+  const [tentativa, setTentativa] = useState(0);
 
   useEffect(() => {
-    vivo.current = true;
+    let vivo = true;
     carregarServicosNacionais()
-      .then((d) => { if (vivo.current) setDados(d); })
+      .then((d) => { if (vivo) setDados(d); })
       .catch(() => {
-        if (vivo.current) setErroCarga("Não foi possível carregar a lista oficial de códigos de serviço.");
+        if (vivo) setErroCarga("Não foi possível carregar a lista oficial de códigos de serviço.");
       });
-    return () => { vivo.current = false; };
-  }, []);
+    return () => { vivo = false; };
+  }, [tentativa]);
 
   const leitura = useMemo(() => lerCodigosServicoNacional(codigos), [codigos]);
   const escolhidos = leitura.codigos;
@@ -101,9 +101,11 @@ export function SeletorServicosNacionais({
       </details>
 
       {erroCarga && (
-        <div style={{ fontSize: 12, color: "var(--state-danger)" }}>
-          {erroCarga} Recarregue a página para tentar de novo — sem a lista não dá para escolher, e
-          digitar o código à mão não é oferecido aqui de propósito.
+        <div role="alert" style={{ fontSize: 12, color: "var(--state-danger)" }}>
+          {erroCarga} <button type="button" onClick={() => {
+            setErroCarga(null);
+            setTentativa(n => n + 1);
+          }}>Recarregar lista oficial</button>
         </div>
       )}
 
@@ -234,7 +236,8 @@ export function SeletorServicosNacionais({
         value={termo}
         onChange={(event) => setTermo(event.target.value)}
         placeholder={dados ? "Buscar pelo TEXTO do serviço (ex.: contabilidade, telecomunicações) ou pelo código" : "Carregando a lista oficial…"}
-        disabled={!dados}
+        readOnly={!dados}
+        aria-busy={!dados && !erroCarga}
         autoComplete="off"
         style={CAIXA}
       />

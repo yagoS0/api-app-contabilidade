@@ -257,6 +257,7 @@ function Bloco({ titulo, children, oculto = false }) {
 }
 
 export function EmitirNfseWizard({
+  canEditCompany = false,
   companyId,
   regime: regimeCadastrado,
   codigoMunicipioIbge,
@@ -996,7 +997,7 @@ export function EmitirNfseWizard({
         {passo === PASSO_CONFERIR && <ConfigurarRecorrencia api={apiPerfis} companyId={companyId} obterModelo={montarPayload} disabled={enviando || !prontoParaEmitir || travadoPelaRejeicao} aoSalvar={onRecorrenciaSalva} />}
         {/* O formulário e o espelho lado a lado. Abaixo de 900px a grade vira uma coluna e o
             espelho fica embaixo — ver `.emitir-nfse-corpo` no `App.css`. */}
-        <PreviaFiscal previa={previaFiscal} companyId={companyId} destaque={passo === PASSO_CONFERIR} />
+        <PreviaFiscal previa={previaFiscal} companyId={companyId} canEditCompany={canEditCompany} destaque={passo === PASSO_CONFERIR} />
         {avisoPrevia && <p role="alert">{avisoPrevia}</p>}
         <div className={passo === PASSO_CONFERIR ? "emitir-nfse-corpo emitir-nfse-corpo--conferir" : "emitir-nfse-corpo"}>
           {passo < PASSO_CONFERIR && (
