@@ -2,26 +2,23 @@ import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { lerLinhaDigitavelDoPdf } from "./lerLinhaDigitavelDoPdf.js";
-import { competenciasFechadas } from "../accounting/fechamentoContabil.js";
+import { lerGuiaParaCorrecaoValor } from "../../modules/guides/infrastructure/leituraGuiaCorrecaoValor.js";
 import { motivoImpedimentoDaGuia, valorDaCorrecaoEmCentavos, evidenciaConfirmaValor } from "../../modules/guides/domain/correcaoDeValor.js";
-import { motivoImpedimentoDaProvisao, motivoImpedimentoPorFechamento } from "../../modules/accounting/public.js";
+import { lerCompetenciasFechadas, motivoImpedimentoDaProvisao, motivoImpedimentoPorFechamento } from "../../modules/accounting/public.js";
 
 export class CorrecaoValorError extends Error {
   constructor(code, message, status = 409) { super(message); this.code = code; this.status = status; }
 }
 const recusar = (code, message, status) => { throw new CorrecaoValorError(code, message, status); };
 async function carregar(db, companyId, guideId, novoValor) {
-  const g = await db.guide.findFirst({ where: { id: guideId, portalClientId: companyId }, include: {
-    accountingEntries: { include: { lines: { orderBy: { id: "asc" } }, baixas: { select: { id: true } } }, orderBy: { id: "asc" } },
-    tributosParcela: { select: { id: true } },
-  } });
+  const g = await lerGuiaParaCorrecaoValor(db, companyId, guideId);
   if (!g) recusar("guia_nao_encontrada", "Guia não encontrada.", 404);
   const impedimentoGuia = motivoImpedimentoDaGuia(g);
   if (impedimentoGuia) recusar(impedimentoGuia.code, impedimentoGuia.message);
   const entradas = g.accountingEntries;
   const impedimentoProvisao = motivoImpedimentoDaProvisao(entradas, companyId, g.valor, novoValor);
   if (impedimentoProvisao) recusar(impedimentoProvisao.code, impedimentoProvisao.message);
-  const fechadas = await competenciasFechadas(companyId, [g.competencia, ...entradas.map(e => e.competencia)], db);
+  const fechadas = await lerCompetenciasFechadas(db, companyId, [g.competencia, ...entradas.map(e => e.competencia)]);
   const impedimentoFechamento = motivoImpedimentoPorFechamento(fechadas);
   if (impedimentoFechamento) recusar(impedimentoFechamento.code, impedimentoFechamento.message);
   const revisao = createHash("sha256").update(JSON.stringify(g)).digest("hex");
