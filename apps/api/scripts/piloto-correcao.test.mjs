@@ -74,6 +74,12 @@ const real = new Set([
   'routes/firm/corrigirValorGuia.js',
   'middlewares/requireFirmCompanyAccess.js',
   'application/guides/CorrigirValorGuiaService.js',
+  'application/guides/GuideService.js',
+  'application/guides/lib/documentoNaoArrecadatorio.js',
+  'application/guides/lerLinhaDigitavelDoPdf.js',
+  'application/guides/linhaDigitavelArrecadacao.js',
+  'modules/guides/application/preverCorrecaoValorGuia.js',
+  'modules/guides/infrastructure/documentos/leituraDocumentalCorrecaoValorGuia.js',
   'application/accounting/fechamentoContabil.js',
   'modules/guides/domain/correcaoDeValor.js',
   'modules/guides/infrastructure/prisma/leituraGuiaCorrecaoValor.js',
@@ -85,23 +91,43 @@ const real = new Set([
 const doubles = new Map([
   ['express',{Router:express.Router}], ['node:crypto',crypto],
   ['infrastructure/db/prisma.js',{prisma:fakeDb}],
-  ['application/guides/GuideService.js',{getGuidePdfBuffer:async () => {
-    if (state.pdfFailure) throw new Error('detalhe interno do armazenamento');
-    return Buffer.from('fixture');
-  }}],
-  ['application/guides/lerLinhaDigitavelDoPdf.js',{lerLinhaDigitavelDoPdf:async () => state.pdf ? {linhaDigitavel:'fixture',linhaDigitavelMotivo:null} : {linhaDigitavel:null}}]
+  ['application/guides/GuideStorageService.js', {GuideStorageService: {create: () => ({
+    downloadBuffer: async ({key}) => {
+      state.downloads.push(key);
+      if (state.pdfFailure) throw new Error('detalhe interno do armazenamento');
+      return Buffer.from(state.storageText);
+    }
+  })}}],
+  ['pdf-parse', {default: async bytes => ({text: Buffer.from(bytes).toString()})}],
 ]);
+// Os demais imports de GuideService não fazem parte da leitura documental.
+for (const [id, names] of Object.entries({
+  'application/guides/ConfirmacaoPagamentoClienteService.js': ['reconfirmacaoPagamentoTx','listarConfirmacoesPagamento','resumoConfirmacaoPagamento','versaoPagamentoGuia'],
+  'application/guides/atualizarGuiaComEvidencia.js': ['atualizarGuiaComEvidencia'],
+  'application/guides/EnvioGuiaService.js': ['enviosPorGuia','foiEnviadaComLegado','STATUS_TERMINAL'],
+  'application/whatsapp/errosMeta.js': ['podeTentarDeNovoPeloCodigo'],
+  'application/guides/guideContract.js': ['fileNameForGuide','normalizeCompetencia','normalizeGuideType','SELECT_PARCELAMENTO_DA_GUIA','whereGuiaPendenteDeEnvio'],
+  'application/guides/GuidePaymentStatusService.js': ['canGuideConfirmPayment','canGuideRecalculate','isGuideOverdue','vencimentoDaGuia','avisoDeRecalculo','especieDoRecalculo'],
+})) doubles.set(id, Object.fromEntries(names.map(name => [name, undefined])));
 async function load(id) {
   if (cache.has(id)) return cache.get(id);
   let mod;
   if (doubles.has(id)) mod = synthetic(id, doubles.get(id));
   else {
     assert.ok(real.has(id), 'Atualize a composição isolada da especificação para importar ' + id);
-    mod = new vm.SourceTextModule(await readFile(path.join(src,id),'utf8'), {context,identifier:id});
+    mod = new vm.SourceTextModule(await readFile(path.join(src,id),'utf8'), {
+      context, identifier:id, importModuleDynamically: async specifier => {
+        assert.equal(specifier, 'pdf-parse');
+        return pdfParse;
+      }
+    });
   }
   cache.set(id,mod);
   return mod;
 }
+const pdfParse = await load('pdf-parse');
+await pdfParse.link(() => assert.fail('pdf-parse simulado sem dependências'));
+await pdfParse.evaluate();
 const router = await load('routes/firm/corrigirValorGuia.js');
 await router.link((id, parent) => load(id.startsWith('.') ? path.posix.join(path.posix.dirname(parent.identifier),id) : id));
 await router.evaluate();
@@ -112,9 +138,11 @@ app.use('/firm',router.namespace.createCorrigirValorGuiaRouter());
 const url = '/firm/companies/A/guides/g/corrigir-valor';
 const preview = (endpoint=url) => request(app).get(endpoint).set('x-fixture-user','u').query({valor:'125.25'});
 const confirm = (revisao, fields = {}) => request(app).post(url).set('x-fixture-user','u').send({valor:'125.25',revisao, ...fields});
+const linhaFixture = '816000000017252500000002000000000000000000000000';
 test.beforeEach(() => {
-  state = { role:'user', accessChecks:[], linkedCompanies:['A'], link:{role:'ACCOUNTANT',status:'ACTIVE',scopes:[]}, reads:[], writes:[], count:1, pdf:true,
-    guide:{id:'g',portalClientId:'A',valor:100,competencia:'2026-08',tipo:'OUTRA',status:'PROCESSED',
+  state = { role:'user', accessChecks:[], linkedCompanies:['A'], link:{role:'ACCOUNTANT',status:'ACTIVE',scopes:[]}, reads:[], writes:[], count:1,
+    downloads:[], storageText:linhaFixture,
+    guide:{id:'g',portalClientId:'A',valor:100,competencia:'2026-08',tipo:'OUTRA',status:'PROCESSED',storageKey:'fixture/g',
       updatedAt:new Date('2026-09-01Z'),tributosParcela:[],accountingEntries:[{id:'e',portalClientId:'A',tipo:'PROVISAO',
       competencia:'2026-08',status:'RASCUNHO',baixas:[],lines:[{tipo:'D',valor:100},{tipo:'C',valor:100}]}]} };
 });
@@ -135,7 +163,8 @@ test('prévia pública e confirmação com provisão balanceada', async () => {
   assert.deepEqual(Object.keys(body).sort(), ['companyId','guideId','lancamentosAfetados','linhaConfirmada','novoValor','pdfPreservado','revisao','valorAtual'].sort());
   assert.equal(body.valorAtual,100);
   assert.equal(body.novoValor,125.25);
-  assert.equal(body.revisao, '451386241a90425a7c6947178823ece34d093c701d9159f7c3089b2868494ab1');
+  assert.equal(body.revisao, crypto.createHash('sha256').update(JSON.stringify(state.guide)).digest('hex'));
+  assert.deepEqual(state.downloads, ['fixture/g']);
   assert.deepEqual(state.accessChecks, [{companyId:'A', userId:'u'}]);
   assert.deepEqual(state.writes,[]);
   await confirm(body.revisao,{userId:'ator-forjado'}).expect(200,{ok:true,guideId:'g',valor:125.25,lancamentosAfetados:1});
@@ -162,7 +191,7 @@ for (const [name,change,expected] of [
   ['pagamento',()=>{state.guide.paymentStatus='PAID'},'guia_com_pagamento'],
   ['fechamento',()=>{state.closed=true},'competencia_fechada'],
   ['provisão divergente',()=>{state.guide.accountingEntries[0].lines[0].valor=20},'provisao_divergente'],
-  ['PDF inconclusivo',()=>{state.pdf=false},'pdf_nao_confirma_valor']
+  ['PDF inconclusivo',()=>{state.storageText='sem linha digitável'},'pdf_nao_confirma_valor']
 ]) test(name,async () => {
   change(); const {body}=await preview().expect(409);
   assert.equal(body.error,expected); assert.deepEqual(state.writes,[]);
@@ -253,6 +282,65 @@ test('a atualização condicional pode perder a corrida sem alterar a provisão'
 test('falha inesperada durante a leitura do PDF tem resposta pública estável', async () => {
   state.pdfFailure = true;
   await preview().expect(500, {error:'erro_interno', message:'Não foi possível corrigir a guia.'});
+  assert.deepEqual(state.writes, []);
+});
+
+test('PDF incorporado prevalece sobre storage e a linha deve confirmar o valor proposto', async () => {
+  state.guide.pdfBytes = Buffer.from(linhaFixture);
+  state.pdfFailure = true;
+  await preview().expect(200);
+  await confirm('revisao', {valor:'125.26'}).expect(409, {
+    error:'pdf_nao_confirma_valor',
+    message:'O PDF original não confirmou este valor pela linha digitável. Corrija após revisar o documento.'
+  });
+  assert.deepEqual(state.downloads, []);
+  assert.deepEqual(state.writes, []);
+});
+
+test('bytes vazios permitem storage legado e ausência de ambas as fontes recusa a prévia', async () => {
+  state.guide.pdfBytes = Buffer.alloc(0);
+  await preview().expect(200);
+  delete state.guide.storageKey;
+  const {body} = await preview().expect(409);
+  assert.equal(body.error, 'pdf_nao_confirma_valor');
+  assert.deepEqual(state.downloads, ['fixture/g']);
+  assert.deepEqual(state.writes, []);
+});
+
+test('documento reclassificado mantém a recusa da fonte antes de acessar storage', async () => {
+  state.guide.extracted = {documentoNaoArrecadatorio:true};
+  const service = cache.get('application/guides/CorrigirValorGuiaService.js').namespace;
+  await assert.rejects(service.preverCorrecaoValorGuia({companyId:'A', guideId:'g', valor:125.25}), error =>
+    error.code === 'DOCUMENTO_NAO_ARRECADATORIO' && !(error instanceof service.CorrecaoValorError));
+  await preview().expect(500, {error:'erro_interno', message:'Não foi possível corrigir a guia.'});
+  assert.deepEqual(state.downloads, []);
+  assert.deepEqual(state.writes, []);
+});
+
+test('fachada mantém injeção das leituras, revisão legada e identidade do erro', async () => {
+  const service = cache.get('application/guides/CorrigirValorGuiaService.js').namespace;
+  delete state.guide.storageKey;
+  const args = {companyId:'A', guideId:'g', valor:'125.25'};
+  const pdf = Buffer.from('pdf injetado');
+  const evidencia = {linhaDigitavel:'fixture', linhaDigitavelMotivo:null};
+  const deps = {
+    db: {guide:fakeDb.guide, companyMonthlyCircular:fakeDb.companyMonthlyCircular},
+    carregarPdf: async guia => {
+      assert.deepEqual(guia, state.guide);
+      return pdf;
+    },
+    ler: async (bytes, referencia) => {
+      assert.equal(bytes, pdf);
+      assert.equal(referencia.valorTotal, 125.25);
+      assert.equal(referencia.vencimento, state.guide.vencimento);
+      return evidencia;
+    }
+  };
+  const previa = await service.preverCorrecaoValorGuia(args, deps);
+  assert.equal(previa.revisao, '451386241a90425a7c6947178823ece34d093c701d9159f7c3089b2868494ab1');
+  assert.equal(previa._leitura, evidencia);
+  await assert.rejects(service.preverCorrecaoValorGuia(args), error =>
+    error instanceof service.CorrecaoValorError && error.code === 'pdf_nao_confirma_valor');
   assert.deepEqual(state.writes, []);
 });
 

@@ -1,40 +1,19 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { getGuidePdfBuffer } from "./GuideService.js";
-import { lerLinhaDigitavelDoPdf } from "./lerLinhaDigitavelDoPdf.js";
-import { lerGuiaComProvisoes, lerFechamentoParaCorrecao } from "../../composition/leiturasCorrecaoValorGuia.js";
-import { motivoImpedimentoDaGuia, valorDaCorrecaoEmCentavos, evidenciaConfirmaValor } from "../../modules/guides/domain/correcaoDeValor.js";
-import { motivoImpedimentoDaProvisao, motivoImpedimentoPorFechamento } from "../../modules/accounting/public.js";
+import { comporLeiturasCorrecaoValorGuia } from "../../composition/leiturasCorrecaoValorGuia.js";
+import {
+  carregarGuiaParaCorrecao, CorrecaoValorError, preverCorrecaoValorGuia as prever,
+} from "../../modules/guides/application/preverCorrecaoValorGuia.js";
 
-export class CorrecaoValorError extends Error {
-  constructor(code, message, status = 409) { super(message); this.code = code; this.status = status; }
-}
+export { CorrecaoValorError };
 const recusar = (code, message, status) => { throw new CorrecaoValorError(code, message, status); };
-async function carregar(db, companyId, guideId, novoValor) {
-  const g = await lerGuiaComProvisoes(db, companyId, guideId);
-  if (!g) recusar("guia_nao_encontrada", "Guia não encontrada.", 404);
-  const impedimentoGuia = motivoImpedimentoDaGuia(g);
-  if (impedimentoGuia) recusar(impedimentoGuia.code, impedimentoGuia.message);
-  const entradas = g.accountingEntries;
-  const impedimentoProvisao = motivoImpedimentoDaProvisao(entradas, companyId, g.valor, novoValor);
-  if (impedimentoProvisao) recusar(impedimentoProvisao.code, impedimentoProvisao.message);
-  const fechadas = await lerFechamentoParaCorrecao(db, companyId, [g.competencia, ...entradas.map(e => e.competencia)]);
-  const impedimentoFechamento = motivoImpedimentoPorFechamento(fechadas);
-  if (impedimentoFechamento) recusar(impedimentoFechamento.code, impedimentoFechamento.message);
-  const revisao = createHash("sha256").update(JSON.stringify(g)).digest("hex");
-  return { g, revisao };
+
+function carregar(db, companyId, guideId, novoValor) {
+  return carregarGuiaParaCorrecao({ companyId, guideId, novoValor }, comporLeiturasCorrecaoValorGuia(db));
 }
 
-export async function preverCorrecaoValorGuia({ companyId, guideId, valor }, { db = prisma, carregarPdf = getGuidePdfBuffer, ler = lerLinhaDigitavelDoPdf } = {}) {
-  const centavos = valorDaCorrecaoEmCentavos(valor);
-  if (centavos === null) recusar("valor_invalido", "Informe o valor positivo da guia, com até duas casas decimais.", 400);
-  const novoValor = centavos / 100;
-  const { g, revisao } = await carregar(db, companyId, guideId, novoValor);
-  const pdf = await carregarPdf(g);
-  const leitura = await ler(pdf, { valorTotal: novoValor, vencimento: g.vencimento });
-  if (!evidenciaConfirmaValor(leitura)) recusar("pdf_nao_confirma_valor", "O PDF original não confirmou este valor pela linha digitável. Corrija após revisar o documento.");
-  return { guideId, companyId, valorAtual: Number(g.valor), novoValor, revisao, lancamentosAfetados: g.accountingEntries.length,
-    pdfPreservado: true, linhaConfirmada: true, _leitura: leitura };
+export async function preverCorrecaoValorGuia(args, { db = prisma, carregarPdf, ler } = {}) {
+  return prever(args, comporLeiturasCorrecaoValorGuia(db, { carregarPdf, ler }));
 }
 
 export async function corrigirValorGuia({ companyId, guideId, valor, revisao, userId }, deps = {}) {
