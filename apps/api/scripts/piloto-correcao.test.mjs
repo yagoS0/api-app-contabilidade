@@ -60,6 +60,7 @@ const fakeDb = {
   appSetting: { create: async ({data}) => { assert.equal(data.value.userId, 'u'); state.writes.push('auditoria'); } },
   $transaction: async (fn, options) => {
     assert.equal(options.isolationLevel, 'Serializable');
+    state.aoIniciarTransacao?.();
     if (state.closeAtTransactionStart) state.closed = true;
     if (state.conflict) throw Object.assign(new Error(), { code: 'P2034' });
     return fn(fakeDb);
@@ -84,6 +85,10 @@ const real = new Set([
   'modules/guides/domain/correcaoDeValor.js',
   'modules/guides/infrastructure/prisma/leituraGuiaCorrecaoValor.js',
   'modules/accounting/infrastructure/prisma/leituraProvisoesCorrecaoValor.js',
+  'composition/confirmacaoCorrecaoValorGuia.js',
+  'modules/guides/application/confirmarCorrecaoValorGuia.js',
+  'modules/guides/infrastructure/prisma/confirmacaoCorrecaoValorGuia.js',
+  'modules/accounting/infrastructure/prisma/correcaoProvisaoValorGuia.js',
   'composition/leiturasCorrecaoValorGuia.js',
   'modules/accounting/public.js',
   'modules/accounting/domain/correcaoDeProvisao.js'
@@ -109,8 +114,14 @@ for (const [id, names] of Object.entries({
   'application/guides/guideContract.js': ['fileNameForGuide','normalizeCompetencia','normalizeGuideType','SELECT_PARCELAMENTO_DA_GUIA','whereGuiaPendenteDeEnvio'],
   'application/guides/GuidePaymentStatusService.js': ['canGuideConfirmPayment','canGuideRecalculate','isGuideOverdue','vencimentoDaGuia','avisoDeRecalculo','especieDoRecalculo'],
 })) doubles.set(id, Object.fromEntries(names.map(name => [name, undefined])));
-async function load(id) {
-  if (cache.has(id)) return cache.get(id);
+// O linker pode pedir a mesma dependência antes de readFile terminar.
+// Compartilhar a carga preserva a identidade das classes entre fachada e caso de uso.
+const carregando = new Map();
+function load(id) {
+  if (!carregando.has(id)) carregando.set(id, criarModulo(id));
+  return carregando.get(id);
+}
+async function criarModulo(id) {
   let mod;
   if (doubles.has(id)) mod = synthetic(id, doubles.get(id));
   else {
@@ -171,6 +182,87 @@ test('prévia pública e confirmação com provisão balanceada', async () => {
   assert.deepEqual(state.writes,['guia','linhas','provisão','auditoria']);
   for (const key of ['pdfBytes','hash','paymentStatus','valorOriginal','liberadaCliente']) assert.equal(key in state.data,false);
 });
+test('confirmação usa o cliente de prévia até o PDF e o mesmo tx para cada leitura e escrita posterior', async () => {
+  const service = cache.get('application/guides/CorrigirValorGuiaService.js').namespace;
+  const chamadas = [];
+  // IDs exclusivos impedem que o cliente global simulado satisfaça uma leitura por engano.
+  const guia = structuredClone(state.guide);
+  guia.id = 'guia-2';
+  guia.portalClientId = 'empresa-2';
+  const entrada = guia.accountingEntries[0];
+  entrada.id = 'provisao-2';
+  entrada.portalClientId = guia.portalClientId;
+  entrada.lines.forEach(l => { l.valor = 125.25; }); // valor anterior da linha difere do da guia
+  const {id:guideId, portalClientId:companyId, updatedAt} = guia;
+  const revisao = crypto.createHash('sha256').update(JSON.stringify(guia)).digest('hex');
+  const userId = 'operador-2';
+  const plain = x => JSON.parse(JSON.stringify(x));
+  function leituras(cliente) {
+    return {
+      guide: {findFirst: async args => {
+        chamadas.push(cliente + ':guia');
+        assert.deepEqual(plain(args), consultaOriginal(companyId, guideId));
+        return structuredClone(guia);
+      }},
+      companyMonthlyCircular: {findMany: async args => {
+        chamadas.push(cliente + ':fechamento');
+        assert.deepEqual(plain(args), {where:{portalClientId:companyId, competencia:{in:['2026-08']}},
+          select:{competencia:true, fechadoContabilEm:true}});
+        return [];
+      }},
+    };
+  }
+  const leitura = {linhaDigitavel:'fixture', linhaDigitavelMotivo:null};
+  const tx = leituras('tx');
+  const escritas = [];
+  function gravar(nome, resultado) {
+    return async args => {
+      chamadas.push(nome);
+      escritas.push(plain(args));
+      return resultado;
+    };
+  }
+  tx.guide.updateMany = gravar('tx:atualizar guia', {count:1});
+  tx.accountingEntryLine = {updateMany:gravar('tx:linhas', {count:2})};
+  tx.accountingEntry = {update:gravar('tx:provisão')};
+  tx.appSetting = {create:gravar('tx:auditoria')};
+  const db = {...leituras('prévia'), $transaction:async (fn, opts) => {
+    chamadas.push('transação');
+    assert.deepEqual(plain(opts), {isolationLevel:'Serializable'});
+    return fn(tx);
+  }};
+  const pdf = Buffer.from('documento');
+  const result = await service.corrigirValorGuia({companyId, guideId, valor:125.25, revisao, userId}, {
+    db, carregarPdf:async g => { chamadas.push('PDF'); assert.deepEqual(g, guia); return pdf; },
+    ler:async bytes => { chamadas.push('linha digitável'); assert.equal(bytes,pdf); return leitura; },
+  });
+  assert.deepEqual(plain(result), {ok:true, guideId, valor:125.25, lancamentosAfetados:1});
+  assert.deepEqual(chamadas, ['prévia:guia','prévia:fechamento','PDF','linha digitável','transação',
+    'tx:guia','tx:fechamento','tx:atualizar guia','tx:linhas','tx:provisão','tx:auditoria']);
+  const [g, linhas, provisao, auditoria] = escritas;
+  for (const instante of [g.data.reviewedAt, provisao.data.recalculatedAt, auditoria.data.value.em]) {
+    assert.equal(new Date(instante).toISOString(), instante);
+  }
+  assert.deepEqual(g, {where:{id:guideId,portalClientId:companyId,updatedAt:updatedAt.toISOString()},
+    data:{valor:125.25,...leitura,reviewedByUserId:userId,reviewedAt:g.data.reviewedAt}});
+  assert.deepEqual(linhas, {where:{entryId:entrada.id}, data:{valor:125.25}});
+  assert.deepEqual(provisao, {where:{id:entrada.id}, data:{recalculatedAt:provisao.data.recalculatedAt,
+    recalculatedFromValor:125.25, recalculatedToValor:125.25,
+    recalculatedNotes:'Correção de cadastro conferida contra o PDF original da guia.'}});
+  assert.match(auditoria.data.key, /^guide_value_correction:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.deepEqual(auditoria, {data:{key:auditoria.data.key,value:{companyId,guideId,userId,
+    valorAnterior:100,valorCorrigido:125.25,revisao,em:auditoria.data.value.em,lancamentos:[entrada.id],pdfPreservado:true}}});
+  assert.deepEqual(state.writes, []);
+});
+
+test('P2034 na prévia preserva o erro original e não inicia transação', async () => {
+  const service = cache.get('application/guides/CorrigirValorGuiaService.js').namespace;
+  const erro = Object.assign(new Error('conflito anterior à transação'), {code:'P2034'});
+  const db = {...fakeDb, $transaction:() => assert.fail('transação prematura')};
+  await assert.rejects(service.corrigirValorGuia({companyId:'A', guideId:'g', valor:125.25, revisao:'r', userId:'u'},
+    {db, carregarPdf:async () => {throw erro;}}), recebido => recebido === erro);
+});
+
 test('guia sem provisão também exige competência aberta',async () => {
   state.guide.accountingEntries=[];
   const {body} = await preview().expect(200);
@@ -200,7 +292,7 @@ test('revisão obrigatória, revisão vencida e conflito serializável',async ()
   let result=await confirm('').expect(400); assert.equal(result.body.error,'revisao_obrigatoria');
   result=await confirm('anterior').expect(409); assert.equal(result.body.error,'guia_alterada');
   const {body}=await preview().expect(200); state.conflict=true;
-  result=await confirm(body.revisao).expect(409); assert.equal(result.body.error,'guia_alterada');
+  await confirm(body.revisao).expect(409,{error:'guia_alterada',message:'Houve uma alteração simultânea. Abra uma nova prévia.'});
   assert.deepEqual(state.writes,[]);
 });
 
@@ -243,7 +335,7 @@ test('o formato e a precedência das recusas fazem parte do contrato HTTP', asyn
     error:'correcao_exige_revisao', message:'Esta guia exige revisão da composição antes de alterar o valor.'
   });
   state.guide.tipo='OUTRA';
-  state.guide.accountingEntries.push(structuredClone(state.guide.accountingEntries[0]));
+  state.guide.accountingEntries.push({...structuredClone(state.guide.accountingEntries[0]), id:'outra-provisao'});
   await preview().expect(409,{
     error:'guia_com_pagamento', message:'A guia tem registro de pagamento e exige revisão contábil.'
   });
@@ -267,6 +359,18 @@ test('releitura transacional observa fechamento ocorrido após a prévia, mesmo 
   await confirm(body.revisao).expect(409, {
     error:'competencia_fechada', message:'A competência está fechada e não permite esta correção.'
   });
+  assert.deepEqual(state.writes, []);
+});
+
+for (const [nome, alterar, error, message] of [
+  ['revisão', () => {state.guide.updatedAt = new Date('2026-09-02Z');},
+    'guia_alterada', 'A guia ou o lançamento mudou. Abra uma nova prévia.'],
+  ['elegibilidade', () => {state.guide.accountingEntries[0].status = 'EXPORTADO';},
+    'provisao_nao_editavel', 'O lançamento vinculado exige revisão contábil antes da correção.'],
+]) test('confirmação relê ' + nome + ' alterada entre a prévia e o início da transação', async () => {
+  const {body} = await preview().expect(200);
+  state.aoIniciarTransacao = alterar;
+  await confirm(body.revisao).expect(409, {error, message});
   assert.deepEqual(state.writes, []);
 });
 
@@ -376,14 +480,24 @@ if (process.env.ALTAN_TESTE_POSTGRES === '1') {
       assert.equal(previa.revisao, revisao);
       const command={...args,revisao};
       const auditCount=()=>db.appSetting.count({where:{key:{startsWith:'guide_value_correction:'},value:{path:['guideId'],equals:guide.id}}});
-      const failedDb={
-        guide:db.guide,companyMonthlyCircular:db.companyMonthlyCircular,
-        $transaction:(fn,opts)=>db.$transaction(tx=>fn({
-          guide:tx.guide,companyMonthlyCircular:tx.companyMonthlyCircular,accountingEntryLine:tx.accountingEntryLine,
-          accountingEntry:tx.accountingEntry,appSetting:{create:async()=>{throw new Error('falha de auditoria injetada')}}
-        }),opts)
-      };
-      await assert.rejects(service.corrigirValorGuia(command,{...deps,db:failedDb}),/falha de auditoria injetada/);
+      // As escritas anteriores ao erro são reais; a releitura do agregado inteiro inclui
+      // updatedAt, campos de conferência, provisão e ambas as linhas na ordem da revisão.
+      for (const etapa of ['provisão', 'auditoria']) {
+        const falha = new Error('falha injetada: ' + etapa);
+        const falhar = async () => { throw falha; };
+        const failedDb = {
+          guide:db.guide, companyMonthlyCircular:db.companyMonthlyCircular,
+          $transaction:(fn,opts)=>db.$transaction(tx=>fn({
+            guide:tx.guide, companyMonthlyCircular:tx.companyMonthlyCircular,
+            accountingEntryLine:tx.accountingEntryLine,
+            accountingEntry:etapa === 'provisão' ? {update:falhar} : tx.accountingEntry,
+            appSetting:etapa === 'auditoria' ? {create:falhar} : tx.appSetting,
+          }),opts)
+        };
+        await assert.rejects(service.corrigirValorGuia(command,{...deps,db:failedDb}), e => e === falha);
+        assert.equal(JSON.stringify(await db.guide.findFirst(consultaOriginal(company.id, guide.id))), jsonOriginal);
+        assert.equal(await auditCount(), 0);
+      }
       async function checkStored(value,audits) {
         const stored=await db.guide.findUniqueOrThrow({where:{id:guide.id}});
         const posting=await db.accountingEntry.findUniqueOrThrow({where:{id:entry.id},include:{lines:true}});
