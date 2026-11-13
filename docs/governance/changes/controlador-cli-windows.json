@@ -1,5 +1,6 @@
 {
   "summary": "Corrige a inicialização da CLI independente no Windows quando o controlador foi aberto pelo aplicativo desktop. O adaptador remove a variável de lançamento registrada do ambiente da CLI filha; mantém as opções de execução, permissões por papel, schema e política do repositório.",
+  "baseCommit": "cd6aa35641b75aea6eab856e6e2eb30bbcf8f6e6",
   "risk": "high",
   "domains": ["governance"],
   "operationalImpact": "Sem alteração do produto ou das regras fiscais/contábeis. O processo pai conserva seu ambiente. Planejador sem caminhos continua impedido de delegar a escrita e a mensagem indica o journal para diagnóstico.",
@@ -7,6 +8,8 @@
     "23 testes focais locais do controlador passaram, incluindo modos de sandbox por papel, diferenças entre plataformas e manutenção da falha para plano vazio.",
     "Validação Windows com a CLI real e sessão read-only: leitura de identificador de fixture confirmada; tentativa de escrita negada. No checkout do piloto, o adaptador real obteve o SHA, os caminhos das políticas e o modo diagnose do workflow. Revisão independente do diff sem bloqueios."
   ],
+  "integrationReview": "Revisão independente sobre a main após #267 sem bloqueadores. O diff funcional do controlador e seus testes foi preservado. No Windows, 40 testes de governança passaram, com repetição independente dos 23 do controlador. Em fixture isolada, o adaptador com a CLI real em modo de revisão confirmou leitura, bloqueio de escrita e preservação do marcador do processo pai.",
+  "remainingRisk": "A CI hospedada usa Ubuntu. O teste do launcher Windows foi local; mudanças futuras de comportamento da CLI ou de marcadores do desktop exigem nova prova nessa plataforma.",
   "rollback": "Reverter o commit do adaptador, testes e registro no branch de governança. Não afeta os commits de Guias ou Contabilidade.",
   "humanDecisions": ["O usuário solicitou resolver a falha do controlador e executar a CI hospedada. Revisão de integração separada da etapa 2; sem merge."]
 }
