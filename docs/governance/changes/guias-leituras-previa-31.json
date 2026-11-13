@@ -1,0 +1,28 @@
+{
+  "summary": "Etapas 3.0/3.1 sobre 49c0bec. Guias coordena a leitura da guia por empresa com a seleção ordenada de provisões definida por Contabilidade. A composição reutiliza o leitor contábil de competências fechadas e encaminha o cliente recebido, inclusive tx.",
+  "operationalImpact": "Nenhuma mudança de regra operacional. GET e POST, consumidores do portal/escritório, permissões, valores, ordem de recusas e token SHA-256 preservados. Nenhum efeito adicional sobre Comercial, Comunicação ou Operações. Mesma consulta composta, mesma leitura de fechamento, PDF antes da transação e releitura dentro dela. Nenhuma alteração de schema, auditoria, integrações ou publicação.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "Base anterior à extração: 69 testes unitários, 16 de piloto HTTP/PostgreSQL e 10 de concorrência/fechamento. Teste ampliado executado antes e depois da mudança.",
+    "Candidato: 69/69 unitários, 17/17 piloto HTTP e PostgreSQL 16 descartável, 10/10 cenários de coordenação/concorrência; consulta anterior comparada byte a byte via JSON com dados Prisma e token antigo aceito na confirmação.",
+    "Diagnose com base 49c0bec: 5053 para 5051, zero acréscimos. Revisão independente também executou os 16 testes de piloto sem banco."
+  ],
+  "rollback": "Reverter a entrega como unidade. Sem migração de banco ou de tokens. Manter o histórico e a auditoria existentes.",
+  "humanDecisions": [
+    "Escopo 3.0 e 3.1 autorizado. PR em rascunho para revisão humana."
+  ],
+  "finalReview": "Revisões independentes sistêmica/backend e contábil favoráveis por inspeção do diff contra a main. Conferidos autorização, identidade dos dados lidos, token, composição, fechamento, transação, escritas e auditoria.",
+  "limitations": [
+    "O token legado depende da serialização integral do objeto Prisma; futuras projeções ou ordenações precisam repetir o ensaio de paridade. O controlador inicial foi interrompido para corrigir a localização dos adaptadores apontada no diagnóstico. Não produziu ready_for_human. Pareceres independentes registrados separadamente e CI vinculada ao PR."
+  ]
+}
