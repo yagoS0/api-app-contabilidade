@@ -1,0 +1,28 @@
+{
+  "summary": "Incremento 3.3 na base 624b698. Guias coordena a confirmação com capacidades de leitura e escrita vinculadas ao cliente da transação. Contabilidade executa as alterações de linhas e provisão. Guias registra sua evidência de auditoria em AppSetting.",
+  "operationalImpact": "Preserva a autenticação por empresa, GET/POST, revisão SHA-256, DTOs, campos, valores e precedência das recusas. O PDF é conferido antes de abrir a transação. A confirmação relê guia, provisões e fechamento em Serializable. Guia é atualizada por id, empresa e updatedAt; seguem linhas por entryId, lançamento por id e uma única auditoria. P2034 é traduzido somente na fronteira da transação. Sem efeitos novos em escritório, portal, operações, comercial, comunicação, schema ou integrações.",
+  "risk": "high",
+  "domains": [
+    "guides",
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "operations",
+    "web",
+    "portal"
+  ],
+  "tests": [
+    "Base: 79 Jest, 21 do piloto e 10 de concorrência. Suíte ampliada do piloto: 25/25 na base anterior e no candidato. Candidato final: 79/79 Jest, 25/25 piloto HTTP/aplicação/PostgreSQL 16, 10/10 de coordenação/concorrência.",
+    "Releitura e fechamento no cliente transacional distinto, ordem e payload das escritas, revisão ausente, válida, vencida e conflitante, count condicional, autorização/empresa, preservação da classe de erro. Estado completo inalterado e zero auditorias após falha intermediária ou falha na auditoria. Somente um sucesso e uma auditoria na disputa pela mesma revisão.",
+    "Fechamento e correção nas duas ordens em conexões independentes. Diagnóstico 5051 → 5046, zero acréscimos; 5/5 testes do verificador."
+  ],
+  "rollback": "Reverter o incremento como unidade. Não há conversão de dados ou tokens. Preservar auditorias de correções já efetivadas.",
+  "humanDecisions": [
+    "Entrega restrita ao incremento 3.3 em PR rascunho para revisão humana."
+  ],
+  "finalReview": "Parecer contábil independente favorável sobre identidade e sequência das escritas, vínculo de tx e atomicidade. A revisão de contratos solicitou mover P2034 da aplicação para o adaptador da transação. Ajuste realizado, revisado e aprovado. Revisor reexecutou 24 cenários do piloto sem banco.",
+  "limitations": [
+    "Os ensaios PostgreSQL forçam interleavings específicos do piloto. A conclusão não se estende a outros pontos de escrita. Persistem a dependência do token da serialização integral e a necessidade de preservar a revisão na confirmação. O parecer independente refere-se ao candidato corrigido; a primeira rodada do controlador iniciou antes do ajuste da fronteira P2034."
+  ]
+}
