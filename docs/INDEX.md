@@ -25,6 +25,8 @@
 
 ## Referências técnicas
 
+- [Ciclo operacional das guias — componentes, estados, transições e riscos (etapa 4.0)](modules/ciclo-operacional-guias.md)
+
 - [Rotas da API](api-routes.md), [camada de aplicação](../apps/api/src/application/README.md), [infraestrutura](../apps/api/src/infrastructure/README.md) e [workers](../apps/api/src/workers/README.md).
 - [Desenvolvimento em Windows](desenvolvimento-windows.md) e [procedimento de implantação](deploy-digitalocean.md).
 - **Emissão fiscal.** [Preenchimento da NFS-e](nfse-preenchimento.md) e [origem e versão dos códigos de tributação nacional](lista-servico-nacional/README.md).
