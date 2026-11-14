@@ -250,3 +250,5 @@ Rollback: reverter o incremento como unidade, incluindo a ligação da fachada, 
 ### Proposta para 4.4 — ainda não autorizada
 
 Retomar o recorte de captura/reemissão da tabela histórica por **uma espécie e um provedor**, começando por caracterizar revisão, vínculos contábeis e a janela entre retorno externo, persistência e provisão. Antes de extrair escritas, provar comportamento com reserva expirada, revisão concorrente e falha após aceite externo. Não alterar automaticamente reserva, recuperação, autorização ou política de repetição; qualquer mudança semântica exige decisão própria. Não iniciar 4.4 como continuação automática desta entrega.
+
+A caracterização autorizada do DAS normal e de cobrança, seus efeitos e limites está em [DAS via SERPRO — etapa 4.4](serpro-das-caracterizacao-44.md). Essa entrega adiciona testes e documentação, sem extrair escritas ou alterar a repetição.
