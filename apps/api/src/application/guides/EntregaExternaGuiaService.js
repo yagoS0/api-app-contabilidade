@@ -6,14 +6,11 @@ import { versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 export const MEIOS_ENTREGA = ['PESSOAL', 'WHATSAPP_PARTICULAR', 'EMAIL_EXTERNO', 'OUTRO'];
 export const revisaoEntrega = g => createHash('sha256').update(JSON.stringify([versaoPagamentoGuia(g), g.vencimento ? new Date(g.vencimento).toISOString() : null])).digest('hex');
 const erro = (code, message, status = 409) => Object.assign(new Error(message), { code, status });
-export function documentoValido(g) {
-  return g?.status === 'PROCESSED' && Boolean(g.hash) && g.extracted?.conferenciaDocumentoPendente !== true
-    && ((g.pdfBytes?.length && Buffer.from(g.pdfBytes).subarray(0, 5).toString() === '%PDF-') || Boolean(g.storageKey));
-}
+import { documentoValido } from '../../modules/guides/domain/disponibilidadeDocumentoEntrega.js';
+import { avaliarEntregaExternaVigente } from '../../modules/communication/public.js';
+export { documentoValido } from '../../modules/guides/domain/disponibilidadeDocumentoEntrega.js';
 export function entregaExternaVigente(envio, guia) {
-  const prova = envio?.historicoTentativas?.find(t => t.id === envio.tentativaAtualId)?.snapshot;
-  return envio?.canal === 'EXTERNO' && envio.status === 'declarado_externo' && documentoValido(guia) && prova?.atorId && prova?.registradoEm
-    && prova.guideId === guia.id && prova.companyId === guia.portalClientId && prova.revisaoDocumento === revisaoEntrega(guia) ? prova : null;
+  return avaliarEntregaExternaVigente(envio, guia, { documentoValido, revisaoEntrega });
 }
 export async function externaDaGuia(guia, db = prisma) {
   const e = await db.envioGuia.findFirst({ where: { guideId: guia.id, canal: 'EXTERNO' }, include: { historicoTentativas: true } });

@@ -57,10 +57,21 @@ jobs:
         env:
           DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
           ALTAN_TESTE_POSTGRES: '1'
+          TEST_CICLO_PG_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
         run: |
           npm run prisma:generate -w @contabilidade/api
           npm run prisma:migrate:deploy -w @contabilidade/api
           npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath \
+            src/application/guides/__tests__/liberacaoEntregaCaracterizacao.test.js \
+            src/application/guides/__tests__/GuiaParcelaEnvioGuard.test.js \
+            src/application/guides/__tests__/entregaGuiaWhatsapp.test.js \
+            src/application/guides/__tests__/entregaExternaGuia.test.js \
+            src/application/guides/__tests__/envioTentativas.test.js \
+            src/application/guides/__tests__/GuideCompanyEmailCiclo.test.js \
+            src/application/guides/__tests__/CicloEnvioGuiasService.postgres.test.js \
+            src/application/whatsapp/__tests__/envioGuiaWhatsapp.test.js \
+            src/application/whatsapp/__tests__/envioDocumentoGuiaWhatsapp.test.js \
+            src/routes/firm/__tests__/liberacaoGuiasCanais.test.js \
             src/application/guides/__tests__/vigenciaDocumento41.postgres.test.js \
             src/application/guides/__tests__/vigenciaDocumentoAcompanhamento.test.js \
             src/application/guides/__tests__/leituraDocumentalCaracterizacao.test.js \

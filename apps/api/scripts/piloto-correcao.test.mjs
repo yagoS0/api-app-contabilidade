@@ -80,6 +80,7 @@ const real = new Set([
   'application/guides/lerLinhaDigitavelDoPdf.js',
   'application/guides/linhaDigitavelArrecadacao.js',
   'modules/guides/public.js',
+  'modules/guides/domain/classificacaoDocumento.js',
   'modules/guides/infrastructure/documentos/leituraPdfGuia.js',
   'modules/guides/application/preverCorrecaoValorGuia.js',
   'modules/guides/infrastructure/documentos/leituraDocumentalCorrecaoValorGuia.js',
