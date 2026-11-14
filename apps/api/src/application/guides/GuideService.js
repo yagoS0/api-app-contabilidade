@@ -1,4 +1,4 @@
-import { STATUS_DOCUMENTO, exigirGuiaArrecadatoria } from './lib/documentoNaoArrecadatorio.js';
+import { STATUS_DOCUMENTO } from './lib/documentoNaoArrecadatorio.js';
 import { reconfirmacaoPagamentoTx, listarConfirmacoesPagamento, resumoConfirmacaoPagamento, versaoPagamentoGuia } from './ConfirmacaoPagamentoClienteService.js';
 import crypto from "node:crypto";
 import { atualizarGuiaComEvidencia } from "./atualizarGuiaComEvidencia.js";
@@ -9,7 +9,6 @@ import {
   STATUS_TERMINAL,
 } from "./EnvioGuiaService.js";
 import { podeTentarDeNovoPeloCodigo } from "../whatsapp/errosMeta.js";
-import { GuideStorageService } from "./GuideStorageService.js";
 import {
   fileNameForGuide,
   normalizeCompetencia,
@@ -123,19 +122,7 @@ export async function findPortalClientByCnpj(cnpj) {
 }
 
 /** PDF da guia: coluna `pdfBytes` no banco ou storage legado (S3/R2/local). */
-export async function getGuidePdfBuffer(guide) {
-  if (!guide) return null;
-  exigirGuiaArrecadatoria(guide);
-  const raw = guide.pdfBytes;
-  if (raw != null && raw.length) {
-    return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
-  }
-  if (guide.storageKey) {
-    const storage = GuideStorageService.create();
-    return storage.downloadBuffer({ key: guide.storageKey });
-  }
-  return null;
-}
+export { getGuidePdfBuffer } from "../../modules/guides/public.js";
 
 export async function listGuidesByCompany({
   portalClientId,

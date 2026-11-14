@@ -61,6 +61,10 @@ jobs:
           npm run prisma:generate -w @contabilidade/api
           npm run prisma:migrate:deploy -w @contabilidade/api
           npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath \
+            src/application/guides/__tests__/vigenciaDocumento41.postgres.test.js \
+            src/application/guides/__tests__/vigenciaDocumentoAcompanhamento.test.js \
+            src/application/guides/__tests__/leituraDocumentalCaracterizacao.test.js \
+            src/routes/client/__tests__/documentoGuiaDownload41.test.js \
             src/application/guides/__tests__/corrigirValorGuia.test.js \
             src/modules/guides/domain/correcaoDeValor.test.js \
             src/modules/accounting/domain/correcaoDeProvisao.test.js
