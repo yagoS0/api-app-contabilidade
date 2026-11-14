@@ -1,0 +1,32 @@
+{
+  "summary": "Etapa 4.0 de caracterização sobre fdcb25edea0ba6c20bf1887dd14c56560299cd8f. Inventário único com capacidades verificadas e limites, matrizes dos cinco eixos atuais, rotas, serviços, workers, modelos, fronteiras, riscos e proposta 4.1–4.4. Índice e cinco testes novos de combinações observáveis.",
+  "operationalImpact": "Apenas documentação, referência no índice e suíte Jest com dados sintéticos. Guias, Fiscal, Operações, Comunicação, Contabilidade, escritório e portal foram examinados; nenhuma alteração de produção, contrato, regra, schema, worker ou integração. Pagamentos não foi confirmado como contexto autônomo.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "5/5 casos novos: revisão documental e entrega declarada nos estados OPEN/PAID; falha WhatsApp e baixa pendente/concluída; recuperação por PDF incorporado e propagação de falha de storage.",
+    "16 suítes focais Jest existentes, 213/213 testes. Oito suítes Jest de PostgreSQL 16: primeira execução 24 aprovados e 7 pulados por ambiente; os 7 foram reexecutados e aprovados nas três suítes condicionais em cluster descartável com URL esperada. 25/25 casos do piloto HTTP/PostgreSQL e 10/10 cenários de coordenação/fechamento.",
+    "93/93 testes de governança e verificador. Diagnose base/candidata 5045/5045, zero acréscimos. Links locais do documento verificados. Nenhum transporte ou provedor fiscal real acionado."
+  ],
+  "rollback": "Reverter a entrega documental e os testes como unidade. Sem dados, contratos ou estados para converter.",
+  "humanDecisions": [
+    "Aprovação específica antes de integrar ou iniciar 4.1."
+  ],
+  "finalReview": "Revisões cruzadas: Guias/Fiscal validou B/D e C/E e reexecutou os cinco testes. Operações/Comunicação verificou A/C/E, rotas, estados e isolamento das fixtures. Contabilidade/Pagamentos revisou projeções e distinção de pagamento, baixa e entrega. Arquitetura/backend verificou o diff sem produção e pediu distinguir os cinco testes de projeção da cobertura PostgreSQL/autorização preexistente; ajustado. CI hospedada associada ao SHA do PR.",
+  "limitations": [
+    "A caracterização descreve o código e fixtures; credenciais, cadência efetiva, dados e entregas produtivas não foram verificados. Falha entre aceite externo e persistência é risco identificado por inspeção. A suite de concorrência do piloto não prova atomicidade de todos os fluxos.",
+    "O controlador foi acionado para a suíte Jest; inventário e registro documental do escopo total foram feitos pelo principal, com especialistas e revisão independente. A evidência focal e a CI devem ser consultadas separadamente da conclusão integral do controlador."
+  ]
+}
