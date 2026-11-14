@@ -14,4 +14,3 @@ export async function getGuidePdfBuffer(guide) {
   }
   return null;
 }
-
