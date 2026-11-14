@@ -70,6 +70,8 @@ jobs:
             src/application/guides/__tests__/entregaExternaGuia.test.js \
             src/application/guides/__tests__/envioTentativas.test.js \
             src/application/guides/__tests__/GuideCompanyEmailCiclo.test.js \
+            src/application/fiscal/serpro/__tests__/dasDocumento442.postgres.test.js \
+            src/modules/fiscal/application/__tests__/persistirDocumentoDas.test.js \
             src/application/fiscal/serpro/__tests__/dasInterpretacao441.test.js \
             src/modules/fiscal/application/__tests__/interpretarRespostaDas.test.js \
             src/application/fiscal/serpro/__tests__/dasCaracterizacao44.test.js \

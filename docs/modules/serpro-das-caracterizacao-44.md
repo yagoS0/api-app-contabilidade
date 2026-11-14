@@ -33,7 +33,7 @@ A correção de segurança #275 permanece intacta. O lote moderno `/guides/liber
 | `SerproHttpClient.request` / `SerproCallGuard` | Contexto/empresa → cache → reserva → autenticação → despacho → HTTP → cache → finalização. `SerproChamada`, `AppSetting serpro_dispatch:*`, custo/tentativa e origem/usuário. | Advisory lock global `73517001` coordena reserva/despacho, sem transação aberta durante HTTP. Ledger não comprova faturamento nem sucesso fiscal. |
 | `SerproRespostaCache.lerResposta/guardarResposta` | Resposta documental HTTP 200 guardada por uma hora, assinatura canônica de rota/payload. Atualização explícita apaga a resposta anterior antes de nova tentativa. | Cache salvo precede finalização e interpretação do PDF. Falha ao guardar deixa reserva aberta. Não generalizar ao DAS as proteções específicas da simulação `TRANSDECLARACAO11`. |
 | `CaptureSerproGuidesService.buildPgdasGuidePayload` | Extrai PDF, número, valor e vencimento; diferencia ausência de dívida, valor não devido, declaração ausente e PDF ausente. Valor pode ser lido do PDF como fallback. | Resposta HTTP válida pode falhar na interpretação. Não converte erro técnico em ausência de obrigação. |
-| `GuideService.createOrUpdateGuideFromProcessing` / `atualizarGuiaComEvidencia` | `Guide`: empresa, competência, tipo, sourceFileId, hash SHA-256, bytes DATABASE, metadados, linha digitável e revisão. Identidade fonte inclui serviço/CNPJ/competência/número. | Verifica fechamento; gravação pode falhar depois do ato externo. Update faz até quatro CAS por updatedAt e preserva pagamento/comprovante; criação pode disputar unicidade. Não é upsert transacional da captura inteira. |
+| `GuideService.createOrUpdateGuideFromProcessing` / `atualizarGuiaComEvidencia` | `Guide`: empresa, competência, tipo, sourceFileId, hash SHA-256, bytes DATABASE, metadados, linha digitável e revisão. Identidade fonte inclui serviço/CNPJ/competência/número. | Conserva condições por origem: SERPRO não executa esta guarda documental de fechamento; operações contábeis têm guardas próprias. A gravação pode falhar depois do ato externo. Update faz até quatro CAS por updatedAt e preserva pagamento/comprovante; criação pode disputar unicidade. Não é upsert transacional da captura inteira. |
 | Captura legada, `!somenteDocumentos` | Upsert separado de `CompanyMonthlyCircular`; composição principal/juros/multa best-effort; `generateEntriesFromCircular({fonteValor:FONTE_VALOR_GUIA})`. | Falha de provisão vira `accounting.ok:false`, preservando guia/circular já salvas. Hook genérico `GuideToProvisionService` pula SIMPLES; não é a fonte da provisão DAS. |
 | `AccountingEntryGeneratorService` | Fonte GUIA recalculada sinaliza diferença mantendo principal/linhas existentes conforme regra legada; fonte EXTRATO possui semântica distinta. | Não alterar provisão ou presumir equivalência entre recálculo documental e retificação da declaração. |
 | Final da captura legada | `guide.deleteMany` dos outros DAS SERPRO/PROCESSED da mesma empresa/competência, excluindo parcelas. | Operação separada, **sem filtro PAID**. Falha pode deixar duplicatas. Modo documental pula essa exclusão, o upsert da circular e a geração contábil explícita. Não inventar histórico documental completo onde ele não existe. |
@@ -91,3 +91,31 @@ Antes da extração, a suíte `dasInterpretacao441` registrou 43 testes e 42 sna
 Todos os riscos da matriz 4.4 permanecem: provisão falha após documento/circular, reserva incerta, reutilização sem reparação contábil, exclusão de duplicatas sem filtro PAID, procuração revogada entre seleção e despacho e políticas de autorização distintas. A segurança #275 permanece intacta. Não foram extraídas escritas, contratos contábeis ou recuperação/conciliação.
 
 Rollback: reverter o incremento completo e restaurar a interpretação na fachada, sem conversão de dados ou alteração das reservas. Incrementos posteriores exigem entrega e autorização próprias; esta refatoração não libera retry nem reprocessamento fiscal.
+
+
+## Incremento 4.4.2 — persistência documental isolada
+
+Base `4edd9aa392d91a45688b68231e52e85d789f9939`. O recorte move somente a busca da guia por sourceFileId, a montagem dos argumentos documentais e a solicitação de criação/atualização. Não extrai circular, provisão, limpeza de duplicatas, reservas ou recuperação.
+
+`modules/fiscal/application/persistirDocumentoDas.js` recebe interpretação, identidade e rótulos já preparados; depende de operações específicas de Guias e relógio injetados. `composition/persistenciaDocumentoDas.js` liga a leitura Prisma e o adaptador do serviço legado. A busca conserva exatamente filtro e projeção; o escritor reutiliza `GuideService.createOrUpdateGuideFromProcessing` e `hashPdf`. Não existe repositório genérico ou novo mecanismo de CAS. O adaptador legado não é reexportado por `guides/public.js`, evitando o ciclo com o próprio GuideService.
+
+A sequência permanece busca → relógio → hash → escritor, com o mesmo objeto Date devolvido à captura para os metadados, circular e contabilidade. Dados interpretados, bytes e rawPayload conservam referências; o objeto completo entregue ao escritor permanece compatível. SourceFileId/labels e interpretação continuam em Fiscal, enquanto o funil de Guias conserva normalização, bytes, revisão, pagamento/comprovante, valorOriginal e CAS. Nenhuma consulta adicional por empresa ou fechamento foi introduzida.
+
+### Fechamento: precisão da caracterização anterior
+
+A descrição genérica da etapa 4.4 foi corrigida: em GuideService, a condição de `periodoFechado` contém `origem !== "SERPRO"`. A captura SERPRO não executa essa guarda documental de fechamento. As guardas das operações contábeis são contratos distintos. Os testes de mês fechado com modo somenteDocumentos preservam o documento e o estado de fechamento; não afirmam que uma provisão seja permitida. A correção é documental, sem mudança de regra ou código do funil.
+
+### Paridade e concorrência
+
+Antes da extração, oito ensaios PostgreSQL 16 complementaram a caracterização existente: atualização por identidade, pagamento/comprovante/valor original, revisão, reutilização e empresa; mês fechado normal/cobrança; CAS intercalado por uma segunda conexão; exaustão de quatro conflitos; P2002 por identidade; modo documental e duplicata paga. A barreira apenas posiciona a escrita concorrente, e a decisão de atualização é do SQL real.
+
+A mesma suíte é executada na candidata, junto dos snapshots da etapa 4.4.1 e testes HTTP/4.4. `GuideService` e `atualizarGuiaComEvidencia` permanecem sem diff; o restante da captura depois do bloco extraído também deve permanecer literal. Reutilização, consulta e escrita não passam a ser uma transação única. Nenhuma retentativa, tradução de erro ou filtro adicional foi criado.
+
+Os riscos da matriz 4.4 permanecem, inclusive provisão falha após documento/circular, reutilização sem reparação, timeout incerto, duplicatas pagas, procuração entre seleção/despacho e política diferente do lote moderno. Segurança #275 intacta. O modo somenteDocumentos e os contratos contábeis não foram ampliados.
+
+Rollback: reverter o incremento como unidade, restaurando o bloco documental na fachada sem migração ou conversão de dados. Resultados, limitações do controlador, pareceres e CI do SHA final ficam no registro e no PR. Não iniciar contrato contábil ou recuperação/conciliação automaticamente.
+
+
+### Limites do contrato interno
+
+A porta atende à captura já autorizada e recebe identidade, sourceFileId e dados interpretados preparados pelo fluxo existente. Não verifica novamente acesso por empresa nem pertença de existingGuideId. A consulta conserva where:{sourceFileId}, sem filtro portalClientId; a identidade legada incorpora serviço, CNPJ, competência e documento. Portanto, não é uma API segura para IDs arbitrários nem prova de isolamento autônomo do adaptador. As guardas dos pontos de entrada, inclusive #275, permanecem responsáveis pela autorização. {guide, now} é retorno interno e não novo DTO HTTP. Falhas propagam sem repetição adicional. Os testes com contabilidade simulada não comprovam atomicidade contábil.

@@ -1,0 +1,40 @@
+{
+  "summary": "Incremento 4.4.2 sobre 4edd9aa392d91a45688b68231e52e85d789f9939: isola somente a consulta por sourceFileId e a solicitação de persistência documental DAS normal/cobrança, reutilizando o escritor de Guias.",
+  "operationalImpact": "Fiscal recebe interpretação e identidade já preparadas e coordena capacidades específicas; Guias conserva GuideService, hash, bytes, pagamento/comprovante, valorOriginal, revisão e CAS. Circular, provisões, vínculos e limpeza de duplicatas permanecem na sequência legada. Captura/recálculo HTTP de escritório/portal/WhatsApp, agenda, rotina manual, Operações e fechamento mantêm contratos e efeitos; sem alteração em Comunicação, Comercial, frontend ou portal. Segurança #275 e divergência da autorização do lote moderno preservadas. Sem mudança fiscal, contábil, de schema, migrações, cache, reservas, locks, idempotência ou transporte.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "communication",
+    "commercial",
+    "portal",
+    "web",
+    "documentation",
+    "governance",
+    "ci"
+  ],
+  "tests": [
+    "Antes da extração: 4 suítes existentes, 88 testes e 42 snapshots aprovados, incluindo 8 ensaios PostgreSQL 16 da etapa 4.4. Oito novos ensaios PostgreSQL 16 passaram antes da produção e foram registrados no commit 69d963f298a9e5ed8feace205df27de094e813e4.",
+    "Mesma caracterização na candidata, sem atualizar snapshots: 6 suítes, 103 testes e 42 snapshots aprovados, incluindo os 16 ensaios PostgreSQL e 7 testes unitários da nova aplicação. SHA-256 do teste PG 4.4.2 antes da extração: 5B18F46F0E7B3CBEC41DDDA43ABC4669F1E6C358EA815CFC5AA6C966F4710DC3.",
+    "PostgreSQL 16 descartável: identidade/revisão, pagamento/comprovante/valorOriginal, reutilização e empresa, mês fechado normal/cobrança em somenteDocumentos, CAS com escrita real por segunda conexão, quatro conflitos, P2002 e exclusão legada de duplicata paga. Mocks SERPRO e documentos sintéticos; nenhuma consulta fiscal real.",
+    "Regressão ampliada: 78 suítes, 1001 testes aprovados, 2 ignorados e 42 snapshots preservados. Governança: 40/40; verificador: 4/4. Diagnose: 5027 para 5026, zero novas violações. Guia/escritor/CAS e trecho da captura a partir da circular sem alterações.",
+    "Suíte OperationsBatchService.postgres: 10/10 aprovados pelo Principal com banco descartável, após a falha de configuração no controlador. Controlador completou 585 suítes/6936 testes web aprovados. Resultado da regressão API ampla e CI hospedada do SHA final no PR.",
+    "Regressão API ampla separada: 323 suítes aprovadas, 7205 testes aprovados, 5 ignorados e 1 falha no batch-13. CicloAcompanhamentoGuiasService.postgres.test.js exige literalmente porta 54661/banco altan_rotinas_governance_test e recusou o banco exclusivo desta entrega (54664). Restrição confirmada no arquivo idêntico da main; nenhum acesso ao banco antigo e nenhuma alteração da guarda. Execução ampla não declarada integralmente aprovada."
+  ],
+  "rollback": "Reverter o incremento como unidade, restaurando o bloco documental na fachada e removendo a composição/portas/adaptadores adicionados. Nenhuma migração ou conversão de dados. Não desfaz atos fiscais nem autoriza repetição externa; preservar segurança #275.",
+  "humanDecisions": [
+    "Entrega exclusiva 4.4.2 em PR rascunho; aguardar autorização humana de integração. Sem merge, deploy, transmissão fiscal, mensagens reais, limpeza ou reativação do Auto Deploy. Não iniciar contrato contábil ou recuperação/conciliação."
+  ],
+  "finalReview": "Fiscal/SERPRO, Guias e Contabilidade: parecer independente favorável, comparação literal dos argumentos do escritor e trecho posterior à circular; 87 testes e 42 snapshots aprovados pelo revisor. Arquitetura/backend: parecer independente favorável, 87 testes e 42 snapshots; inspeção do CAS PostgreSQL e ausência de ciclos. Revisores não autores da produção. Revisão sistêmica final favorável de documento/workflow e limites do contrato; diff --check aprovado. CI hospedada pendente; resultado será registrado no PR no SHA definitivo.",
+  "limitations": [
+    "Controlador 2026-11-14T15-32-03-807Z-1427dba3 planejou e implementou sete caminhos. Teste do executor falhou por EPERM em C:/Users/yagoa. Gate API falhou porque o processo principal foi iniciado sem a variável do banco descartável exigida por OperationsBatchService.postgres. O Principal interrompeu a árvore desse processo durante os gates para evitar repetição com configuração incompleta. Journal preservado em testing: execução interrompida, não escalated concluído nem ready_for_human. Não alterar governança para aprovar. Testes e pareceres externos ao controlador são evidências separadas.",
+    "Correção documental da caracterização: GuideService contém origem !== SERPRO na guarda documental de competência fechada. Contabilidade tem guardas distintas. Nenhuma regra foi alterada. Ensaios documentais com contabilidade simulada não provam atomicidade contábil.",
+    "Porta interna para captura já autorizada: consulta global por sourceFileId, identidade legada inclui serviço/CNPJ/competência/número; não acrescenta filtro portalClientId nem verifica pertença de existingGuideId. Não expor para IDs arbitrários ou afirmar isolamento autônomo do adaptador. Guardas HTTP e consumidores existentes preservados.",
+    "Persistem os riscos 4.4: falha contábil depois de guia/circular, reutilização sem reparação de provisão, timeout com reserva incerta, exclusão de duplicatas sem filtro de pagamento, revogação de procuração entre seleção/despacho e política divergente do lote moderno.",
+    "Sem nova atomicidade ou retentativa: relógio após lookup e mesmo Date na sequência; erros propagam. Adaptador legado de Guias não reexportado pelo public para evitar ciclo com GuideService.",
+    "O teste de acompanhamento com URL local fixa permanece uma limitação da regressão ampla neste ambiente. As suítes focais PostgreSQL foram executadas integralmente; não substituir silenciosamente a CI hospedada."
+  ]
+}
