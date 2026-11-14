@@ -70,6 +70,10 @@ jobs:
             src/application/guides/__tests__/entregaExternaGuia.test.js \
             src/application/guides/__tests__/envioTentativas.test.js \
             src/application/guides/__tests__/GuideCompanyEmailCiclo.test.js \
+            src/modules/operations/domain/__tests__/projecaoEnvioGuias.test.js \
+            src/application/guides/__tests__/cicloEnvioLeituraCaracterizacao.test.js \
+            src/application/guides/__tests__/CicloEnvioGuiasService.test.js \
+            src/routes/firm/__tests__/cicloEnvioOperacional.http.test.js \
             src/application/guides/__tests__/CicloEnvioGuiasService.postgres.test.js \
             src/application/whatsapp/__tests__/envioGuiaWhatsapp.test.js \
             src/application/whatsapp/__tests__/envioDocumentoGuiaWhatsapp.test.js \
