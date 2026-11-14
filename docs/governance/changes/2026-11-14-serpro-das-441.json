@@ -1,0 +1,22 @@
+{
+  "summary": "Incremento 4.4.1 sobre010e094:extrai exclusivamente interpretação fiscal DAS normal/cobrança para domínio e aplicação Fiscal, com leitura textual PDF por capacidade específica e adaptador. Preserva fachada e exports de diagnóstico.",
+  "operationalImpact": "Fiscal interpreta resposta e mensagens; Guias continua persistindo documento; Contabilidade preserva provisões; Operações mantém agenda/reserva. Consumidores de captura/recálculo escritório/portal/WhatsApp, rotina manual, worker, fechamento, complementação documental e scripts mantêm DTOs/erros. Não altera web/portal/Comercial/Comunicação. RegrasR01/R02/R05/R06/R10/R11 preservadas. GERARDAS12/GERARDASCOBRANCA17 distintos de TRANSDECLARACAO11. Escolha de serviço, identidade, hash, bytes, autorização, HTTP, cache, reservas, consultas, escritas, efeitos, schema e regras contábeis não mudam.",
+  "risk": "high",
+  "domains": ["api", "fiscal", "guides", "accounting", "operations", "communication", "commercial", "portal", "web", "documentation", "governance", "ci"],
+  "tests": [
+    "Base anterior à extração:92testes existentes aprovados, incluindo8ensaiosPG16 da caracterização4.4. Nova caracterização43testes/42snapshots executada e repetida na produção original antes da extração; snapshotSHA256 E12A15DF8D58CA83CDE15B1AC7C0DA664D93E89D8F4A09198592DA1167A81AFE.",
+    "Candidata:mesma suíte base+golden,135testes aprovados e42snapshots preservados sem atualização, incluindoPG16. Golden registra DTO/hash/bytes/rawPayload, conversões monetárias, datas, precedência de mensagens/fallback e argumentos/ordem de consultas/escritas.",
+    "Revisores compararam12corpos de função e restante da captura por reconstrução contra base:literalmente iguais salvo extração/chamada. Nenhuma mudança em serviçoHTTP/cache/guard/reservas/persistência/contabilidade/rotas/workers.",
+    "Governança40/40; verificador4/4; diagnose5027→5027,zero acréscimos. Workflowfocal acrescenta golden e aplicação. Regressão ampliada: 76 suítes, 986 testes aprovados, 2 ignorados e 42 snapshots preservados. CI final documentada no PR.",
+    "Testes usam HTTP/parser e efeitos simulados onde declarado. PostgreSQL16 descartável confirma persistência e guarda real separadamente conforme suite4.4; não equivale à homologação do provedor."
+  ],
+  "rollback": "Reverter o incremento completo restaurando interpretação na fachada. Não há conversão de dados ou estados. Preservar segurança275 e reservas existentes; nenhuma repetição fiscal ou rollback de ato externo autorizado.",
+  "humanDecisions": ["Somente interpretação4.4.1; PRrascunho aguarda autorização de integração. Sem merge/deploy/transmissão fiscal/mensagens/limpeza/AutoDeploy. Não iniciar escrita documental, contrato contábil ou conciliação."],
+  "finalReview": "Fiscal/SERPRO,Guias,Contabilidade:favorável,80testes e42snapshots independentes,12funções e tail da captura comparados. Arquitetura/backend:favorável,80testes e42snapshots,diagnose independente sem acréscimos. Revisores não autores da implementação. Fechamento sistêmico local e CI no SHAfinal registrados no PR.",
+  "limitations": [
+    "Controlador2026-11-14T14-54-29-024Z-2e507d5e planejou e implementou7caminhos; Jest no executor falhou comEPERM ao acessar C:/Users/yagoa. Terminou escalated:Executor changed protected or out-of-plan paths, listando workflow, golden novo/snapshot e documento. Esses arquivos foram preparados pelo Principal/delegado na árvore compartilhada, fora da allowlist do executor; o detector atribui o diff compartilhado ao executor. Não ocultar esse resultado nem declarar ready_for_human. Gates executados pelo Principal e revisões independentes são evidências alternativas; governança não alterada para aprovar.",
+    "Preservadas peculiaridades legadas:Number/Decimal e precisão, datas inválidas/RangeError, bytes base64 não vazios sem autenticação PDF, grafia de mensagens e fallback Totais. Não endurecer validação silenciosamente ou promover esses comportamentos a regras definitivas.",
+    "Mantidos riscos4.4:falha contábil após documento/circular,incerta após timeout,reutilização sem reparação contábil,exclusão duplicatas sem filtroPAID,procuração entre seleção/despacho. Segurança275 intacta e divergência lote moderno registrada, sem harmonização.",
+    "Novo limite assíncrono da interpretação não cria atomicidade nem muda ordem das consultas/escritas. ParserPDF e leitura de composição contábil permanecem separados. Nenhuma chamada fiscal ou mensagem real foi executada."
+  ]
+}
