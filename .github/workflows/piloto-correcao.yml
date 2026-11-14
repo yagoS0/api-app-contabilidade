@@ -70,6 +70,8 @@ jobs:
             src/application/guides/__tests__/entregaExternaGuia.test.js \
             src/application/guides/__tests__/envioTentativas.test.js \
             src/application/guides/__tests__/GuideCompanyEmailCiclo.test.js \
+            src/application/fiscal/serpro/__tests__/dasRecuperacao444.test.js \
+            src/application/fiscal/serpro/__tests__/dasRecuperacao444.postgres.test.js \
             src/application/fiscal/serpro/__tests__/dasContabilidade443.test.js \
             src/application/fiscal/serpro/__tests__/dasContabilidade443.postgres.test.js \
             src/modules/accounting/application/__tests__/contabilizarDasCapturado.test.js \
