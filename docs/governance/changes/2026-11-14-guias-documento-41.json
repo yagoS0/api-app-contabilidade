@@ -1,0 +1,35 @@
+{
+  "summary": "Incremento 4.1 na base c428f954: separação das decisões puras de vigência documental, caso de uso com operações específicas, leituras Prisma e adaptador de PDF. Fachadas e consumidores legados preservados.",
+  "operationalImpact": "Guias mantém propriedade documental. Fiscal continua responsável pela captura e classificação; Comunicação conserva tentativas e recibos; Operações conserva agenda; Contabilidade mantém provisão, baixa e fechamento. Sem alteração de HTTP, projeções, estados, autorização, schema ou migrações. Leituras sem efeitos colaterais; preferência de bytes incorporados e erros de storage preservados.",
+  "risk": "high",
+  "domains": [
+    "guides",
+    "fiscal",
+    "api",
+    "ci",
+    "accounting",
+    "communication",
+    "operations",
+    "documentation",
+    "governance",
+    "commercial",
+    "web",
+    "portal"
+  ],
+  "tests": [
+    "Caracterização idêntica antes/depois: 34/34 testes de vigência, PDF e HTTP; candidata com consumidor de aviso: 39/39.",
+    "Regressão focal: 118/118 Jest, 25/25 piloto HTTP/aplicação/PostgreSQL e 10/10 concorrência/fechamento. Novo ensaio PostgreSQL 16: 1/1, isolamento por empresa, troca de revisão, ambiguidade e ausência de escrita.",
+    "Governança e verificador: 93/93 testes. Diagnose base 5045 → candidata 5043, zero novas ocorrências.",
+    "Regressão ampla da API e CI hospedada: consultar evidências no SHA final do PR; não substituídas pelos testes focais."
+  ],
+  "rollback": "Reverter o incremento como unidade. Nenhuma conversão de dados, schema, estados ou revisão; preservar registros existentes.",
+  "humanDecisions": [
+    "Escopo exclusivo 4.1; integração exige autorização humana. Sem merge, deploy, transmissão fiscal, mensagens ou reativação de Auto Deploy."
+  ],
+  "finalReview": "Pareceres independentes favoráveis de Guias/Fiscal (34/34 testes reexecutados), Comunicação/Operações (44/44) e arquitetura/backend (34/34). Confirmaram precedência, mesma instância db/tx, consultas, revisão, identidade de parcela, bytes prioritários e ausência de novos ciclos. Inventário de escritores/leitores/consumidores consta em docs/modules/ciclo-operacional-guias.md.",
+  "limitations": [
+    "O controlador 2026-11-14T12-06-26-298Z-c402747a encerrou escalated: teste HTTP e inventário adicionados pelo principal ficaram fora do plano do executor. O executor também encontrou EPERM local ao iniciar Jest. Não se atribui ready_for_human ao runtime; testes foram executados pelo principal e revisões independentes examinaram o diff completo, sem enfraquecer gates.",
+    "Os testes HTTP usam banco simulado e conferem filtros; persistência/isolamento são cobertos separadamente no ensaio PostgreSQL sintético. Não representam ensaio de autenticação e banco reais de ponta a ponta.",
+    "Mantêm-se as semânticas distintas dos hashes legados e as capacidades puras existentes de composição/revisão; a extração não redefine regras fiscais, de pagamento ou de entrega. Os 5043 diagnósticos legados permanecem fora do escopo."
+  ]
+}

@@ -19,3 +19,40 @@ test('contratos distintos usam vínculo da parcela e não competência/data para
  expect((await conferir(db,a)).vigente).toBe(true);expect((await conferir(db,b)).vigente).toBe(true);
  rows.pa.guiaId='substituta';expect(await conferir(db,a)).toMatchObject({vigente:false,reason:'DOCUMENTO_SUBSTITUIDO'});
 });
+
+test.each([{id:null},{portalClientId:null},{competencia:null},{status:'VAZIO'},{liberadaCliente:false},{hash:null}])('pré-condições recusam antes de ler %j',async patch=>{
+ const g={...guide('g'),...patch},db=dbFor([]);
+ expect(await conferir(db,g)).toEqual({vigente:false,reason:'DOCUMENTO_NAO_LIBERADO',guideId:g.id});
+ expect(db.guide.findMany).not.toHaveBeenCalled();
+});
+test('queries e retorno de obrigação única preservam hash legado sem exigir formato SHA',async()=>{
+ const g=guide('g'),db=dbFor([g]);
+ expect(await conferir(db,g)).toEqual({vigente:true,source:'OBRIGACAO_DOCUMENTO_UNICO',guideId:'g',tributos:['IRPJ'],revisao:require('../ConfirmacaoPagamentoClienteService.js').versaoPagamentoGuia(g)});
+ expect(db.guide.findMany).toHaveBeenCalledTimes(1);
+ expect(db.guide.findMany).toHaveBeenCalledWith({where:{portalClientId:'c',competencia:'2026-10',status:'PROCESSED',parcelamentoId:null},orderBy:{id:'asc'}});
+});
+test('outro tenant/período/status/parcela não contaminam candidatos mesmo retornados pelo leitor',async()=>{
+ const g=guide('g');
+ const strangers=[{portalClientId:'outro'},{competencia:'2026-11'},{status:'ERROR'},{parcelamentoId:'p'}].map(p=>({...guide('outro','OUTRA'),...p}));
+ expect((await conferir(dbFor([...strangers,g]),g)).vigente).toBe(true);
+});
+test.each([{hash:'novo'},{valor:11},{extracted:{fields:{principal:10}}}])('mesmo id com revisão alterada recusa %j',async patch=>{
+ const g=guide('g');expect(await conferir(dbFor([{...g,...patch}]),g)).toMatchObject({reason:'DOCUMENTO_ALTERADO'});
+});
+test('composição desconhecida precede ambiguidade; documento não liberado concorrente continua contando',async()=>{
+ const g=guide('g');
+ expect(await conferir(dbFor([g,guide('x','OUTRA')]),g)).toMatchObject({reason:'COMPOSICAO_A_CONFERIR'});
+ expect(await conferir(dbFor([g,{...guide('x'),liberadaCliente:false}]),g)).toMatchObject({reason:'DOCUMENTO_AMBIGUO'});
+});
+test.each([null,{portalClientId:'outro'},{parcelamentoId:'outro'},{guiaId:'substituta'},{id:'outra'}])('parcela recusa vínculo ausente, substituído ou de outro tenant %j',async patch=>{
+ const g={...guide('g','OUTRA'),parcelamentoId:'contrato',parcela:{id:'p'}};
+ const row=patch===null?null:{id:'p',portalClientId:'c',parcelamentoId:'contrato',guiaId:'g',...patch};
+ const db={parcela:{findFirst:jest.fn(async()=>row)}};
+ expect(await conferir(db,g)).toEqual({vigente:false,reason:'DOCUMENTO_SUBSTITUIDO',guideId:'g'});
+ expect(db.parcela.findFirst).toHaveBeenCalledWith({where:{id:'p',portalClientId:'c',parcelamentoId:'contrato'}});
+});
+test('falhas de ambas as consultas propagam a mesma instância sem converter em ausência',async()=>{
+ const error=new Error('leitura falhou'), fail=jest.fn().mockRejectedValue(error);
+ await expect(conferir({guide:{findMany:fail}},guide('g'))).rejects.toBe(error);
+ await expect(conferir({parcela:{findFirst:fail}},{...guide('g','OUTRA'),parcelamentoId:'p'})).rejects.toBe(error);
+});

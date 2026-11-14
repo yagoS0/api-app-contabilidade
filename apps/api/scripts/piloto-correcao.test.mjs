@@ -79,6 +79,8 @@ const real = new Set([
   'application/guides/lib/documentoNaoArrecadatorio.js',
   'application/guides/lerLinhaDigitavelDoPdf.js',
   'application/guides/linhaDigitavelArrecadacao.js',
+  'modules/guides/public.js',
+  'modules/guides/infrastructure/documentos/leituraPdfGuia.js',
   'modules/guides/application/preverCorrecaoValorGuia.js',
   'modules/guides/infrastructure/documentos/leituraDocumentalCorrecaoValorGuia.js',
   'application/accounting/fechamentoContabil.js',
