@@ -1,0 +1,23 @@
+{
+  "summary": "Caracterização 4.4 do DAS normal/cobrança via SERPRO sobre ab28dad68a7bfe6b9991f2b7040458e5a020a352. Somente testes, documentação e inclusão na CI; nenhum arquivo de produção alterado ou escrita extraída.",
+  "operationalImpact": "Fiscal permanece dono da interpretação SERPRO; Guias da identidade/documento; Contabilidade das provisões; Operações da agenda. Inventariados captura manual, recálculo escritório/portal/WhatsApp, rotina manual, worker, complementação documental e fechamento. Consumidores web/portal/Comunicação/Comercial mantêm contratos. Regras R01/R02/R05/R06/R10/R11 preservadas. Captura/reutilização não equivale a transmissão de declaração ou a recálculo com efeitos posteriores. Segurança275 intacta e política global distinta do lote moderno registrada, sem harmonização. Sem mudanças de contrato, schema, migração, autorização, worker, reservas, leases, idempotência, repetição ou regra fiscal.",
+  "risk": "high",
+  "domains": ["api", "ci", "documentation", "governance", "fiscal", "guides", "accounting", "operations", "communication", "commercial", "portal", "web"],
+  "tests": [
+    "Caracterização nova:20 fiscais,17 HTTP e8 PostgreSQL16;3cenários adicionados ao worker (15total). HTTP usa handlers/guarda reais e sessão sintética; SERPRO/efeitos são doubles, nunca chamadas fiscais reais.",
+    "PostgreSQL16:captura/GuideService/Prisma reais, normal/cobrança, empresa, PDF/hash, pagamento, falha de unicidade, provisão falha após documento, concorrência e reutilização. Guarda real com2clientes independentes:1reserva/1bloqueio e incerta permanece bloqueada após reconexão. Corrida documental usa HTTPmock e não certifica emissão ponta a ponta.",
+    "Regressão focal ampliada:74suítes aprovadas,918testes aprovados,2históricos ignorados. Abrange Fiscal/SERPRO, captura, recálculo, auditoria, worker, Operações e segurança275. Nenhuma produção mudou: paridade estrutural integral dos arquivos executáveis de produção em relação à base.",
+    "Governança40/40, verificador4/4, diagnose5027→5027 com0acréscimos. Workflow focal mantém gates e adiciona6suítes; CI hospedada no SHA final terá evidência no PR.",
+    "Durante autoria, expectativas de Decimal/número e contratos HTTP foram ajustadas ao comportamento observado; não houve alteração de produção para passar testes. Resultados finais reexecutados pelo principal e revisores."
+  ],
+  "rollback": "Reverter somente commits de caracterização (testes/docs/adições à CI). Nenhuma alteração operacional ou de dados a desfazer; preservar segurança275 e produção integrada. Não iniciar rollback, limpeza ou ato externo automaticamente.",
+  "humanDecisions": ["PR rascunho exclusivo4.4, sem extração funcional. Integração e futuros incrementos exigem autorização humana própria. Não realizar merge, deploy, transmissão fiscal, mensagens, limpeza ou reativação Auto Deploy."],
+  "finalReview": "Fiscal/SERPRO e Operações: parecer independente favorável nos testes,52casos executados; documento authored por esse agente e revisado separadamente. Arquitetura/backend e Guias/Contabilidade:parecer favorável,52testes e diagnose independente; revisaram testes, limites das simulações e documento; fechamento sistêmico e CI final registrados no PR. Revisores não certificam os próprios arquivos.",
+  "limitations": [
+    "Controlador2026-11-14T14-27-29-588Z-2adc6a7a terminou escalated no planejamento:Governance/configuration changes require separate human-reviewed integration. Não alterou produção, não declara ready_for_human. Principal coordenou testes e revisões independentes sem enfraquecer governança.",
+    "Guia/circular podem permanecer após falha contábil; reprocessamento pode retornar accounting.ok:true comgeneratedEntries vazio sem repetir geração. Isso não comprova conciliação. Sem correção funcional neste incremento.",
+    "Timeout pode manter assinatura incerta bloqueada, sem endpoint manual de resolução identificado. Procuração pode ser reutilizada e não foi identificada releitura imediatamente no despacho. Limpeza legada de duplicatas não filtraPAID. Não alterar essas políticas por conveniência técnica.",
+    "Provisão com falha é injetada no teste; não prova integração contábil completa. Parser/PDF sintéticos e HTTPmock não homologam provedor. Guarda de reserva testada separadamente da corrida de persistência. Portal/WhatsApp inventariados e regressões relevantes mantidas; não se afirma nova homologação integral de todas as entradas.",
+    "Futuros incrementos propostos no documento:interpretação fiscal, escrita documental, contrato contábil e recuperação/conciliação separados. Não promete exatamente uma emissão externa nem rollback de ato já aceito."
+  ]
+}
