@@ -70,3 +70,24 @@ O controlador `2026-11-14T14-27-29-588Z-2adc6a7a` terminou `escalated`; não se 
 4. Tratar recuperação após aceite externo e expiração de cache em entrega independente, com evidência de conciliação, autorização e política de repetição aprovada. Não presumir que retry é seguro ou que rollback local desfaz ato fiscal.
 
 A caracterização pode ser revertida removendo seus testes/documentos, sem migração de dados ou alteração operacional. Cada extração posterior exige seu próprio PR, testes de paridade e autorização humana de integração. Nenhum merge, deploy, limpeza, transmissão fiscal, envio real ou reativação do Auto Deploy integra esta entrega.
+
+## Incremento 4.4.1 — interpretação fiscal isolada
+
+Base `010e09432d0b08ea416506d09cc876d4072334ba`. A extração alcança somente a interpretação da resposta DAS e o fallback textual do PDF. `CaptureSerproGuidesService` continua escolhendo o serviço, normalizando a entrada, chamando o provedor, construindo a identidade, persistindo documento/circular, solicitando contabilidade e executando a limpeza legada.
+
+- `modules/fiscal/domain/interpretacaoDas.js` conserva travessia dos dados fiscais, número do documento, prioridade de valores, conversões e datas, mensagens/precedência, decodificação dos bytes e representação para Guias. É código puro, sem Prisma, Express, transporte, configuração ou armazenamento.
+- `modules/fiscal/application/interpretarRespostaDas.js` recebe resposta, CNPJ e competência já normalizada. Coordena interpretação e fallback pela capacidade `lerTextoPdfDas`, sem consultar o SERPRO nem escrever.
+- `modules/fiscal/infrastructure/documentos/lerTextoPdfDas.js` encapsula `pdf-parse` sobre bytes recebidos; não busca arquivo ou rede. `composition/interpretacaoRespostaDas.js` conecta essa capacidade à aplicação.
+- `modules/fiscal/public.js` expõe a operação e os dois auxiliares consumidos pelo legado. A fachada conserva `extractDocumentNumber` e `parsePossibleDate`, incluindo seus consumidores de diagnóstico.
+
+O cliente HTTP, autenticação, envelope de transporte, cache e reservas não são alterados. GERARDAS12/GERARDASCOBRANCA17 continuam distintos de TRANSDECLARACAO11. A competência interpretada é a mesma fornecida pelo chamador, não inferida de outro campo do retorno. sourceFileId, hash, bytes, referência rawPayload e DTO mantêm o formato legado.
+
+### Compatibilidades deliberadas
+
+O incremento não corrige peculiaridades já existentes: conversões numéricas usam as mesmas regras de Number; formato inválido pode manter null ou produzir o mesmo erro; a validação do PDF exige bytes não vazios, mas não autentica um documento fiscal; mensagens com grafia diferente podem não casar com as expressões antigas. O fallback do valor só ocorre para null/zero, preserva a ordem dos padrões e ignora falha inesperada do parser. A leitura posterior de composição contábil continua separada e intocada.
+
+Antes da extração, a suíte `dasInterpretacao441` registrou 43 testes e 42 snapshots pela fachada original, incluindo DTO, bytes/hash, argumentos e ordem de consultas/escritas. A mesma suíte é executada na candidata sem atualizar os snapshots. A caracterização 4.4 e seus testes PostgreSQL continuam complementando a paridade; simulações de HTTP/parser não homologam o provedor real. Resultados finais e pareceres ficam no registro de governança e no PR.
+
+Todos os riscos da matriz 4.4 permanecem: provisão falha após documento/circular, reserva incerta, reutilização sem reparação contábil, exclusão de duplicatas sem filtro PAID, procuração revogada entre seleção e despacho e políticas de autorização distintas. A segurança #275 permanece intacta. Não foram extraídas escritas, contratos contábeis ou recuperação/conciliação.
+
+Rollback: reverter o incremento completo e restaurar a interpretação na fachada, sem conversão de dados ou alteração das reservas. Incrementos posteriores exigem entrega e autorização próprias; esta refatoração não libera retry nem reprocessamento fiscal.
