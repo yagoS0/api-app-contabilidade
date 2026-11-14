@@ -1,0 +1,40 @@
+{
+  "summary": "Incremento 4.4.3 sobre a7ee04b1159eaf94f759c0601cb0565fd8d97feb: isola o contrato contábil da captura DAS normal/cobrança, preservando a persistência documental 4.4.2 e todos os efeitos legados.",
+  "operationalImpact": "Contabilidade coordena circular, composição, acréscimos e lançamentos por portas específicas, exportando a aplicação pelo ponto público. Fiscal fornece capacidades de leitura/interpretação PDF e escrita dos campos fiscais da circular (receitaBruta, dasTotal, inssTotal, metadata e acréscimos); tabela compartilhada não transfere a Fiscal fechamento, provisões ou razão. Gerador contábil legado, FONTE_VALOR_GUIA, transação Serializable própria, escritores e limpeza de duplicatas intactos. Consumidores: HTTP firm/client retorna DTO; FiscalManualRunService conta circularUpdated/generatedEntries; sincronização PGDAS lê guideId; Operações mantém somenteDocumentos; recálculo/fechamento/WhatsApp conservam efeitos posteriores. Sem mudança de frontend, Comercial, Portal ou Comunicação, contratos, autorizações, schema, migrações, regras monetárias/fiscais ou operacionais R01/R02/R03/R05/R06/R10/R11.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "communication",
+    "commercial",
+    "portal",
+    "web",
+    "documentation",
+    "governance",
+    "ci"
+  ],
+  "tests": [
+    "Referência antes da produção: 103 testes existentes e 42 snapshots aprovados; novas duas suítes com 14 cenários de contrato e 8 PostgreSQL 16 aprovados, commit 445a9a82d3bc048e71f8d620e403c1290accdd8e.",
+    "SHA-256 referência unitária 887161AC8D3C778E279D386A7B5EEAEC2979BB1B57B129A62BEA768DD71C7DC7; PostgreSQL E69A7E38541B2E740281863268035C7F2F760C524901960E6DF74E6F9B239809. Mesmos arquivos executados na candidata, sem alteração dos snapshots.",
+    "Paridade candidata: 9 suítes, 137 testes e 42 snapshots aprovados, incluindo 24 PostgreSQL (8 novos e 16 anteriores) e 12 unitários da aplicação. Após reconciliar adaptadores, regressão final: 85 suítes, 1113 testes aprovados, 2 ignorados e 42 snapshots preservados, incluindo a mesma caracterização.",
+    "PG16 novo com generateEntriesFromCircular/circular/acréscimos reais: normal/cobrança, identidade circular, principal/juros/multa, recálculo mantém IDs/linhas, mês fechado com documento/circular persistidos mas sem provisão, falhas de transação/upsert/acréscimos, reutilização sem reparação e somenteDocumentos. Falhas específicas injetadas explicitamente; SERPRO/credenciais/PDF e hook automático de provisão da guia são doubles. Não comprova atomicidade global.",
+    "Regressão de concorrência/fechamento PostgreSQL: 10/10 aprovados nos scripts guia-fechamento e fechamento-coordenacao; testes 4.4.2 preservam CAS documental com duas conexões reais.",
+    "Governança 40/40; verificador 4/4. Primeira candidata teve três novos achados; corrigidos por fronteira real dos campos fiscais, sem mudar analisador/baseline/gates. Diagnose final 5026 para 5023, zero acréscimos. CI hospedada do SHA final será registrada no PR.",
+    "CI inicial e80b8e5: 36 suítes Jest/621 testes/78 snapshots do piloto aprovados, mas a composição VM de piloto-correcao.test.mjs recusou o novo export público contabilizarDasCapturado por ausência na lista explícita de módulos reais. Adicionado somente esse módulo puro à lista; guarda de imports preservada. Reexecução local HTTP: 24/24 aprovados. CI do novo SHA deve ser concluída antes de declarar aprovação."
+  ],
+  "rollback": "Reverter o incremento como unidade restaurando o bloco contábil na fachada e removendo composição/portas/adaptadores adicionados. Sem conversão de dados ou migração. Não desfaz ato externo nem autoriza repetir consulta, conciliar ou reparar provisão.",
+  "humanDecisions": [
+    "Somente 4.4.3. PR em rascunho aguarda autorização humana de integração; não iniciar recuperação/conciliação. Sem merge, deploy, transmissão fiscal, mensagens reais, limpeza ou reativação do Auto Deploy."
+  ],
+  "finalReview": "Fiscal/SERPRO, Contabilidade e Guias: parecer independente favorável, 89 testes/42 snapshots iniciais e 26 testes após ajuste dos adaptadores, upsert e trecho da limpeza/DTO comparados. Arquitetura/backend: primeira candidata reprovada por três acréscimos; corrigida aprovada com diagnose independente zero acréscimos, 69 testes e 42 snapshots. Revisores não autores. Revisão sistêmica local de documentação/workflow favorável. CI hospedada pendente; resultado será registrado no PR no SHA definitivo.",
+  "limitations": [
+    "Controlador 2026-11-14T19-15-51-929Z-e0eda966 planejou e implementou oito caminhos. Testes do executor bloqueados por EPERM em C:/Users/yagoa. Gate governance-engine passou; durante testing, diagnóstico externo e revisor encontraram três acréscimos arquiteturais. Principal interrompeu a árvore do controlador para reconciliar a propriedade dos adaptadores fora da allowlist inicial. Journal preservado em testing: interrompido, não escalated concluído nem ready_for_human. Correção recebeu nova revisão independente e testes; governança não foi alterada para aprovar.",
+    "Semântica preservada: circular devolvida é anterior aos acréscimos/gerador. Falha de circular propaga; composição/acréscimos falham silenciosamente; exceção do gerador gera accounting.ok:false e limpeza prossegue. somenteDocumentos lê circular sem essas escritas; reutilização ok:true com generatedEntries vazio não comprova conciliação.",
+    "Writer legado de acréscimos continua fisicamente em application/fiscal/circularAcrescimos.js e é reutilizado por adaptador Fiscal. Contabilidade coordena por capacidades injetadas; não houve migração geral da tabela compartilhada. Fonte GUIA e cálculos/rounding não mudaram.",
+    "Permanecem falha contábil após guia/circular, reutilização sem reparação, reserva incerta por timeout, exclusão de duplicatas sem filtro PAID, revogação de procuração entre seleção/despacho e autorização diferente do lote moderno. Segurança #275 intacta.",
+    "Contrato interno recebe empresa/dados já autorizados pela captura; não cria guarda própria para chamadas arbitrárias. Novos limites assíncronos não prometem atomicidade, retry ou reparação. Nenhum banco antigo, mensagem real ou serviço fiscal foi utilizado."
+  ]
+}

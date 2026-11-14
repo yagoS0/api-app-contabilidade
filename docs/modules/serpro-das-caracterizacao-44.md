@@ -119,3 +119,37 @@ Rollback: reverter o incremento como unidade, restaurando o bloco documental na 
 ### Limites do contrato interno
 
 A porta atende à captura já autorizada e recebe identidade, sourceFileId e dados interpretados preparados pelo fluxo existente. Não verifica novamente acesso por empresa nem pertença de existingGuideId. A consulta conserva where:{sourceFileId}, sem filtro portalClientId; a identidade legada incorpora serviço, CNPJ, competência e documento. Portanto, não é uma API segura para IDs arbitrários nem prova de isolamento autônomo do adaptador. As guardas dos pontos de entrada, inclusive #275, permanecem responsáveis pela autorização. {guide, now} é retorno interno e não novo DTO HTTP. Falhas propagam sem repetição adicional. Os testes com contabilidade simulada não comprovam atomicidade contábil.
+
+## Incremento 4.4.3 — contrato contábil do DAS capturado
+
+Base `a7ee04b1159eaf94f759c0601cb0565fd8d97feb`. A captura solicita `contabilizarDasCapturado` pelo ponto público de Contabilidade, ligado pela composição. A aplicação contábil coordena portas específicas de circular, composição documental, acréscimos e lançamentos. Não importa Prisma, PDF parser ou serviços concretos.
+
+### Propriedade por campos e adaptadores
+
+- `modules/accounting/application/contabilizarDasCapturado.js`: coordena o contrato interno, conserva os três limites de falha e retorna `{circular, accounting}` sem reinterpretar o resultado.
+- `modules/fiscal/infrastructure/prisma/circularDasCapturado.js`: lê/upserta os campos fiscais capturados (receitaBruta, dasTotal, inssTotal e metadata SERPRO) e delega acréscimos ao escritor Fiscal legado `application/fiscal/circularAcrescimos.js`. A circular é uma tabela compartilhada; este adaptador não escreve fechamento nem razão. A coordenação contábil recebe essas capacidades pela composição, sem importar internals de Fiscal.
+- `modules/fiscal/infrastructure/documentos/lerComposicaoDas.js`: preserva import dinâmico de pdf-parse e interpretação por parseArrecadacaoComposicao. Interpretação documental continua em Fiscal.
+- `modules/accounting/infrastructure/legacy/contabilidadeDasCapturado.js`: delega ao gerador existente com `FONTE_VALOR_GUIA`. Contabilidade conserva suas decisões de provisão, linhas, fechamento e transação Serializable própria.
+- `composition/contabilidadeDasCapturado.js`: liga essas capacidades; public de Contabilidade exporta somente aplicação/políticas. Serviços legados, schemas e consumidores não foram reestruturados.
+
+A primeira distribuição de adaptadores gerou três achados novos no diagnóstico. A revisão corrigiu a fronteira dos campos fiscais e a ligação de Prisma; não alterou o verificador nem criou exceção. O contrato não autentica chamadas arbitrárias: recebe empresa e dados já preparados/autorizados pelo fluxo de captura. Segurança #275 e filtros atuais permanecem intactos.
+
+### Sequência observada e falhas
+
+| Etapa | Comportamento preservado |
+| --- | --- |
+| Documento | Gravação da guia pela composição 4.4.2 antes do contrato contábil; pode persistir mesmo se uma etapa posterior falhar. |
+| Circular | Upsert por empresa/competência; create usa null para ausentes, update omite campos ausentes. somenteDocumentos faz findUnique. Erro propaga e impede os passos seguintes. |
+| Composição e acréscimos | Fora de somenteDocumentos, lê PDF após circular. Guarda numérica legada menor que 0.02 e writer com arredondamento/mescla permanecem. Falha é best-effort, sem impedir geração. |
+| Lançamentos | Gerador recebe mesma empresa, competência, Date e fonte GUIA. Conserva própria transação Serializable e fechamento. Exceção vira accounting.ok:false com código/mensagem legados; resultado parcial retornado sem lançar também passa intacto. |
+| Limpeza e resposta | Limpeza legada fica em Fiscal depois da operação contábil. Circular devolvida é o objeto anterior ao split/gerador, não accounting.circular. DTO e ordem dos efeitos preservados. |
+
+Competência contábil fechada pode receber documento/circular/acréscimos no fluxo legado, mas o gerador responde `reason: mes_fechado`, sem provisão. Não corrigir essa diferença neste recorte. Em somenteDocumentos, não grava circular/acréscimos/lançamentos nem executa limpeza; retorna `{skipped:true,somenteDocumentos:true}`. Reutilização documental ocorre antes e continua sem chamada externa nem reparação: `accounting.ok:true` com `generatedEntries:[]` não comprova conciliação.
+
+Consumidores preservados: rota de captura entrega result; FiscalManualRunService conta generatedEntries e circularUpdated sem exigir sucesso contábil integral; sincronização lê guideId; Operações usa somenteDocumentos; recálculo e fechamento mantêm efeitos posteriores próprios. Não se alteram HTTP, autorizações, fontes monetárias ou mensagens.
+
+### Evidências, limites e reversão
+
+Antes da produção, 14 cenários de contrato e oito PostgreSQL 16 passaram e foram commitados em `445a9a82d3bc048e71f8d620e403c1290accdd8e`. A mesma suíte é repetida na candidata, junto dos testes/snapshots anteriores. Nos ensaios novos, circular/acréscimos e generateEntriesFromCircular são reais; SERPRO, credenciais, leitura PDF e o hook automático GuideToProvisionService são doubles. Falhas específicas são injetadas nas fronteiras declaradas. Isso não prova atomicidade global nem homologação SERPRO. Os ensaios 4.4.2 continuam cobrindo CAS/concorrência documental.
+
+Persistem os sete riscos solicitados: falha contábil após guia/circular, reutilização sem reparação, reserva incerta, exclusão de duplicatas pagas, procuração revogada entre seleção/despacho, autorização diferente do lote moderno e necessidade de preservar segurança #275. Sem novas retentativas ou recuperação. Rollback: reverter este incremento como unidade e restaurar o bloco na fachada, sem migrações ou conversão de dados. Resultados finais, interrupção do controlador, pareceres e CI ficam no registro e no PR. Recuperação/conciliação exige nova autorização.

@@ -94,6 +94,7 @@ const real = new Set([
   'modules/accounting/infrastructure/prisma/correcaoProvisaoValorGuia.js',
   'composition/leiturasCorrecaoValorGuia.js',
   'modules/accounting/public.js',
+  'modules/accounting/application/contabilizarDasCapturado.js',
   'modules/accounting/domain/correcaoDeProvisao.js'
 ]);
 const doubles = new Map([

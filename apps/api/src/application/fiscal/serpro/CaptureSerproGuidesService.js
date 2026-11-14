@@ -1,3 +1,4 @@
+import { contabilizarDasCapturadoComLegado } from "../../../composition/contabilidadeDasCapturado.js";
 import { persistirDocumentoDasComGuias } from "../../../composition/persistenciaDocumentoDas.js";
 import { interpretarRespostaDasComPdf } from "../../../composition/interpretacaoRespostaDas.js";
 export { extractDocumentNumber, parsePossibleDate } from "../../../modules/fiscal/public.js";
@@ -6,9 +7,6 @@ import {
   toGuideResponse,
   PUBLICO,
 } from "../../guides/GuideService.js";
-import { generateEntriesFromCircular, FONTE_VALOR_GUIA } from "../../accounting/AccountingEntryGeneratorService.js";
-import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
-import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { normalizeCompetencia, WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { reutilizarGuia } from "./reutilizarGuia.js";
@@ -159,90 +157,15 @@ export async function capturePgdasGuideForCompany({
     procuradorCnpj,
   });
 
-  const circular = somenteDocumentos
-    ? await prisma.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: portalClient.id, competencia: normalizedCompetencia } } })
-    : await prisma.companyMonthlyCircular.upsert({
-    where: {
-      portalClientId_competencia: {
-        portalClientId: portalClient.id,
-        competencia: normalizedCompetencia,
-      },
-    },
-    create: {
-      portalClientId: portalClient.id,
-      competencia: normalizedCompetencia,
-      receitaBruta: mapped.parsed.receitaBruta != null ? mapped.parsed.receitaBruta : null,
-      dasTotal: mapped.parsed.valor != null ? mapped.parsed.valor : null,
-      inssTotal: mapped.parsed.inssTotal != null ? mapped.parsed.inssTotal : null,
-      metadata: {
-        integrationSource: "SERPRO_PGDASD",
-        sistema: "PGDASD",
-        servico: resolvedServiceId,
-        numeroDocumento: mapped.numeroDocumento,
-        contratanteCnpj: procuradorCnpj,
-        contribuinteCnpj: portalClient.cnpj,
-        referencia: normalizedCompetencia,
-        rawPayload: mapped.rawPayload,
-        capturedAt: now.toISOString(),
-      },
-    },
-    update: {
-      ...(mapped.parsed.receitaBruta != null ? { receitaBruta: mapped.parsed.receitaBruta } : {}),
-      ...(mapped.parsed.valor != null ? { dasTotal: mapped.parsed.valor } : {}),
-      ...(mapped.parsed.inssTotal != null ? { inssTotal: mapped.parsed.inssTotal } : {}),
-      metadata: {
-        integrationSource: "SERPRO_PGDASD",
-        sistema: "PGDASD",
-        servico: resolvedServiceId,
-        numeroDocumento: mapped.numeroDocumento,
-        contratanteCnpj: procuradorCnpj,
-        contribuinteCnpj: portalClient.cnpj,
-        referencia: normalizedCompetencia,
-        rawPayload: mapped.rawPayload,
-        capturedAt: now.toISOString(),
-      },
-    },
+  const { circular, accounting } = await contabilizarDasCapturadoComLegado({
+    portalClient,
+    normalizedCompetencia,
+    mapped,
+    resolvedServiceId,
+    procuradorCnpj,
+    now,
+    somenteDocumentos,
   });
-
-  // Frente B: grava o split principal/juros/multa do DAS na circular (dado do PDF, antes descartado).
-  // Guarda de sanidade: só grava se o total parseado bate com o total do DAS (layout do PDF não
-  // validado no offline — se não bater, não grava e a provisão segue no total/dasTotal).
-  try {
-    if (!somenteDocumentos && mapped.pdfBuffer?.length && mapped.parsed.valor != null) {
-      const pdfParse = (await import("pdf-parse")).default;
-      const txt = String((await pdfParse(mapped.pdfBuffer))?.text || "");
-      const comp = parseArrecadacaoComposicao(txt);
-      if (comp?.totais && Math.abs((Number(comp.totais.total) || 0) - Number(mapped.parsed.valor)) < 0.02) {
-        await gravarAcrescimoCircular({
-          client: prisma,
-          portalClientId: portalClient.id,
-          competencia: normalizedCompetencia,
-          valores: { DAS: { principal: comp.totais.principal, juros: comp.totais.juros, multa: comp.totais.multa } },
-        });
-      }
-    }
-  } catch { /* best-effort: nunca derruba a captura do DAS */ }
-
-  let accounting = null;
-  try {
-    // ⚠ `fonteValor: GUIA` — aqui o `dasTotal` vem do DOCUMENTO DE ARRECADAÇÃO, que depois do
-    // vencimento chega recalculado com juros e multa. É exatamente o caso que a guarda de
-    // recálculo do `AccountingEntryGeneratorService` existe para proteger: a provisão continua
-    // valendo o principal, e o valor novo fica só sinalizado no lançamento e na circular.
-    // (É o default do serviço; explícito porque é aqui que a guarda PRECISA morder.)
-    accounting = somenteDocumentos ? { skipped: true, somenteDocumentos: true } : await generateEntriesFromCircular({
-      portalClientId: portalClient.id,
-      competencia: normalizedCompetencia,
-      now,
-      fonteValor: FONTE_VALOR_GUIA,
-    });
-  } catch (err) {
-    accounting = {
-      ok: false,
-      error: err?.code || "ACCOUNTING_GENERATION_FAILED",
-      reason: err?.message || "Falha ao gerar lançamentos a partir da Circular.",
-    };
-  }
 
   // Limpa DAS duplicado da mesma competência — a captura pode rodar de novo (recálculo, retentativa)
   // e a guia nova substitui a anterior.
