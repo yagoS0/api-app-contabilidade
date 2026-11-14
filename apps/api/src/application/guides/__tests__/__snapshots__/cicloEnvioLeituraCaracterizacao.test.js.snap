@@ -1,0 +1,3764 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`preserva DTO integral e sequência de leitura: WhatsApp indisponível: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+        {
+          "attemptId": null,
+          "channel": "WHATSAPP",
+          "destinationLabel": "+5521999990000",
+          "reason": "Canal WhatsApp indisponível.",
+          "state": "REVIEW",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: WhatsApp indisponível: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: agenda desligada: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": false,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "DISABLED",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: agenda desligada: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: comprovante externo sem tentativa atual: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": "Histórico de envio preservado. Confira o destinatário e a revisão do documento; não haverá repetição automática.",
+          "state": "REVIEW",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: comprovante externo sem tentativa atual: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: configuração ausente: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": false,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "DISABLED",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: configuração ausente: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: documento ausente: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 0,
+    "missing": [
+      {
+        "label": "DAS",
+        "obligationKey": "das",
+        "reason": "Documento válido ainda não confirmado.",
+      },
+    ],
+    "requiredCount": 1,
+    "resolvedCount": 0,
+    "state": "KNOWN",
+  },
+  "items": [],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "WAIT",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: documento ausente: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: documento substituído após tentativa: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": "tentativa-1",
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": "O documento mudou após uma tentativa. Confira o histórico antes de reenviar.",
+          "state": "REVIEW",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "9e00303db823c1e63a3030b754bec58f46a8e717acdd80538716ced65fc509ba",
+      "guideId": "g",
+      "reason": null,
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 2,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: documento substituído após tentativa: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: envio confirmado: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": "tentativa-1",
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "SENT",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "SENT",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 2,
+  "status": "WAIT",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: envio confirmado: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: guia liberada: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "COMPLETE",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: guia liberada: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: guia não liberada: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "COMPLETE",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: guia não liberada: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: guia paga: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": "Confira o documento vigente, o valor e o pagamento.",
+          "state": "REVIEW",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": "Confira o documento vigente, o valor e o pagamento.",
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: guia paga: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: histórico ausente: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "PARTIAL_DEADLINE",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "REVIEW",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "PARTIAL_DEADLINE",
+  "warnings": [
+    {
+      "code": "EXPECTATIVA_A_CONFERIR",
+      "createdAt": "2026-11-13T11:00:00.000Z",
+      "guideId": null,
+      "id": "d873c402801a59243ae74a0e5ab6c0d0795dd0e2c2b94933c2d8ca66b4547c41",
+      "message": "A cobertura completa das obrigações precisa de conferência; não será declarada completa.",
+      "resolvedAt": null,
+    },
+  ],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: histórico ausente: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: ledger indeterminado após aceite: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": "tentativa-1",
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": "O provedor não confirmou a entrega. Confira a tentativa antes de repetir.",
+          "state": "UNCERTAIN",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 2,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: ledger indeterminado após aceite: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: pausa da empresa: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": true,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "PAUSED",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: pausa da empresa: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: pausa global: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": "2026-11-13",
+    "kind": "COMPLETE",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": null,
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": null,
+          "state": "PENDING",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "PENDING",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": true,
+  "portalClientId": "a",
+  "revision": 0,
+  "status": "PAUSED",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: pausa global: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: recibo tardio de falha após aceite: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": "tentativa-1",
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": "O provedor não confirmou a entrega. Confira a tentativa antes de repetir.",
+          "state": "REVIEW",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 2,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: recibo tardio de falha após aceite: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva DTO integral e sequência de leitura: resultado indeterminado: DTO legado 1`] = `
+{
+  "calendar": {
+    "advanceDate": null,
+    "cutoffDate": "2026-11-13",
+    "holidayRevision": "97294f05c3603881a6466e787eb8726dde04588d242bea02914b0f0a8e12bdb2",
+    "timezone": "America/Sao_Paulo",
+    "vencimento": null,
+  },
+  "competencia": "2026-10",
+  "cutoffDate": "2026-11-13",
+  "decision": {
+    "eligibleAt": null,
+    "kind": "WAIT",
+  },
+  "enabled": true,
+  "expectation": {
+    "absenceConfirmedCount": 0,
+    "availableCount": 1,
+    "missing": [],
+    "requiredCount": 1,
+    "resolvedCount": 1,
+    "state": "KNOWN",
+  },
+  "items": [
+    {
+      "channels": [
+        {
+          "attemptId": "tentativa-1",
+          "channel": "EMAIL",
+          "destinationLabel": "contador@example.test",
+          "reason": "Confira a tentativa anterior; não haverá repetição automática.",
+          "state": "UNCERTAIN",
+        },
+      ],
+      "competencia": "2026-10",
+      "documentRevision": "e393057f83b0dbb4c40174513f77cb4ca60fbc35592f843c26ff97e27e874656",
+      "guideId": "g",
+      "reason": null,
+      "state": "REVIEW",
+      "tipo": "SIMPLES",
+      "vencimento": "2026-11-20T00:00:00.000Z",
+    },
+  ],
+  "lastAttempt": null,
+  "mesOperacional": "2026-11",
+  "ok": true,
+  "paused": false,
+  "portalClientId": "a",
+  "revision": 2,
+  "status": "REVIEW",
+  "warnings": [],
+}
+`;
+
+exports[`preserva DTO integral e sequência de leitura: resultado indeterminado: ordem das consultas e relógio 1`] = `
+[
+  {
+    "args": [
+      {
+        "where": {
+          "id": "a",
+        },
+      },
+    ],
+    "operation": "portalClient.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "id": "legacy",
+        },
+      },
+    ],
+    "operation": "company.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_config:a",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "serpro_runtime_settings",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "lerAutomacaoEmpresa",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "companyId": "legacy",
+        },
+      },
+    ],
+    "operation": "regimeHistorico.findMany",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+  {
+    "args": [],
+    "operation": "feriado.findMany",
+  },
+  {
+    "args": [
+      [
+        {
+          "hasProlabore": false,
+          "legacy": {
+            "regimeTributario": "SIMPLES",
+            "tipoTributario": "SIMPLES",
+          },
+          "portalId": "a",
+          "temFolha": false,
+        },
+      ],
+      "2026-10",
+    ],
+    "operation": "compliance",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "operations_manual_inss:v1:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "args": [
+      "a",
+      "2026-10",
+    ],
+    "operation": "lerInssManual",
+  },
+  {
+    "args": [
+      {
+        "include": {
+          "parcela": {
+            "select": {
+              "baixadaEm": true,
+              "origemBaixa": true,
+              "pagamentoStatus": true,
+            },
+          },
+          "parcelamento": {
+            "select": {
+              "formaPagamento": true,
+              "origem": true,
+              "status": true,
+            },
+          },
+        },
+        "orderBy": {
+          "id": "asc",
+        },
+        "where": {
+          "competencia": "2026-10",
+          "portalClientId": "a",
+        },
+      },
+    ],
+    "operation": "guide.findMany",
+  },
+  {
+    "args": [
+      "a",
+    ],
+    "operation": "contatos",
+  },
+  {
+    "args": [],
+    "operation": "canal",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "guideId": {
+            "in": [
+              "g",
+            ],
+          },
+        },
+      },
+    ],
+    "operation": "envioGuia.findMany",
+  },
+  {
+    "args": [
+      {
+        "where": {
+          "key": "envio_guias_ciclo:a:2026-10",
+        },
+      },
+    ],
+    "operation": "appSetting.findUnique",
+  },
+  {
+    "operation": "now",
+    "value": "2026-11-13T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`preserva erro sem efeitos: empresa ausente 1`] = `
+{
+  "failure": {
+    "code": "ENVIO_GUIAS_EMPRESA_INDISPONIVEL",
+    "message": "A empresa não está ativa para envio automático.",
+    "status": 409,
+  },
+  "trace": [],
+}
+`;
+
+exports[`preserva erro sem efeitos: empresa inativa 1`] = `
+{
+  "failure": {
+    "code": "ENVIO_GUIAS_EMPRESA_INDISPONIVEL",
+    "message": "A empresa não está ativa para envio automático.",
+    "status": 409,
+  },
+  "trace": [
+    {
+      "args": [
+        {
+          "where": {
+            "id": "a",
+          },
+        },
+      ],
+      "operation": "portalClient.findUnique",
+    },
+  ],
+}
+`;
+
+exports[`preserva erro sem efeitos: entrada inválida 1`] = `
+{
+  "failure": {
+    "code": "ENVIO_GUIAS_PERIODO_INVALIDO",
+    "message": "Confira a empresa e a competência.",
+    "status": 422,
+  },
+  "trace": [],
+}
+`;
+
+exports[`preserva erro sem efeitos: falha na consulta 1`] = `
+{
+  "failure": {
+    "code": "TEST_QUERY_ERROR",
+    "message": "consulta indisponível",
+    "status": undefined,
+  },
+  "trace": [
+    {
+      "args": [
+        {
+          "where": {
+            "id": "a",
+          },
+        },
+      ],
+      "operation": "portalClient.findUnique",
+    },
+    {
+      "args": [
+        {
+          "where": {
+            "id": "legacy",
+          },
+        },
+      ],
+      "operation": "company.findUnique",
+    },
+    {
+      "args": [
+        {
+          "where": {
+            "key": "envio_guias_config:a",
+          },
+        },
+      ],
+      "operation": "appSetting.findUnique",
+    },
+    {
+      "args": [
+        {
+          "where": {
+            "key": "serpro_runtime_settings",
+          },
+        },
+      ],
+      "operation": "appSetting.findUnique",
+    },
+    {
+      "args": [
+        "a",
+      ],
+      "operation": "lerAutomacaoEmpresa",
+    },
+    {
+      "args": [
+        {
+          "where": {
+            "companyId": "legacy",
+          },
+        },
+      ],
+      "operation": "regimeHistorico.findMany",
+    },
+    {
+      "operation": "now",
+      "value": "2026-11-13T11:00:00.000Z",
+    },
+    {
+      "args": [],
+      "operation": "feriado.findMany",
+    },
+    {
+      "args": [
+        [
+          {
+            "hasProlabore": false,
+            "legacy": {
+              "regimeTributario": "SIMPLES",
+              "tipoTributario": "SIMPLES",
+            },
+            "portalId": "a",
+            "temFolha": false,
+          },
+        ],
+        "2026-10",
+      ],
+      "operation": "compliance",
+    },
+    {
+      "args": [
+        {
+          "where": {
+            "key": "operations_manual_inss:v1:a:2026-10",
+          },
+        },
+      ],
+      "operation": "appSetting.findUnique",
+    },
+    {
+      "args": [
+        "a",
+        "2026-10",
+      ],
+      "operation": "lerInssManual",
+    },
+  ],
+}
+`;

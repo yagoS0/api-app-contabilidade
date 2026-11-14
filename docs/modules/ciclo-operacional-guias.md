@@ -214,3 +214,39 @@ Itens incompletos mantêm `invalid_input`, lote vazio mantém `items_required`, 
 A correção resolve a lacuna das duas rotas registrada na seção 4.2. Não harmoniza políticas distintas: o lote moderno `/guides/liberacao/lote` usa `empresasVisiveis`, com carteira global para admin/contador, enquanto rotas individuais usam a guarda por empresa. Essa diferença preexistente foi verificada e permanece fora deste escopo. A decisão de acesso global de contador na seção 31 das regras operacionais é específica de NFS-e e não altera esta correção de Guias.
 
 Limite de concorrência: a autorização ocorre no preflight HTTP, sem nova transação compartilhada com a ACL. Revogação posterior à conferência pode ocorrer antes dos efeitos; não se afirma atomicidade entre vínculo e escrita. Rollback por reversão reabriria a vulnerabilidade: preferir correção adiante e, se for indispensável reverter, bloquear primeiro essas duas entradas em uma entrega operacional autorizada. Não executar rollback inseguro automaticamente.
+
+## Coordenação mensal — incremento 4.3
+
+Este recorte substitui o escopo inicialmente sugerido para 4.3 na tabela histórica: a autorização atual é para **leituras e decisões da coordenação mensal de envio**, não confirmação de pagamento. Base `3a1b82b254ef9b8a3c9f3fd99df839a1ba5a025f`.
+
+A rota `GET /companies/:companyId/operacoes/:competencia/envio-guias` aplica a guarda canônica e chama a fachada `CicloEnvioGuiasService`. O painel `CompanyGuideDelivery` consome seu DTO. O worker `simplesEnvioGuiasWorker` continua chamando a fachada de execução, que reutiliza a mesma leitura nas revalidações anteriores ao transporte. Não é uma substituição do painel geral `OperationsService`.
+
+### Responsabilidades e contratos de leitura
+
+| Origem / dono | Operação e limite preservado |
+| --- | --- |
+| Operações | `modules/operations/application/carregarCicloEnvioGuias.js` coordena operações específicas injetadas. Projeta seleção, calendário, pendências, pausas e tentativas, sem importar Prisma ou transporte. Políticas puras calculam a projeção operacional por canal; não criam recibos nem atestam entrega física. |
+| Cadastro / Fiscal / Operações | O adaptador de contexto lê empresa, cadastro, histórico de regime, feriados e configurações existentes. São projeções de leitura; não transfere a propriedade nem autoriza escritas desses dados. `CompanyAutomationService`, `OperationsManualInss` e o calendário continuam fornecendo suas capacidades legadas. |
+| Guias | O adaptador específico lista documentos da empresa e competência com os mesmos vínculos de parcela e ordenação. Validade e bloqueios de parcela reutilizam capacidades existentes. Disponibilidade documental não é unificada com pagamento ou envio. |
+| Comunicação | O adaptador específico lê o ledger das guias selecionadas. Contatos, canal, tentativas e evidências mantêm seus donos e contratos. A projeção conserva a distinção entre aceite, entrega e resultado indeterminado. |
+| Composição | `composition/leituraCicloEnvioGuias.js` liga os adaptadores e as capacidades ao mesmo cliente fornecido pela fachada. A aplicação recebe funções específicas; não recebe um repositório genérico. |
+
+A leitura conserva a sequência empresa → cadastro/configuração/agenda → automação → histórico → feriados → compliance → evidência mensal INSS → guias → contatos/canal → ledger → registro do ciclo, incluindo consultas condicionais e conferência por parcela. Não há paralelização. O relógio é consultado duas vezes, com uma terceira chamada somente para o aviso de expectativa inconclusiva.
+
+Permanecem a preferência pelo primeiro registro encontrado, a ausência de ordenação adicional do ledger, e-mail antes de WhatsApp, revisão antiga considerada por guia/canal mesmo com outro destinatário, precedência DISABLED → PAUSED → revisão/decisão e comparação dos mesmos hashes. A flag de liberação ao portal não bloqueia esta seleção no legado; guia paga não amplia pendências documentais. Esses comportamentos são compatibilidade caracterizada, não autorização para generalizá-los a outros fluxos.
+
+### Segurança, efeitos e consistência
+
+A correção #275 permanece intacta. O lote moderno `/guides/liberacao/lote` usa política de autorização diferente das rotas antigas: `empresasVisiveis` conserva carteira global de admin/contador, enquanto as entradas antigas usam a guarda canônica por empresa. Não se amplia nem restringe essa diferença nesta entrega. O GET operacional conserva a guarda real, a identidade de sessão e os filtros por empresa/competência.
+
+A leitura não grava nem envia. A sequência de consultas não constitui snapshot transacional único; as revalidações do executor continuam necessárias. Reservas, leases, chaves idempotentes, transação de mutação, worker, webhook, transporte, retentativa e resultado incerto permanecem legados. Uma falha depois do aceite externo continua sujeita às regras existentes; a extração não promete atomicidade com o provedor.
+
+### Verificação e reversão
+
+A caracterização foi executada antes da extração e registrada em commit separado: 22 casos e 36 snapshots de DTO e sequência de chamadas. O teste HTTP adicional usa rota, fachada e guarda reais, com persistência e capacidades externas simuladas. Os ensaios PostgreSQL usam dados sintéticos e transportes fictícios; verificam concorrência, reinício e ausência de repetição. As evidências finais e pareceres ficam no registro de governança e no PR.
+
+Rollback: reverter o incremento como unidade, incluindo a ligação da fachada, sem conversão de estados ou dados. Não reverter a correção de autorização #275. O controlador terminou `escalated` no planejamento por incluir caminhos protegidos de governança; testes e revisões independentes são evidências alternativas, não um resultado `ready_for_human` do controlador.
+
+### Proposta para 4.4 — ainda não autorizada
+
+Retomar o recorte de captura/reemissão da tabela histórica por **uma espécie e um provedor**, começando por caracterizar revisão, vínculos contábeis e a janela entre retorno externo, persistência e provisão. Antes de extrair escritas, provar comportamento com reserva expirada, revisão concorrente e falha após aceite externo. Não alterar automaticamente reserva, recuperação, autorização ou política de repetição; qualquer mudança semântica exige decisão própria. Não iniciar 4.4 como continuação automática desta entrega.
