@@ -128,3 +128,37 @@ test('procuração ausente bloqueia DAS e extrato na competência seguinte', asy
   expect(capturePgdasGuideForCompany).not.toHaveBeenCalled();
   expect(syncPgdasByCompetencia).not.toHaveBeenCalled();
 });
+
+// Caracterização 4.4: worker real com capacidades fiscais simuladas.
+test('44: reinício relê PDF persistido e não solicita nova captura', async () => {
+  capturePgdasGuideForCompany.mockImplementationOnce(async () => {
+    prisma.guide.findFirst.mockResolvedValue({ id: 'das', pdfBytes: Buffer.from('pdf') });
+    return { guide: { guideId: 'das' } };
+  });
+  const first = await runSerproPgdasdWorkerOnce({ routines: ['das'], competencia: '2026-10' });
+  const restarted = await runSerproPgdasdWorkerOnce({ routines: ['das'], competencia: '2026-10' });
+  expect(first.captured).toBe(1);
+  expect(restarted.results[0].status).toBe('documentos_ja_recuperados');
+  expect(capturePgdasGuideForCompany).toHaveBeenCalledTimes(1);
+});
+
+test('44: revogação posterior à seleção não é relida pelo worker antes da captura', async () => {
+  let active = true;
+  const check = jest.fn(async () => ({ status: active ? 'ATIVA' : 'REVOGADA', systems: ['00146'] }));
+  SerproProcurationService.mockImplementationOnce(() => ({ checkCompanyProcuration: check }));
+  prisma.guide.findFirst.mockImplementationOnce(async () => null).mockImplementationOnce(async () => { active = false; return null; });
+  await runSerproPgdasdWorkerOnce({ routines: ['das'], competencia: '2026-10' });
+  expect(active).toBe(false);
+  expect(check).toHaveBeenCalledTimes(1);
+  expect(check).toHaveBeenCalledWith({ portalClientId: 'empresa', reutilizar: true });
+  expect(capturePgdasGuideForCompany).toHaveBeenCalledTimes(1);
+  // Não afirma aceite externo nem validade de procuração revogada: transporte é simulado.
+});
+
+test('44: timeout é erro técnico, não ausência documental confirmada', async () => {
+  capturePgdasGuideForCompany.mockRejectedValueOnce(Object.assign(new Error('timeout simulado'), { code: 'SERPRO_REQUEST_FAILED', retryable: true }));
+  const result = await runSerproPgdasdWorkerOnce({ routines: ['das'], competencia: '2026-10' });
+  expect(result.results[0]).toMatchObject({ status: 'error', error: 'SERPRO_REQUEST_FAILED', retryable: true });
+  expect(result.captured).toBe(0);
+  expect(capturePgdasGuideForCompany).toHaveBeenCalledTimes(1);
+});
