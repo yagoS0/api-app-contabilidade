@@ -29,6 +29,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
+import { autorizarEmpresasLiberacaoGuias } from './autorizarEmpresasLiberacaoGuias.js';
 import { createCompanyAutomationRouter } from './companyAutomation.js';
 import { createOperationsRouter } from './operacoes.js';
 import {
@@ -3747,13 +3748,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Portal Cliente (#3.1): POST /guides/liberar-cliente
   // Libera as guias da competência para o app do cliente (+ dispara o e-mail). Molde do batch-send.
   // Body: { items: [{ portalClientId, competencia }] }
-  router.post("/guides/liberar-cliente", requireAccountType("FIRM"), async (req, res) => {
+  router.post("/guides/liberar-cliente", requireAccountType("FIRM"), async (req, res, next) => {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {
       return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
     }
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     if (!items.length) return res.status(400).json({ ok: false, error: "items_required" });
+    try {
+      if (!await autorizarEmpresasLiberacaoGuias(req, res, items)) return;
+    } catch (error) {
+      return next(error);
+    }
     const userId = req.auth?.user?.id || null;
     const results = [];
     for (const it of items) {
@@ -3776,13 +3782,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   });
 
   // Portal Cliente (#3.1): POST /guides/revogar-cliente — desfaz a liberação (sem e-mail).
-  router.post("/guides/revogar-cliente", requireAccountType("FIRM"), async (req, res) => {
+  router.post("/guides/revogar-cliente", requireAccountType("FIRM"), async (req, res, next) => {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {
       return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
     }
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     if (!items.length) return res.status(400).json({ ok: false, error: "items_required" });
+    try {
+      if (!await autorizarEmpresasLiberacaoGuias(req, res, items)) return;
+    } catch (error) {
+      return next(error);
+    }
     const results = [];
     for (const it of items) {
       const portalClientId = String(it?.portalClientId || "").trim();

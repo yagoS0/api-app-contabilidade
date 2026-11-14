@@ -1,0 +1,35 @@
+{
+  "summary": "Correção de autorização por empresa exclusivamente em POST /guides/liberar-cliente e /guides/revogar-cliente, base692d772. Preflight de todo o lote com requireFirmCompanyAccess({minRole:'ACCOUNTANT'}) antes de qualquer serviço.",
+  "operationalImpact": "Identidade/Acesso fornece política canônica; Guias mantém liberação/revogação e filtros; Comunicação mantém e-mail posterior à liberação; portal continua consumindo a mesma disponibilidade. Contador sem vínculo ACTIVE suficiente passa a receber recusa403 sem efeito; admin global continua conforme política existente. Nenhuma mudança fiscal/contábil/documental, de schema, envio, webhook, worker ou4.2. Lote moderno intacto.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "guides",
+    "communication",
+    "operations",
+    "accounting",
+    "commercial",
+    "documentation",
+    "governance",
+    "ci",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "Caracterização anterior à mudança:2/2 handlers reais retornavam200 sem vínculo e sem consultaACL. Modo baseline explícito; esses2 cenários não executam no modo candidato.",
+    "Candidata:30/30 testes HTTP com handlers extraídos do arquivo real e middlewares requireAuth/requireAccountType/requireFirmCompanyAccess reais; resolução de sessão e dados ACL controlados. Vínculo ativo/inativo/revogado/ausente, empresa distinta/inexistente, admin global, papéis, body forjado, lote misto, erroACL,401/403/500 e envelope200.",
+    "Regressão focal:96/96 em5suítes incluindo liberação moderna e serviços preservados. PostgreSQL16 HTTP:2/2 com serviços/vínculos/guias reais sintéticos, somente e-mail substituído, zero acessoGuide/transação/email nas recusas e empresaB intacta.",
+    "Governança/verificador:93/93. Diagnose5041→5041, zero novas violações. CI focal ampliada apenas com os2 novos testes; evidências hospedadas no SHA final do PR."
+  ],
+  "rollback": "Preferir correção adiante. Reverter os commits reintroduziria acesso indevido; se indispensável, bloquear primeiro estas duas entradas em mudança operacional autorizada e somente então reverter. Não há conversão de dados ou schema e nenhum rollback automático autorizado.",
+  "humanDecisions": [
+    "PR rascunho; integração exige autorização específica. Sem4.3, merge, deploy, envio real, limpeza ou reativação de Auto Deploy."
+  ],
+  "finalReview": "Segurança/autorização independente favorável, 30/30 HTTP reexecutados e PG inspecionado. Backend/Guias favorável, 65/65 testes reexecutados; serviços, contratos e ausência de efeitos em recusas preservados. Fechamento sistêmico e CI do SHA final constam do PR.",
+  "limitations": [
+    "Controlador2026-11-14T13-32-51-103Z-049d8906 encerrou escalated no planejamento: Governance/configuration changes require separate human-reviewed integration. Nenhuma edição pelo runtime; implementação pelo principal, testes por executores delimitados, revisão independente e gates reais. Não se declara ready_for_human nem se altera política/gates.",
+    "Lote moderno usa empresasVisiveis, com carteira global para contador/admin; essa divergência preexistente foi confirmada e permanece fora do escopo. A permissão global de contador em NFS-e nas regras operacionais não foi expandida para Guias.",
+    "Autorização precede efeitos, mas não compartilha transação com ACL: revogação concorrente posterior ao preflight permanece limite da política existente. Admin conserva bypass e comportamento legado para empresa inexistente.",
+    "Handlers reais e guardas são executados, mas resolução da sessão é fixture; não constitui ensaio de login/cookies produtivos. Transporte sempre fictício. Testes PostgreSQL limitados ao banco loopback sintético autorizado."
+  ]
+}
