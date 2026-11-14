@@ -1,0 +1,35 @@
+{
+  "summary": "Incremento 4.2 sobre c250115: extrai políticas puras de classificação, elegibilidade documental e liberação em Guias, comprovação de entrega em Comunicação e caso de uso/leitor Prisma específico de tentativas WhatsApp. Preserva fachadas, contratos, hash e ordem de avaliação.",
+  "operationalImpact": "Guias mantém disponibilidade, liberação e elegibilidade de parcela; Comunicação mantém evidência/tentativa/recibo; Operações mantém execução mensal. Fiscal, Contabilidade, portal e escritório conservam contratos consumidores. Não altera schema, valores, reservas, webhooks, transporte, consentimento ou escritas transacionais. Nenhum envio real. Regras R01/R05/R06/R10/R11 e distinção documento/envio/pagamento preservadas.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "guides",
+    "communication",
+    "operations",
+    "accounting",
+    "commercial",
+    "documentation",
+    "governance",
+    "ci",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "Baseline anterior à extração:187+67 testes existentes e28 novos aprovados. Candidata:282/282 focais, incluindo prova/empresa/destino, liberação/revogação, e-mail posterior ao commit, idempotência, recibo tardio, falha após aceite antes persistência e1 ensaio PostgreSQL de ciclo.",
+    "PostgreSQL16 separado de Operações:5/5, concorrência, timeout, tentativa legado/incerta e envio fictício. Piloto HTTP/aplicação/PostgreSQL:25/25. Correção versus fechamento:10/10.",
+    "Governança:88/88; verificador:4/4. Diagnose5043→5041, nenhum acréscimo. Especificação VM do piloto atualizada apenas para permitir a nova política pura.",
+    "Regressões ampliadas Guias/Comunicação/Operações e CI hospedada no SHA final: evidências na descrição do PR. Workflow focal inclui nova caracterização e PostgreSQL do ciclo, sem mensagens reais."
+  ],
+  "rollback": "Reverter os commits do incremento como unidade; nenhuma conversão de estado, dados, hash ou banco. Preservar histórico de tentativas e recibos existentes.",
+  "humanDecisions": [
+    "Somente4.2; PR rascunho aguarda revisão e autorização específica antes de integrar. Sem deploy, merge, envio real, limpeza ou alteração de Auto Deploy."
+  ],
+  "finalReview": "Guias/Fiscal e Operações: parecer independente favorável,112/112 testes reexecutados. Comunicação: favorável,124/124. Arquitetura/backend: favorável ao código,74/74 e diagnose reexecutados; fechamento sistêmico revisa registro e workflow. Pareceres não equivalem a aprovação humana.",
+  "limitations": [
+    "Controlador2026-11-14T12-56-06-351Z-200be5b2 encerrou escalated após planejamento, erro Governance/configuration changes require separate human-reviewed integration, por incluir registro de governança entre caminhos protegidos. Nenhuma edição de produção pelo runtime; principal executou extração e gates, com caracterização por executor delimitado e revisão independente. Não se declara ready_for_human do controlador nem se altera sua política.",
+    "Risco de segurança preexistente confirmado: routes/firm/index.js /guides/liberar-cliente e /guides/revogar-cliente possuem auth/FIRM/papel, mas não guarda de vínculo por empresa. Priorizar correção separada para essas duas rotas, com teste de empresa não autorizada antes de escrita/email. Mantidas intactas para não alterar semântica nesta extração; não se afirma autorização global comprovada.",
+    "Escritas de liberação/entrega externa, reservas, webhooks, workers, seleção de canal/template/consentimento e transportes permanecem legados. SMTP aceito não se torna prova física de entrega. Indeterminado continua impedindo repetição automática.",
+    "HTTP usa mocks para serviços/guardas conforme testes existentes; cenários PostgreSQL sintéticos complementam, sem certificar ponta a ponta autenticado. Revisões distintas continuam dependentes das capacidades legadas ligadas pela composição."
+  ]
+}

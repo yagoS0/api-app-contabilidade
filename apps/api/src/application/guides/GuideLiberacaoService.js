@@ -6,16 +6,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { sendCompanyGuidesEmail } from "./GuideCompanyEmailService.js";
 import { conferirParcelasParaEnvio } from "./GuiaParcelaEnvioGuard.js";
 
-function validar({ portalClientId, competencia }) {
-  const cid = String(portalClientId || "").trim();
-  const comp = String(competencia || "").trim();
-  if (!cid || !/^\d{4}-\d{2}$/.test(comp)) {
-    const err = new Error("portalClientId/competencia inválidos");
-    err.code = "INVALID_INPUT";
-    throw err;
-  }
-  return { cid, comp };
-}
+import { validarLiberacaoCliente as validar } from '../../modules/guides/domain/liberacaoCliente.js';
 
 // Libera todas as guias PROCESSED da competência + dispara o e-mail de guias ao cliente.
 export async function liberarGuiasCliente({ portalClientId, competencia, userId }) {
