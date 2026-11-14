@@ -1,9 +1,8 @@
+import { persistirDocumentoDasComGuias } from "../../../composition/persistenciaDocumentoDas.js";
 import { interpretarRespostaDasComPdf } from "../../../composition/interpretacaoRespostaDas.js";
 export { extractDocumentNumber, parsePossibleDate } from "../../../modules/fiscal/public.js";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import {
-  createOrUpdateGuideFromProcessing,
-  hashPdf,
   toGuideResponse,
   PUBLICO,
 } from "../../guides/GuideService.js";
@@ -148,58 +147,16 @@ export async function capturePgdasGuideForCompany({
 
   const labels = mapGuideLabels(resolvedServiceId);
 
-  const existingGuide = await prisma.guide.findFirst({
-    where: { sourceFileId },
-    select: {
-      id: true,
-      paymentStatus: true,
-      paymentStatusSource: true,
-      paymentConfirmedAt: true,
-    },
-  });
-
-  const now = new Date();
-
-  // Preservar paymentStatus existente: emitir guia no SERPRO não confirma pagamento
-  const preservedPayment = existingGuide
-    ? {
-        paymentStatus: existingGuide.paymentStatus,
-        paymentStatusSource: existingGuide.paymentStatusSource,
-        paymentConfirmedAt: existingGuide.paymentConfirmedAt,
-      }
-    : { paymentStatus: "OPEN" };
-
-  const guide = await createOrUpdateGuideFromProcessing({
-    existingGuideId: existingGuideId || existingGuide?.id || null,
-    portalClientId: portalClient.id,
-    legacyCompanyId: portalClient.companyId || null,
-    parsed: mapped.parsed,
-    source: "SERPRO",
+  const { guide, now } = await persistirDocumentoDasComGuias({
+    existingGuideId,
+    portalClient,
+    mapped,
     sourceFileId,
-    sourcePath: `${labels.sourcePath} ${normalizedCompetencia}`,
-    driveInboxFolderId: null,
-    driveFinalFolderId: null,
-    driveFinalFileId: null,
-    pdfBytes: mapped.pdfBuffer,
-    hash: hashPdf(mapped.pdfBuffer),
-    status: "PROCESSED",
-    errors: [],
-    ...preservedPayment,
+    labels,
+    normalizedCompetencia,
     emailStatusOverride,
-    serproLastCheckedAt: now,
-    serproLastCheckResult: labels.checkResult,
-    serproLastSeenAt: now,
-    serproService: resolvedServiceId,
-    extracted: {
-      integrationSource: "SERPRO_PGDASD",
-      sistema: "PGDASD",
-      servico: resolvedServiceId,
-      numeroDocumento: mapped.numeroDocumento,
-      contratanteCnpj: procuradorCnpj,
-      contribuinteCnpj: portalClient.cnpj,
-      referencia: normalizedCompetencia,
-      rawPayload: mapped.rawPayload,
-    },
+    resolvedServiceId,
+    procuradorCnpj,
   });
 
   const circular = somenteDocumentos
