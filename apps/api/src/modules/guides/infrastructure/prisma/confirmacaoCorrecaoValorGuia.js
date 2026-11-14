@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { CorrecaoValorError } from "../../application/preverCorrecaoValorGuia.js";
 
-export async function emTransacaoSerializable(db, executar) {
+export async function emTransacaoSerializable(db = prisma, executar) {
   try {
     return await db.$transaction(executar, { isolationLevel: "Serializable" });
   } catch (erro) {

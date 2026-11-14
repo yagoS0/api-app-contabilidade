@@ -1,0 +1,30 @@
+{
+  "summary": "Consolidação 3.4 na base 67e7621: fachada legada apenas reexporta os casos compostos e a classe pública de erro. Composições do piloto ligam capacidades e adaptadores existentes; os defaults de cliente ficam na infraestrutura. Exemplo e fronteiras na norma arquitetural.",
+  "operationalImpact": "Sem mudança de regra de Guias/Contabilidade, consultas, campos ou ordem de escrita; GET/POST, empresa, sessão, precedência, token e auditoria preservados. Portal e escritório mantêm seus contratos. Nenhum efeito novo em Comercial, Comunicação e Operações. Sem mudança de schema, dependências ou regras de publicação.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance",
+    "guides",
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "operations",
+    "web",
+    "portal"
+  ],
+  "tests": [
+    "Mesma suíte na base e candidata: 79 testes Jest, 25 cenários HTTP/aplicação/PostgreSQL 16 e 10 cenários de concorrência com conexões independentes. Inclui PDF antes da transação, revisão legada, releitura com tx, atualização condicional, rollback e auditoria única.",
+    "Diagnose na base e candidata: 5046 → 5045, nenhum acréscimo; 5/5 testes do verificador. Validado o destino dos 15 links relativos da norma.",
+    "A regressão ampla da API e as verificações hospedadas complementam a suíte focal. Consultar o resultado no SHA do PR."
+  ],
+  "rollback": "Reverter o incremento como unidade. Nenhum dado ou token precisa de conversão; conservar o registro das correções efetivadas.",
+  "humanDecisions": [
+    "Somente incremento 3.4. O PR em rascunho exige decisão separada para integração."
+  ],
+  "finalReview": "Revisões independentes favoráveis de Guias, Contabilidade e arquitetura. Guias reexecutou 24/24 cenários sem banco; Contabilidade inspecionou ownership e ligação de todas as portas ao tx. Arquitetura confirmou direção, ausência de novo ciclo e diagnose, e pediu explicitar na norma o leitor de fechamento legado e a separação entre leitura e decisão pura; ajuste documental efetuado.",
+  "limitations": [
+    "O contrato de revisão depende da serialização integral e da ordenação da consulta legada. O leitor de fechamento em application/accounting ainda usa Prisma; o isolamento comprovado corresponde aos casos de uso do piloto. A política de autorização, o isolamento e a coordenação de cada novo fluxo exigem caracterização própria."
+  ]
+}
