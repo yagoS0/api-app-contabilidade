@@ -1,3 +1,4 @@
+import { preverCorrecaoValorGuia as prever } from "../modules/guides/application/preverCorrecaoValorGuia.js";
 import { criarLeituraDocumentalCorrecaoValorGuia } from "../modules/guides/infrastructure/documentos/leituraDocumentalCorrecaoValorGuia.js";
 import { lerGuiaParaCorrecaoValor } from "../modules/guides/infrastructure/prisma/leituraGuiaCorrecaoValor.js";
 import { incluirProvisoesParaCorrecaoValor } from "../modules/accounting/infrastructure/prisma/leituraProvisoesCorrecaoValor.js";
@@ -17,4 +18,8 @@ export function comporLeiturasCorrecaoValorGuia(db, documento) {
     lerFechamento: (companyId, competencias) => lerFechamentoParaCorrecao(db, companyId, competencias),
     lerDocumento: criarLeituraDocumentalCorrecaoValorGuia(documento),
   };
+}
+
+export async function preverCorrecaoValorGuia(args, { db, carregarPdf, ler } = {}) {
+  return prever(args, comporLeiturasCorrecaoValorGuia(db, { carregarPdf, ler }));
 }

@@ -1,4 +1,5 @@
-import { lerGuiaComProvisoes, lerFechamentoParaCorrecao } from "./leiturasCorrecaoValorGuia.js";
+import { lerGuiaComProvisoes, lerFechamentoParaCorrecao, preverCorrecaoValorGuia } from "./leiturasCorrecaoValorGuia.js";
+import { confirmarCorrecaoValorGuia } from "../modules/guides/application/confirmarCorrecaoValorGuia.js";
 import {
   emTransacaoSerializable, atualizarValorGuia, registrarAuditoriaCorrecao,
 } from "../modules/guides/infrastructure/prisma/confirmacaoCorrecaoValorGuia.js";
@@ -12,4 +13,12 @@ export function transacaoConfirmacaoCorrecaoValorGuia(db, executar) {
     corrigirProvisao: (entrada, novoValor) => corrigirProvisao(tx, entrada, novoValor),
     registrarAuditoria: dados => registrarAuditoriaCorrecao(tx, dados),
   }));
+}
+
+export async function corrigirValorGuia({ companyId, guideId, valor, revisao, userId }, deps = {}) {
+  const db = deps.db || undefined;
+  return confirmarCorrecaoValorGuia({ companyId, guideId, valor, revisao, userId }, {
+    prever: args => preverCorrecaoValorGuia(args, deps),
+    emTransacao: executar => transacaoConfirmacaoCorrecaoValorGuia(db, executar),
+  });
 }
