@@ -1,0 +1,39 @@
+{
+  "summary": "Etapa 4.4.4 sobre c305533c4ee7236ce4f6c668d7ad4dbb47c88dfb: caracteriza evidências, resultados parciais e lacunas de recuperação/conciliação DAS normal e cobrança. Somente testes, documentação, índice e inclusão no workflow; nenhuma rotina de recuperação implementada.",
+  "operationalImpact": "Fiscal interpreta provedor; Guias mantém identidade/revisão/pagamento documental; Contabilidade mantém circular por seus campos, provisões/razão/fechamento/baixa; Operações coordena execução; infraestrutura mantém reserva/cache/despacho; Comunicação não recebe confirmação derivada de estado fiscal inconclusivo. Matriz rastreia SerproChamada, AppSetting de despacho/logs, cache, FiscalExecutionLog, Guide, CompanyMonthlyCircular, AccountingEntry, parcelas, provas e recálculo. Consumidores captura/recálculo HTTP firm/client, worker, FiscalManualRunService, OperationsDocuments, fechamento e Comunicação permanecem sem alterações. Regras R01/R02/R03/R05/R06/R10/R11 e #275 preservadas; divergência ACL do lote moderno documentada. Sem impacto funcional em web/portal/comercial. Sem schema, migrações, HTTP, TTL, locks, leases, retentativas, idempotência, limpeza de duplicatas, pagamentos, provisões ou autorização alterados.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "communication",
+    "commercial",
+    "portal",
+    "web",
+    "documentation",
+    "governance",
+    "ci"
+  ],
+  "tests": [
+    "Novos testes: 12 cenários unitários de HTTP client/cache/captura com doubles explícitos, incluindo resultado aceito e falha local e FiscalManualRunService completed com accounting.ok:false. 12/12 aprovados pelo Principal e revisor Fiscal.",
+    "Novos PostgreSQL16: 10/10 aprovados, normal/cobrança, timeout incerto, cache/ledger com falhas locais, persistência entre novas conexões, cache sem guia, cache com reserva incerta, expiração/invalidação sem liberação, disputa por assinatura e despacho com duas conexões e isolamento por empresa.",
+    "Novo teste PostgreSQL aceita TEST_CICLO_PG_URL ou ALTAN_GOVERNANCE_TEST_DATABASE_URL, a mesma URL nas conexões e validação, exigindo igualdade com DATABASE_URL, loopback, *_governance_test, flag explícita e versão16. Não usar bancos anteriores. CI acrescenta somente as duas suítes.",
+    "Governança 40/40; verificador 4/4; diagnose 5023 para 5023, zero acréscimos. Regressão final Fiscal/Guias/Contabilidade/Operações: 91 suítes, 1207 testes aprovados, 2 ignorados e 42 snapshots. 290 links relativos do índice e documento válidos. Nenhum código produtivo alterado.",
+    "Revisão Operações/backend executou independentemente 60/60 testes em três suítes (recuperação444, OperationsExecution, serproPgdasdAgenda). Revisores inspecionaram PG mas execução PG é evidência do Principal. CI hospedada pendente.",
+    "Regressão HTTP piloto: 24/24 aprovados. Scripts PostgreSQL de concorrência e fechamento: 10/10 aprovados, além dos ensaios novos de reserva/despacho/cache."
+  ],
+  "rollback": "Reverter somente os commits de caracterização: testes, documentação, índice e inclusão das suítes no workflow. Nenhum rollback de dados ou ato externo, migração, liberação de reserva ou repetição fiscal. Preservar arquivos/worktrees/bancos anteriores.",
+  "humanDecisions": [
+    "Apenas caracterização 4.4.4 em PR rascunho. Plano futuro de leitura de conciliação, recuperação local e conferência contábil depende de aprovação própria. Sem merge/deploy/transmissão/consulta fiscal/mensagens/limpeza/Auto Deploy. Não iniciar recuperação funcional."
+  ],
+  "finalReview": "Fiscal/SERPRO, Guias e Contabilidade: parecer independente favorável aos testes e matrizes, 12/12 unitários executados; Operações e arquitetura/backend: favoráveis aos testes com 60/60 independente. Ajuste de URL aprovado mantendo guardas. Revisão sistêmica final de matrizes, registro, índice e workflow favorável, com diagnose independente zero acréscimos. CI hospedada pendente; resultado do SHA definitivo será registrado no PR.",
+  "limitations": [
+    "Controlador 2026-11-14T20-53-59-276Z-bb3fe53b planejou e criou exclusivamente duas suítes. Executor não executou Jest por EPERM em C:/Users/yagoa. Gate governance-engine passou; Principal interrompeu durante testing para corrigir configuração do novo teste PostgreSQL para as variáveis já usadas pela CI e validar os ensaios focais. Journal preservado em testing: interrompido, não escalated concluído nem ready_for_human. Governança não alterada e nenhum teste falho foi tratado como aprovação.",
+    "Dois PrismaClients e disconnect comprovam persistência entre conexões e concorrência SQL, não crash/restart completo do worker. SERPRO/axios/auth/credenciais são doubles; HTTP200 sintético não comprova aceite fiscal externo. Cache com incerta é fixture construída; não afirma que timeout produz PDF.",
+    "Casos PG do HttpClient não exercitam writer de Guide; cobertura documental/contábil está nas suítes44/442/443 e captura com doubles declarados. Não reivindicar atomicidade global. Não inspecionados dados/provedor de produção; incidência e recuperabilidade reais não verificáveis.",
+    "Cache documental de uma hora pode ser lido antes da guarda e sem encerrar reserva; reserva incerta não expira. Lease30min do worker não resolve reserva. Procuração pode mudar após seleção. Logs completed e listas vazias de lançamentos não comprovam conciliação.",
+    "Persistem guia sem circular, circular sem provisão, reutilização sem reparação, limpeza de duplicatas pagas, fechamento parcial e autorização distinta do lote moderno. Nenhum desses riscos foi corrigido. Ausência de evidência não autoriza repetição."
+  ]
+}
