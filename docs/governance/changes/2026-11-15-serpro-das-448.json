@@ -1,0 +1,36 @@
+{
+  "summary": "Etapa 4.4.8 sobre 58edabc: prévia interna somente leitura de elegibilidade documental DAS/SERPRO; nenhuma recuperação, rota ou consumidor.",
+  "operationalImpact": "Operações coordena duas observações autorizadas e política pura. Fiscal, Guias e Contabilidade fornecem contexto445 inalterado; Guias acrescenta leitura de confirmações históricas por empresa, competência documental e tipoSIMPLES/DAS. R01/R02/R06/R10/R12/R19/R20/R25/R26 preservadas. #275 e política distinta do lote moderno intactos. Portal/web/Comunicação/Comercial não recebem consumidor ou efeito. Sem alteração fiscal, contábil, schema, estado, escrita ou rede; CI inclui cinco suítes no piloto existente.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "security",
+    "communication",
+    "commercial",
+    "portal",
+    "web",
+    "documentation",
+    "governance",
+    "ci"
+  ],
+  "tests": [
+    "Caracterização antes da extração:10 ensaios447 e63 testes445 aprovados. Base ampla1330 aprovados/2ignorados/42snapshots após corrigir configuração do nome do banco descartável em4suítes, sem alterar guardas.",
+    "Candidata448:89 testes novos aprovados, incluindo PostgreSQL16 com guardas reais, isolamento, sessão, vínculos, admin, históricoórfão/tipo/competência, conflitoentreconexões, SELECTs/snapshots e transporteproibido.",
+    "Regressão ampla:105suítes/1416testes aprovados;2conflitos409 de fechamento sob validaçõesPGparalelas; suíte inteira repetida isoladamente32/32 aprovada.2ignorados/42snapshots. Logs iniciais preservados.",
+    "HTTPpiloto25/25; PGfechamento/concorrência10/10; governança88/88; verificador5/5. Diagnose5023→5023 zero novas violações. CI hospedada noSHAfinal registrada noPR."
+  ],
+  "rollback": "Reverter somente commits448: contrato, política, adaptador, testes, docs e inclusãoCI. Nenhum dado, reserva, pagamento, schema ou migration a desfazer. Preservar worktrees, bancos e evidências.",
+  "humanDecisions": [
+    "Aguardar autorização humana para integrar. Sem merge, deploy, SERPRO, mensagens, limpeza ou reativação Auto Deploy. Não iniciar escritor de recuperação, reparação contábil ou resolução de reservas."
+  ],
+  "finalReview": "Revisões independentes do código por dominios448(Fiscal/SERPRO,Guias,Contabilidade), seguranca448(segurança/backend), operacoes448(Operações/arquitetura). Achados incorporados e testes finais89 aprovados. Consolidação sistêmica de docs/CI/registro e CIhospedada serão vinculadas noPR, sem fabricar conclusãoformal.",
+  "limitations": [
+    "Controlador 2026-11-15T14-21-03-566Z-cb9e009f: planejador/executor concluídos; interrompido pelo Principal em testing para incorporar pareceres. Executor relatou EPERM do Node. Estado persistido testing; não ready_for_human. Gates, papéis e permissões preservados.",
+    "Composição real emite apenas BLOQUEADO/NAO_VERIFICAVEL. Positivos exigem atestados explícitos ausentes no legado e são demonstrados somente na política pura com dados sintéticos. Nenhuma classificação autoriza efeitos.",
+    "Sem snapshot global, prova de PDF, identidade cache/tentativa, histórico completo ou unicidade fora da empresa. Hash não é revisão; confirmação órfã não atesta exclusão; ausência não prova inexistência de pagamento. Duas leituras fixas não são retry adaptativo e não certificam estabilidade."
+  ]
+}

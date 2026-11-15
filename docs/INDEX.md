@@ -326,3 +326,5 @@ Os caminhos são relativos à raiz do repositório. Cada arquivo aparece na clas
 - [Consulta operacional DAS/SERPRO 4.4.6](modules/serpro-das-pendencias-446.md) — apresentação somente leitura por empresa e competência.
 
 - [Avaliação da recuperação documental local DAS/SERPRO 4.4.7](modules/serpro-das-recuperacao-avaliacao-447.md) — viabilidade, matrizes, lacunas, proposta de prévia read-only e evidências sintéticas; sem recuperação implementada.
+
+- [Prévia interna de elegibilidade DAS/SERPRO 4.4.8](modules/serpro-das-previa-recuperacao-448.md) — contrato somente leitura, impedimentos e evidências insuficientes; nenhuma recuperação.
