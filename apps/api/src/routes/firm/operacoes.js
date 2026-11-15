@@ -1,3 +1,4 @@
+import { criarHandlerPendenciasDas446 } from './pendenciasDas446Http.js';
 import { lerOperacaoExterna, salvarOperacaoExterna } from '../../application/operacoes/OperationsExternalService.js';
 import { listarErrosConsultas, listarEvidenciasOperacoes } from '../../application/operacoes/OperationsConsultas.js';
 import { prepararCalculoOperacoes, executarCalculoOperacoes, lerResultadoCalculoOperacoes } from '../../application/operacoes/OperationsCalculationService.js';
@@ -35,6 +36,8 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batch
   router.post('/operacoes/lotes/aceitar', run(async req => ({ batch: await batches().accept({ userId: req.auth.user.id, previewId: req.body?.previewId, requestId: req.body?.requestId, confirmCompetencia: req.body?.confirmCompetencia }) })));
   router.get('/operacoes/lotes/:batchId', run(async req => ({ batch: await batches().get({ userId: req.auth.user.id, batchId: req.params.batchId }) })));
   const base = '/companies/:companyId/operacoes/:competencia';
+  // 4.4.5 composition applies the canonical FIRM + company ACCOUNTANT guards.
+  router.get(`${base}/pendencias-das`, criarHandlerPendenciasDas446());
   router.get(`${base}/calculo/previa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => prepararCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, calculationDependencies)));
   router.get(`${base}/calculo/resultado`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => lerResultadoCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, req.query.requestId)));
   router.post(`${base}/calculo`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute('operacoes-calculo-nfse', run(req => executarCalculoOperacoes(prisma, { ...req.params, userId: req.auth.user.id, expectedRevision: req.body?.expectedRevision, requestId: req.body?.requestId, confirmCompetencia: req.body?.confirmCompetencia }, calculationDependencies)), 'Calcular NFS-e'));

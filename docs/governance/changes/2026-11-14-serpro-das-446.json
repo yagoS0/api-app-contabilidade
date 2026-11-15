@@ -1,0 +1,36 @@
+{
+  "summary": "Incremento 4.4.6 sobre 98943f8: consulta e apresentação somente leitura DAS/SERPRO na área existente de Operações, usando a projeção 4.4.5.",
+  "operationalImpact": "Operações coordena a leitura e apresentação por empresa/competência; Fiscal, Guias e Contabilidade permanecem fornecedores inalterados. Web consome GET autenticado com guarda FIRM/ACCOUNTANT e exceção admin vigente. R01/R02/R19–R22 preservadas. #275 e política distinta do lote moderno intactos. Sem varredura, retry, escrita, chamada fiscal ou comandos de recuperação; Comunicação, Comercial e portal cliente sem novo consumidor ou mudança funcional. CI focal inclui três suítes adicionais.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "security",
+    "communication",
+    "commercial",
+    "portal",
+    "web",
+    "documentation",
+    "governance",
+    "ci"
+  ],
+  "tests": [
+    "Base: API132 aprovados/2 ignorados; web92 aprovados. Final445+446:86 aprovados em7suítes, incluindo PostgreSQL16 e autorização real; 23novos testes API e12novos web.",
+    "API ampla:100 suítes aprovadas,1325 testes aprovados/1 colisão de hash de fixture/2 ignorados; suíte afetada repetida integralmente no banco novo entre86 aprovados, sem alteração do legado. Web38suítes446pass, build aprovado.",
+    "Governança88, verificador4, HTTPpiloto25, PGfechamento/concorrência10 aprovados. Diagnose5023→5023 zero novas violações. Ensaio visual desktop/celular sintético semoverflow,1consulta,Escape/foco.",
+    "CI hospedada no SHA definitivo e evidências dos workflows serão registradas no PR."
+  ],
+  "rollback": "Reverter somente commits446 (GET, composição/apresentador, UI/client, testes, docs e inclusão focalCI). Sem dados ou migrações a desfazer. Preservar projeção445, worktrees e bancos.",
+  "humanDecisions": [
+    "Aguardar autorização humana para integrar. Sem merge/deploy/produção/SERPRO/mensagens/limpeza/reativação Auto Deploy/recuperação funcional."
+  ],
+  "finalReview": "Pareceres independentes favoráveis de dominios446 (Fiscal/SERPRO, Guias, Contabilidade), integracao446 (Operações/UIUX) e seguranca446 (segurança/backend). Ajustes de apresentação e testes reais de autorização incorporados. Não certifica CI nem ready_for_human; evidências e revisão sistêmica final no PR.",
+  "limitations": [
+    "Controlador2026-11-15T00-37-57-297Z-c2f49469 interrompido pelo Principal durante testing após planejador/executor e gategovernança. EPERM Node relatado pelo executor. Principal executou testes independentes sem alterar gates, papéis ou permissões; não ready_for_human.",
+    "Observações sem snapshot global, limite50/padrão100máximo porfonte, falhas/truncamentos explícitos; cache órfão não varrido e ausência não certifica regularidade. Paginação local não busca mais dados.",
+    "Riscos legados de reserva incerta, duplicatas pagas, falha contábil após persistência, procuração e diferençaACLlote moderno permanecem intactos. Dados reais não consultados."
+  ]
+}
