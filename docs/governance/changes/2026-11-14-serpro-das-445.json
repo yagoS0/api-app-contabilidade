@@ -1,0 +1,38 @@
+{
+  "summary": "Incremento 4.4.5 sobre 044b687: contrato interno de projeção de evidências DAS/SERPRO estritamente somente leitura, sem rota ou recuperação funcional.",
+  "operationalImpact": "Fiscal fornece ledger/cache/despacho e interpretação local; Guias documento/revisão/pagamento; Contabilidade circular/fechamento/linhas/vínculos; Operações logs e coordenação por portas. Segurança reutiliza requireAccountType FIRM e requireFirmCompanyAccess ACCOUNTANT antes de evidências, com exceção admin vigente. R01/R02/R03/R06 preservadas. Captura/recálculo, #275, lote moderno, workers, TTL/reservas, pagamentos e escritores não alterados. Sem mudança HTTP, fiscal, contábil, schema ou migrations. Web, portal, Comunicação e Comercial não possuem consumidor automático novo ou mudança funcional.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "security",
+    "communication",
+    "commercial",
+    "portal",
+    "web",
+    "documentation",
+    "governance",
+    "ci"
+  ],
+  "tests": [
+    "Caracterização prévia PostgreSQL16.15: 13 verificações/6 SELECTs com rollback de fixtures; script privado SHA256 fbdaa72c5f9be589e5790601b7c197bb4fcff0338faa2aa562a341dc2087fe50, 2026-11-14T21:27:44Z, antes da projeção.",
+    "Regressão base: 91 suítes/1207 testes aprovados/2 ignorados/42 snapshots. Candidata: 95 suítes/1270 aprovados/2 ignorados/42 snapshots; diferença de 63 novos testes incluindo 19 PostgreSQL16.",
+    "Guarda canônica real nos testes, sem neutralização; conta CLIENT, vínculo ausente/inativo/revogado/STAFF e admin. PostgreSQL compara antes/depois, proíbe writes em adaptadores e confirma SELECTs; doubles SERPRO falham se chamados.",
+    "Governança 88/88; piloto HTTP 24/24; PostgreSQL fechamento/concorrência 10/10; verificador 4/4. Diagnose 5023->5023 zero novas violações. CI hospedada será registrada no PR no SHA definitivo.",
+    "289 links relativos do índice e documento válidos; git diff --check aprovado. Código legado produtivo sem alterações; 19 arquivos novos de código/testes e documentação/CI específica."
+  ],
+  "rollback": "Reverter somente commits desta entrega (contrato interno, adaptadores, testes, docs e inclusão na CI). Nenhum dado, migration, reserva ou ato fiscal a desfazer. Preservar worktrees, logs e clusters existentes.",
+  "humanDecisions": [
+    "Aguardar autorização humana para integrar. Não realizar merge, deploy, chamadas fiscais, mensagens, limpeza, reativação de Auto Deploy ou recuperação funcional."
+  ],
+  "finalReview": "Pareceres independentes favoráveis sobre código 7a9f33a1f7c32c367418311e8219f116578e7585: /root/evidencias445 (Fiscal/SERPRO, Guias, Contabilidade), /root/seguranca445 (Operações, segurança, arquitetura/backend). Achados preliminares corrigidos com testes; especialistas inspecionaram logs reais, sem afirmar reexecução. Revisão sistêmica /root/sistemica445 confirmou composição, guardas, limites, workflow e diagnose independente zero. Nenhum parecer autoriza integração; CI hospedada no SHA final será registrada no PR.",
+  "limitations": [
+    "Controlador 2026-11-14T21-25-39-128Z-3e3afa68 terminou escalated por timeout do executor, com EPERM Node na sessão filha; não ready_for_human. Principal concluiu correções e testes sem modificar controlador/gates/permissões.",
+    "Sem snapshot global, sem download ou validação de conteúdo PDF, sem verificação fiscal externa. Cache órfão não associado; ledger legado incompleto não interpretado como ausência. Limites/truncamento explícitos.",
+    "SourceGuideId ausente não comprova vínculo contábil; completed não persiste accounting.ok. Serviço filtra ledger/cache, documentos permanecem recorte mensal explícito. Projeção não autoriza retry ou baixa.",
+    "Riscos legados de duplicatas pagas, falha contábil após persistência, reserva incerta e procuração revogada permanecem intactos. Bancos e dados reais não consultados."
+  ]
+}

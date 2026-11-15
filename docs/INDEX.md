@@ -320,3 +320,5 @@ Os caminhos são relativos à raiz do repositório. Cada arquivo aparece na clas
 - [docs/modules/README.md](modules/README.md)
 - [docs/progress/README.md](progress/README.md)
 - [prototipos/emissor-notas/README.md](../prototipos/emissor-notas/README.md)
+
+- [Projeção interna de conciliação DAS/SERPRO 4.4.5](modules/serpro-das-conciliacao-leitura-445.md) — contrato somente leitura, evidências e limitações.
