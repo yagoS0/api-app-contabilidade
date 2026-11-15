@@ -12,6 +12,10 @@ jest.mock('../../guides/GuideStorageService.js', () => ({ GuideStorageService: {
   upload: async ({ key }) => ({ key, url: `https://storage.invalid/${key}` }),
 }) } }));
 import axios from 'axios';
+import express from 'express';
+import request from 'supertest';
+import { createOperationsRouter } from '../../../routes/firm/operacoes.js';
+import { requireFirmCompanyAccess } from '../../../middlewares/requireFirmCompanyAccess.js';
 import PDFDocument from 'pdfkit';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -36,7 +40,7 @@ const pa = '2026-10';
 const clean = x => JSON.parse(JSON.stringify(x));
 afterAll(() => pg.$disconnect());
 
-async function fixture(run, { realTransmission = false } = {}) {
+async function fixture(run, { realTransmission = false, confirmed = true } = {}) {
   const userId = randomUUID(), clientId = randomUUID(), ids = [randomUUID(), randomUUID()], companyIds = [randomUUID(), randomUUID()];
   const queue = [], batches = [], calls = [];
   const credentials = async () => ({ certificate: { hasCertificate: true, document: '11111111000191' } });
@@ -83,7 +87,7 @@ async function fixture(run, { realTransmission = false } = {}) {
       if (proof) await pg.appSetting.create({ data: { key: `ciclo_simples:${id}:${pa}`, value: { token: proof.attemptId, revision: 1, calculo: { calculoId: v.calculoId } } } });
       const op = await lerOperacao(pg, id, pa);
       expect(op.blocked).toBeNull(); expect(op.calculation.calculoId).toBe(v.calculoId);
-      await salvarOperacao(pg, id, pa, userId, { action: 'confirm', expectedRevision: op.revision, requestId: randomUUID() });
+      if (confirmed) await salvarOperacao(pg, id, pa, userId, { action: 'confirm', expectedRevision: op.revision, requestId: randomUUID() });
     }
     await run({ ids, userId, queue, service, preview, accept, auth, transport, credentials, transmit, batches });
   } finally {
@@ -119,6 +123,76 @@ async function syntheticPdf(identity) {
     pdf.end();
   });
 }
+
+test('HTTP real + PostgreSQL: conferir, confirmar, liberar, transmitir simulado e ler documentos', async () => fixture(async f => {
+  const id = f.ids[1], base = `/companies/${id}/operacoes/${pa}`;
+  let authenticated = true, transmitted = false;
+  const services = [];
+  mockAuthenticate.mockReset();
+  mockAuthenticate.mockResolvedValue({ accessToken: 'synthetic', jwtToken: 'synthetic' });
+  axios.request.mockReset();
+  axios.request.mockImplementation(async ({ data }) => {
+    const portal = await pg.portalClient.findUnique({ where: { id } });
+    expect(data.contribuinte.numero).toBe(portal.cnpj);
+    const service = data.pedidoDados.idServico;
+    services.push(service);
+    if (service === 'CONSDECLARACAO13') return { status: 200, data: { dados: JSON.stringify(transmitted ? [{ numeroDeclaracao: `http-${id}` }] : []) } };
+    if (service === 'TRANSDECLARACAO11') {
+      transmitted = true;
+      return { status: 200, data: { dados: JSON.stringify({ idDeclaracao: `http-${id}`, valoresDevidos: [{ codigoTributo: '1001', valor: 10 }] }) } };
+    }
+    if (service === 'CONSULTIMADECREC14') {
+      const pdf = await syntheticPdf(id);
+      return { status: 200, data: { dados: JSON.stringify({ numeroDeclaracao: `http-${id}`, declaracao: { pdf }, recibo: { pdf } }) } };
+    }
+    throw Error(`Fiscal call not allowed in fixture: ${service}`);
+  });
+  await pg.guide.create({ data: { portalClientId: id, competencia: pa, tipo: 'SIMPLES', status: 'PROCESSED', pdfBytes: Buffer.from('synthetic-existing-guide'), source: 'LOCAL' } });
+  const app = express(); app.use(express.json());
+  app.use((req, _res, next) => { req.auth = authenticated ? { user: { id: f.userId, role: 'contador' } } : null; next(); });
+  app.use(createOperationsRouter({ prisma: pg, requireFirmCompanyAccess }));
+  const read = await request(app).get(base);
+  expect(read.status).toBe(200); expect(read.body.status).toBe('PENDING');
+  expect(services).toEqual([]);
+  const confirm = await request(app).put(base).send({ action: 'confirm', expectedRevision: read.body.revision, requestId: randomUUID() });
+  expect(confirm.status).toBe(200); expect(confirm.body.status).toBe('CONFIRMED');
+  expect(services).toEqual([]);
+  const stale = await request(app).put(base).send({ action: 'release', expectedRevision: read.body.revision, requestId: randomUUID() });
+  expect(stale.status).toBe(409);
+  const release = await request(app).put(base).send({ action: 'release', expectedRevision: confirm.body.revision, requestId: randomUUID() });
+  expect(release.status).toBe(200); expect(release.body.status).toBe('RELEASED');
+  expect(services).toEqual([]);
+  const invalid = await request(app).post(`${base}/executar`).send({ expectedRevision: release.body.revision, confirmCompetencia: '2026-09' });
+  expect(invalid.status).toBe(422); expect(services).toEqual([]);
+  // No Prefer:respond-async: real synchronous adapter, no mock of services/ACL.
+  const execution = await request(app).post(`${base}/executar`).send({ expectedRevision: release.body.revision, confirmCompetencia: pa });
+  expect(execution.status).toBe(200);
+  expect(services.filter(s => s === 'TRANSDECLARACAO11')).toHaveLength(1);
+  const after = await request(app).get(base);
+  expect(after.body.status).toBe('EXECUTED');
+  const calls = services.length;
+  const documents = await request(app).get(`${base}/transmission-documents`);
+  expect(documents.status).toBe(200); expect(documents.body.items.length).toBeGreaterThan(0);
+  expect(services).toHaveLength(calls);
+  const replay = await request(app).post(`${base}/executar`).send({ expectedRevision: release.body.revision, confirmCompetencia: pa });
+  expect(replay.status).toBe(409);
+  expect(replay.body).toMatchObject({ ok: false, message: 'Esta liberação já teve uma tentativa. Confira o resultado em Tarefas; não haverá reenvio automático.' });
+  expect(services.filter(s => s === 'TRANSDECLARACAO11')).toHaveLength(1);
+  await pg.companyFirmAccess.update({ where: { companyId_userId: { companyId: id, userId: f.userId } }, data: { status: 'INACTIVE' } });
+  const settingsBeforeDenial = await pg.appSetting.findMany({ orderBy: { key: 'asc' } });
+  const guidesBeforeDenial = await pg.guide.findMany({ where: { portalClientId: id } });
+  const snapshotBeforeDenial = await pg.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: id, competencia: pa } } });
+  expect((await request(app).get(base)).status).toBe(403);
+  expect((await request(app).put(base).send({ action: 'confirm' })).status).toBe(403);
+  expect((await request(app).post(`${base}/executar`).send({ confirmCompetencia: pa })).status).toBe(403);
+  expect((await request(app).get(`${base}/transmission-documents`)).status).toBe(403);
+  expect(await pg.appSetting.findMany({ orderBy: { key: 'asc' } })).toEqual(settingsBeforeDenial);
+  expect(await pg.guide.findMany({ where: { portalClientId: id } })).toEqual(guidesBeforeDenial);
+  expect(await pg.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: id, competencia: pa } } })).toEqual(snapshotBeforeDenial);
+  expect(services).toHaveLength(calls);
+  authenticated = false;
+  expect((await request(app).get(base)).status).toBe(401);
+}, { confirmed: false }), 120000);
 
 const circularDiagnostic = c => c && ({ id: c.id, portalClientId: c.portalClientId, competencia: c.competencia,
   pgdasNumeroDeclaracao: c.pgdasNumeroDeclaracao, pgdasDeclaracaoFileId: c.pgdasDeclaracaoFileId,

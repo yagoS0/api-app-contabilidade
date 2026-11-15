@@ -1,0 +1,3390 @@
+{
+  "reference": "cbea0e52fb2d75327056067283759b3a73c9a3cc",
+  "initialCandidate": "70257c53170528d85b53169d1f11a32294834bb9",
+  "axeVersion": "4.14.0",
+  "method": "Chrome headless, synthetic fixtures, localhost only, same base/candidate viewports; automatic incomplete retained and manually investigated.",
+  "initial": [
+    {
+      "base": true,
+      "width": 1440,
+      "state": "alerts",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "empty",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "error",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "missing",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "loading",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "evidence",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(4) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "partial",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(5) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 1440,
+      "state": "absent",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(4) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "div[aria-label=\"Atividades do cálculo salvo\"] > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna / externa</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "alerts",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "color-contrast",
+          "target": [
+            "p"
+          ],
+          "html": "<p>Revise a competência da empresa antes de retificar. Abrir o aviso não altera a apuração.</p>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "11.3pt (15px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "empty",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "error",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "missing",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "loading",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "evidence",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(4) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "partial",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(5) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "state": "absent",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(4) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "div[aria-label=\"Atividades do cálculo salvo\"] > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna / externa</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "alerts",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "color-contrast",
+          "target": [
+            "p"
+          ],
+          "html": "<p>Revise a competência da empresa antes de retificar. Abrir o aviso não altera a apuração.</p>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "11.3pt (15px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "empty",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "error",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "missing",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "loading",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Empresa</th><th>Competência</th><th>Situação</th><th>Causa / evidência</th><th>Próxima ação</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "evidence",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(4) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "partial",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(5) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "state": "absent",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            ".operacoes-tabela-scroll[role=\"region\"]:nth-child(4) > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        },
+        {
+          "rule": "th-has-data-cells",
+          "target": [
+            "div[aria-label=\"Atividades do cálculo salvo\"] > table"
+          ],
+          "html": "<table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna / externa</th></tr></thead><tbody></tbody></table>",
+          "checks": [
+            {
+              "id": "th-has-data-cells",
+              "data": null,
+              "message": "Table data cells are missing or empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "alerts",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "empty",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "error",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "missing",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "loading",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "evidence",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "partial",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "state": "absent",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "scrollable-region-focusable",
+          "target": [
+            ".modal-corpo"
+          ],
+          "html": "<div class=\"modal-corpo\">",
+          "checks": [
+            {
+              "id": "focusable-content",
+              "data": null,
+              "message": "Check that elements with a negative tabindex can receive keyboard focus so the region can be scrolled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "alerts",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-corpo > p:nth-child(1)"
+          ],
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "11.3pt (15px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ]
+        },
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".operacoes-avisos-scroll-hint"
+          ],
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.2pt (13.6px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "empty",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "error",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "missing",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "loading",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "evidence",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "partial",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "state": "absent",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "scrollable-region-focusable",
+          "target": [
+            ".modal-corpo"
+          ],
+          "html": "<div class=\"modal-corpo\">",
+          "checks": [
+            {
+              "id": "focusable-content",
+              "data": null,
+              "message": "Check that elements with a negative tabindex can receive keyboard focus so the region can be scrolled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "alerts",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-corpo > p:nth-child(1)"
+          ],
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "11.3pt (15px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ]
+        },
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".operacoes-avisos-scroll-hint"
+          ],
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.2pt (13.6px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "empty",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "error",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "missing",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "loading",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            ".modal-fechar"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "evidence",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "partial",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "state": "absent",
+      "violations": [],
+      "nodes": [
+        {
+          "rule": "color-contrast",
+          "target": [
+            "button"
+          ],
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "message": "Element content contains only non-text characters"
+            }
+          ]
+        },
+        {
+          "rule": "scrollable-region-focusable",
+          "target": [
+            ".modal-corpo"
+          ],
+          "html": "<div class=\"modal-corpo\">",
+          "checks": [
+            {
+              "id": "focusable-content",
+              "data": null,
+              "message": "Check that elements with a negative tabindex can receive keyboard focus so the region can be scrolled"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "final": {
+    "checks": [
+      {
+        "state": "alerts",
+        "width": 1440,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "empty",
+        "width": 1440,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "error",
+        "width": 1440,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "missing",
+        "width": 1440,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "loading",
+        "width": 1440,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "evidence",
+        "width": 1440,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "partial",
+        "width": 1440,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "absent",
+        "width": 1440,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "alerts",
+        "width": 390,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 2
+            }
+          ]
+        }
+      },
+      {
+        "state": "empty",
+        "width": 390,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "error",
+        "width": 390,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "missing",
+        "width": 390,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "loading",
+        "width": 390,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "evidence",
+        "width": 390,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "partial",
+        "width": 390,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "absent",
+        "width": 390,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "alerts",
+        "width": 360,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 2
+            }
+          ]
+        }
+      },
+      {
+        "state": "empty",
+        "width": 360,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "error",
+        "width": 360,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "missing",
+        "width": 360,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "loading",
+        "width": 360,
+        "overflow": false,
+        "reads": [
+          0
+        ],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "evidence",
+        "width": 360,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "partial",
+        "width": 360,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "state": "absent",
+        "width": 360,
+        "overflow": false,
+        "reads": [],
+        "axe": {
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "count": 1
+            }
+          ]
+        }
+      }
+    ],
+    "errors": [],
+    "network": []
+  },
+  "contrast": [
+    {
+      "base": true,
+      "width": 1440,
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 172.5,
+              "y": 179.859375,
+              "width": 1080,
+              "height": 540.28125,
+              "top": 179.859375,
+              "right": 1252.5,
+              "bottom": 720.140625,
+              "left": 172.5
+            }
+          }
+        },
+        {
+          "html": "<p>Revise a competência da empresa antes de retificar. Abrir o aviso não altera a apuração.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 172.5,
+              "y": 179.859375,
+              "width": 1080,
+              "height": 540.28125,
+              "top": 179.859375,
+              "right": 1252.5,
+              "bottom": 720.140625,
+              "left": 172.5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 390,
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 82.71875,
+              "width": 343,
+              "height": 734.546875,
+              "top": 82.71875,
+              "right": 359,
+              "bottom": 817.265625,
+              "left": 16
+            }
+          }
+        },
+        {
+          "html": "<p>Revise a competência da empresa antes de retificar. Abrir o aviso não altera a apuração.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 82.71875,
+              "width": 343,
+              "height": 734.546875,
+              "top": 82.71875,
+              "right": 359,
+              "bottom": 817.265625,
+              "left": 16
+            }
+          }
+        }
+      ]
+    },
+    {
+      "base": true,
+      "width": 360,
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 71.46875,
+              "width": 313,
+              "height": 757.046875,
+              "top": 71.46875,
+              "right": 329,
+              "bottom": 828.515625,
+              "left": 16
+            }
+          }
+        },
+        {
+          "html": "<p>Revise a competência da empresa antes de retificar. Abrir o aviso não altera a apuração.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 71.46875,
+              "width": 313,
+              "height": 757.046875,
+              "top": 71.46875,
+              "right": 329,
+              "bottom": 828.515625,
+              "left": 16
+            }
+          }
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 172.5,
+              "y": 170.1875,
+              "width": 1080,
+              "height": 559.625,
+              "top": 170.1875,
+              "right": 1252.5,
+              "bottom": 729.8125,
+              "left": 172.5
+            }
+          }
+        },
+        {
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 172.5,
+              "y": 170.1875,
+              "width": 1080,
+              "height": 559.625,
+              "top": 170.1875,
+              "right": 1252.5,
+              "bottom": 729.8125,
+              "left": 172.5
+            }
+          }
+        },
+        {
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 172.5,
+              "y": 170.1875,
+              "width": 1080,
+              "height": 559.625,
+              "top": 170.1875,
+              "right": 1252.5,
+              "bottom": 729.8125,
+              "left": 172.5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 390,
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 29.265625,
+              "width": 343,
+              "height": 841.453125,
+              "top": 29.265625,
+              "right": 359,
+              "bottom": 870.71875,
+              "left": 16
+            }
+          }
+        },
+        {
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 29.265625,
+              "width": 343,
+              "height": 841.453125,
+              "top": 29.265625,
+              "right": 359,
+              "bottom": 870.71875,
+              "left": 16
+            }
+          }
+        },
+        {
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 29.265625,
+              "width": 343,
+              "height": 841.453125,
+              "top": 29.265625,
+              "right": 359,
+              "bottom": 870.71875,
+              "left": 16
+            }
+          }
+        }
+      ]
+    },
+    {
+      "base": false,
+      "width": 360,
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 29.265625,
+              "width": 313,
+              "height": 841.453125,
+              "top": 29.265625,
+              "right": 329,
+              "bottom": 870.71875,
+              "left": 16
+            }
+          }
+        },
+        {
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "foreground": "rgb(248, 248, 242)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 14.064305749399589,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 29.265625,
+              "width": 313,
+              "height": 841.453125,
+              "top": 29.265625,
+              "right": 329,
+              "bottom": 870.71875,
+              "left": 16
+            }
+          }
+        },
+        {
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "foreground": "rgb(174, 182, 211)",
+          "background": "rgb(36, 37, 58)",
+          "ratio": 7.447174413598772,
+          "opaqueAncestor": {
+            "tag": "DIV",
+            "cls": "modal-caixa",
+            "bg": "rgb(36, 37, 58)",
+            "image": "none",
+            "opacity": "1",
+            "position": "static",
+            "rect": {
+              "x": 16,
+              "y": 29.265625,
+              "width": 313,
+              "height": 841.453125,
+              "top": 29.265625,
+              "right": 329,
+              "bottom": 870.71875,
+              "left": 16
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "visibleText": [
+    {
+      "width": 390,
+      "visibility": [
+        {
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "fragments": [
+            {
+              "rect": {
+                "x": 33,
+                "y": 114.265625,
+                "width": 258.640625,
+                "height": 20,
+                "top": 114.265625,
+                "right": 291.640625,
+                "bottom": 134.265625,
+                "left": 33
+              },
+              "top": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+              "visible": true
+            },
+            {
+              "rect": {
+                "x": 33,
+                "y": 136.765625,
+                "width": 295.859375,
+                "height": 20,
+                "top": 136.765625,
+                "right": 328.859375,
+                "bottom": 156.765625,
+                "left": 33
+              },
+              "top": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+              "visible": true
+            },
+            {
+              "rect": {
+                "x": 33,
+                "y": 159.265625,
+                "width": 207.3125,
+                "height": 20,
+                "top": 159.265625,
+                "right": 240.3125,
+                "bottom": 179.265625,
+                "left": 33
+              },
+              "top": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+              "visible": true
+            }
+          ]
+        },
+        {
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "fragments": [
+            {
+              "rect": {
+                "x": 33,
+                "y": 196.765625,
+                "width": 278.25,
+                "height": 18,
+                "top": 196.765625,
+                "right": 311.25,
+                "bottom": 214.765625,
+                "left": 33
+              },
+              "top": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+              "visible": true
+            },
+            {
+              "rect": {
+                "x": 33,
+                "y": 217.15625,
+                "width": 91.015625,
+                "height": 18,
+                "top": 217.15625,
+                "right": 124.015625,
+                "bottom": 235.15625,
+                "left": 33
+              },
+              "top": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+              "visible": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "visibility": [
+        {
+          "html": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+          "fragments": [
+            {
+              "rect": {
+                "x": 33,
+                "y": 114.265625,
+                "width": 258.640625,
+                "height": 20,
+                "top": 114.265625,
+                "right": 291.640625,
+                "bottom": 134.265625,
+                "left": 33
+              },
+              "top": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+              "visible": true
+            },
+            {
+              "rect": {
+                "x": 33,
+                "y": 136.765625,
+                "width": 242.96875,
+                "height": 20,
+                "top": 136.765625,
+                "right": 275.96875,
+                "bottom": 156.765625,
+                "left": 33
+              },
+              "top": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+              "visible": true
+            },
+            {
+              "rect": {
+                "x": 33,
+                "y": 159.265625,
+                "width": 260.203125,
+                "height": 20,
+                "top": 159.265625,
+                "right": 293.203125,
+                "bottom": 179.265625,
+                "left": 33
+              },
+              "top": "<p>Todas as competências · pendências de revisão registradas. Abrir o aviso não altera a apuração nem consulta o Fisco.</p>",
+              "visible": true
+            }
+          ]
+        },
+        {
+          "html": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+          "fragments": [
+            {
+              "rect": {
+                "x": 33,
+                "y": 196.765625,
+                "width": 278.25,
+                "height": 18,
+                "top": 196.765625,
+                "right": 311.25,
+                "bottom": 214.765625,
+                "left": 33
+              },
+              "top": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+              "visible": true
+            },
+            {
+              "rect": {
+                "x": 33,
+                "y": 217.15625,
+                "width": 91.015625,
+                "height": 18,
+                "top": 217.15625,
+                "right": 124.015625,
+                "bottom": 235.15625,
+                "left": 33
+              },
+              "top": "<p class=\"operacoes-avisos-scroll-hint\">Deslize a tabela para conferir as evidências e o próximo passo.</p>",
+              "visible": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "keyboard": [
+    {
+      "base": true,
+      "width": 1440,
+      "initial": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 0
+      },
+      "end": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 0
+      },
+      "tab": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividad",
+        "scroll": 0,
+        "max": 0
+      },
+      "back": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 0
+      },
+      "home": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 0
+      }
+    },
+    {
+      "base": true,
+      "width": 390,
+      "initial": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 195
+      },
+      "end": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 195,
+        "max": 195
+      },
+      "tab": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividad",
+        "scroll": 195,
+        "max": 195
+      },
+      "back": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 195,
+        "max": 195
+      },
+      "home": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 195
+      }
+    },
+    {
+      "base": true,
+      "width": 360,
+      "initial": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 240
+      },
+      "end": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 240,
+        "max": 240
+      },
+      "tab": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividad",
+        "scroll": 240,
+        "max": 240
+      },
+      "back": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 240,
+        "max": 240
+      },
+      "home": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead>",
+        "scroll": 0,
+        "max": 240
+      }
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "initial": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 54
+      },
+      "end": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 54,
+        "max": 54
+      },
+      "tab": {
+        "focus": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+        "scroll": 54,
+        "max": 54
+      },
+      "back": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 54,
+        "max": 54
+      },
+      "home": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 54
+      }
+    },
+    {
+      "base": false,
+      "width": 390,
+      "initial": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 579
+      },
+      "end": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 579,
+        "max": 579
+      },
+      "tab": {
+        "focus": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+        "scroll": 579,
+        "max": 579
+      },
+      "back": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 579
+      },
+      "home": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 579
+      }
+    },
+    {
+      "base": false,
+      "width": 360,
+      "initial": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 646
+      },
+      "end": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 646,
+        "max": 646
+      },
+      "tab": {
+        "focus": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+        "scroll": 646,
+        "max": 646
+      },
+      "back": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 646
+      },
+      "home": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "scroll": 0,
+        "max": 646
+      }
+    }
+  ],
+  "consumer": [
+    {
+      "base": true,
+      "width": 1440,
+      "loading": {
+        "note": "OperationsApproval carrega antes de habilitar Conferir; transicao validada separadamente no componente."
+      },
+      "loaded": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo",
+        "inside": true,
+        "scroll": 0
+      },
+      "sequence": [
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 0
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 2
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 268
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo",
+          "inside": true,
+          "scroll": 268
+        }
+      ],
+      "returned": {
+        "focus": "<body><div id=\"root\"><main style=\"padding: 16px;\"><h1>Operações · ensaio com dados sintéticos</h1><section aria-label=\"Conferência e programação de Operações\"><div class=\"operacoes-cabecalho\"><h3>Apurações da competência",
+        "inside": false
+      }
+    },
+    {
+      "base": true,
+      "width": 390,
+      "loading": {
+        "note": "OperationsApproval carrega antes de habilitar Conferir; transicao validada separadamente no componente."
+      },
+      "loaded": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo",
+        "inside": true,
+        "scroll": 407
+      },
+      "sequence": [
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 407
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 443
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 824
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 824
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 824
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 928
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 900
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo",
+          "inside": true,
+          "scroll": 407
+        }
+      ],
+      "returned": {
+        "focus": "<body><div id=\"root\"><main style=\"padding: 16px;\"><h1>Operações · ensaio com dados sintéticos</h1><section aria-label=\"Conferência e programação de Operações\"><div class=\"operacoes-cabecalho\"><h3>Apurações da competência",
+        "inside": false
+      }
+    },
+    {
+      "base": true,
+      "width": 360,
+      "loading": {
+        "note": "OperationsApproval carrega antes de habilitar Conferir; transicao validada separadamente no componente."
+      },
+      "loaded": {
+        "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo",
+        "inside": true,
+        "scroll": 430
+      },
+      "sequence": [
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 430
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 854
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 854
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 854
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 854
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 996
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 945
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Extratos salvos, sem conciliação de revisão\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo",
+          "inside": true,
+          "scroll": 430
+        }
+      ],
+      "returned": {
+        "focus": "<body><div id=\"root\"><main style=\"padding: 16px;\"><h1>Operações · ensaio com dados sintéticos</h1><section aria-label=\"Conferência e programação de Operações\"><div class=\"operacoes-cabecalho\"><h3>Apurações da competência",
+        "inside": false
+      }
+    },
+    {
+      "base": false,
+      "width": 1440,
+      "loading": {
+        "note": "OperationsApproval carrega antes de habilitar Conferir; transicao validada separadamente no componente."
+      },
+      "loaded": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "inside": true,
+        "scroll": 0
+      },
+      "sequence": [
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 487
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 487
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 487
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 487
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 487
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 598
+        },
+        {
+          "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+          "inside": true,
+          "scroll": 0
+        }
+      ],
+      "returned": {
+        "focus": "<body><div id=\"root\"><main style=\"padding: 16px;\"><h1>Operações · ensaio com dados sintéticos</h1><section aria-label=\"Conferência e programação de Operações\"><div class=\"operacoes-cabecalho\"><h3>Apurações da competência",
+        "inside": false
+      }
+    },
+    {
+      "base": false,
+      "width": 390,
+      "loading": {
+        "note": "OperationsApproval carrega antes de habilitar Conferir; transicao validada separadamente no componente."
+      },
+      "loaded": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "inside": true,
+        "scroll": 0
+      },
+      "sequence": [
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 958
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 958
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 958
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 958
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 1360
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 958
+        },
+        {
+          "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+          "inside": true,
+          "scroll": 0
+        }
+      ],
+      "returned": {
+        "focus": "<body><div id=\"root\"><main style=\"padding: 16px;\"><h1>Operações · ensaio com dados sintéticos</h1><section aria-label=\"Conferência e programação de Operações\"><div class=\"operacoes-cabecalho\"><h3>Apurações da competência",
+        "inside": false
+      }
+    },
+    {
+      "base": false,
+      "width": 360,
+      "loading": {
+        "note": "OperationsApproval carrega antes de habilitar Conferir; transicao validada separadamente no componente."
+      },
+      "loaded": {
+        "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+        "inside": true,
+        "scroll": 0
+      },
+      "sequence": [
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 1026
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 1026
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 1026
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 1048
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<input type=\"datetime-local\" value=\"\">",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Marcar para revisão</button>",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/auditoria?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Revisar notas da competência</a>",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<a href=\"/companies/sintetica-a/cadastro-fiscal?competencia=2026-10\" class=\"btn btn-secondary btn-sm\">Abrir central de apuração</a>",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<button class=\"btn btn-secondary btn-md\">Atualizar evidências</button>",
+          "inside": true,
+          "scroll": 1450
+        },
+        {
+          "focus": "<div class=\"operacoes-tabela-scroll\" role=\"region\" aria-label=\"Atividades do cálculo salvo\" tabindex=\"0\"><table class=\"operacoes-tabela\"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna ",
+          "inside": true,
+          "scroll": 1026
+        },
+        {
+          "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+          "inside": true,
+          "scroll": 0
+        }
+      ],
+      "returned": {
+        "focus": "<body><div id=\"root\"><main style=\"padding: 16px;\"><h1>Operações · ensaio com dados sintéticos</h1><section aria-label=\"Conferência e programação de Operações\"><div class=\"operacoes-cabecalho\"><h3>Apurações da competência",
+        "inside": false
+      }
+    }
+  ],
+  "transition": [
+    {
+      "stage": "loading",
+      "focus": "<h3 role=\"status\" tabindex=\"0\" data-modal-autofocus=\"true\">Lendo cálculo e auditoria salvos…</h3>"
+    },
+    {
+      "stage": "loaded",
+      "focus": "<h3 tabindex=\"0\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+      "inside": true
+    },
+    {
+      "stage": "tab",
+      "focus": "<button type=\"button\" class=\"modal-fechar\" aria-label=\"Fechar\">✕</button>",
+      "inside": true
+    },
+    {
+      "stage": "escape",
+      "focus": "<button>Abrir ensaio</button>"
+    }
+  ],
+  "files": [
+    {
+      "file": "apps/web/src/features/operacoes/OperationsAlerts.jsx",
+      "sha256": "fb3349c0f70a0185e64aa6ec793ef688cb254bd1e72d0f65d9d11e4539058930"
+    },
+    {
+      "file": "apps/web/src/features/operacoes/OperationsCalculationDetails.jsx",
+      "sha256": "9ae667e8763b0dcccf3af7b549de74ff871c9bb0ca2a1b1d90e0399b90a94780"
+    }
+  ],
+  "classification": {
+    "introducedAndCorrected": [
+      "Absent evidence lost a tabbable content stop; title now tabindex=0.",
+      "Loading paragraph replacement removed focus; stable h3 preserves the element."
+    ],
+    "preexisting": [
+      "Close glyph nonBmp in base and candidate.",
+      "Intro paragraph elmPartiallyObscuring on mobile in base and candidate.",
+      "OperationsApproval Escape returns focus to body in base and candidate."
+    ],
+    "newManuallyVerified": [
+      "Scroll hint elmPartiallyObscuring; opaque background, 7.45:1 and all text fragments visible."
+    ],
+    "limits": [
+      "Automatic color-contrast incomplete remains visible; no WCAG certification.",
+      "No physical phone or continuous NVDA session."
+    ]
+  }
+}

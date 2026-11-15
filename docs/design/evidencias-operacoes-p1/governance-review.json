@@ -1,0 +1,134 @@
+{
+  "run": "2026-11-15T19-58-04-602Z-72db47ed",
+  "round": 0,
+  "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+  "checkpoint": "testing",
+  "execution": "Interrupted by Principal after systemic inconclusive; all round0 gates passed; round1 not certified",
+  "gates": [
+    {
+      "id": "governance-engine",
+      "code": 0,
+      "passed": true,
+      "timedOut": false,
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd"
+    },
+    {
+      "id": "api-regression",
+      "code": 0,
+      "passed": true,
+      "timedOut": false,
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd"
+    },
+    {
+      "id": "web-regression",
+      "code": 0,
+      "passed": true,
+      "timedOut": false,
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd"
+    },
+    {
+      "id": "portal-regression",
+      "code": 0,
+      "passed": true,
+      "timedOut": false,
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd"
+    },
+    {
+      "id": "web-build",
+      "code": 0,
+      "passed": true,
+      "timedOut": false,
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd"
+    },
+    {
+      "id": "portal-build",
+      "code": 0,
+      "passed": true,
+      "timedOut": false,
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd"
+    }
+  ],
+  "reviews": [
+    {
+      "role": "altan_domain_reviewer",
+      "domains": [
+        "operations"
+      ],
+      "verdict": "approved",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Aprovado tecnicamente no domínio operations em 15/11/2026, execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd. Comparados baseline/round-0 e diff acumulado contra main cbea0e52; HEAD e7c5c7b9. Contratos R02/R19–R22 e seção 35 preservados."
+    },
+    {
+      "role": "altan_domain_reviewer",
+      "domains": [
+        "portal"
+      ],
+      "verdict": "approved",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Aprovado tecnicamente em 15/11/2026 para execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd. HEAD e7c5c7b9; baseline/round-0 e diff acumulado contra cbea0e52 inspecionados. Sem autorização de integração ou publicação."
+    },
+    {
+      "role": "altan_domain_reviewer",
+      "domains": [
+        "web"
+      ],
+      "verdict": "approved",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Aprovado tecnicamente em 15/11/2026, execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd. Revisados baseline/round-0 e diff acumulado contra cbea0e52; HEAD e7c5c7b9. Contratos R02/R19–R22 e seção 35 preservados."
+    },
+    {
+      "role": "altan_backend_reviewer",
+      "domains": [
+        "operations",
+        "portal",
+        "web"
+      ],
+      "verdict": "approved",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Revisão backend aprovada tecnicamente em 15/11/2026, execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd. Revisados snapshots e diff acumulado contra main cbea0e52 e P1 70257c53; HEAD e7c5c7b9."
+    },
+    {
+      "role": "altan_ui_reviewer",
+      "domains": [
+        "operations",
+        "portal",
+        "web"
+      ],
+      "verdict": "approved",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Aprovado tecnicamente no escopo UI em 15/11/2026, execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd. Revisados snapshots e diff acumulado contra main cbea0e52 e P1 70257c53; HEAD e7c5c7b9. Não declara ready_for_human nem autoriza integração/publicação."
+    },
+    {
+      "role": "altan_ux_reviewer",
+      "domains": [
+        "operations",
+        "portal",
+        "web"
+      ],
+      "verdict": "approved",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Aprovado tecnicamente no escopo UX em 15/11/2026, execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd. Revisados baseline/round-0 e diff acumulado contra main cbea0e52 e P1 70257c53; HEAD e7c5c7b9. Sem autorização de integração ou publicação."
+    },
+    {
+      "role": "altan_system_reviewer",
+      "domains": [
+        "operations",
+        "portal",
+        "web"
+      ],
+      "verdict": "inconclusive",
+      "fingerprint": "3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd",
+      "summary": "Revisão sistêmica de 15/11/2026, execução 72db47ed, fingerprint 3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd; HEAD e7c5c7b9, base main cbea0e52. Implementação estática compatível; conclusão sistêmica pendente de evidência final visual/acessível. Não declara ready_for_human nem autoriza integração ou publicação."
+    }
+  ],
+  "productionFiles": [
+    {
+      "file": "apps/web/src/features/operacoes/OperationsAlerts.jsx",
+      "sha256": "fb3349c0f70a0185e64aa6ec793ef688cb254bd1e72d0f65d9d11e4539058930"
+    },
+    {
+      "file": "apps/web/src/features/operacoes/OperationsCalculationDetails.jsx",
+      "sha256": "9ae667e8763b0dcccf3af7b549de74ff871c9bb0ca2a1b1d90e0399b90a94780"
+    }
+  ]
+}

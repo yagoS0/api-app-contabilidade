@@ -201,6 +201,10 @@
 
 .operacoes-tabela-scroll { max-width:100%; overflow:auto; margin-block:var(--space-3); }
 .operacoes-tabela-scroll:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.operacoes-aviso-etapa:focus-visible { outline:2px solid var(--primary); outline-offset:2px; border-radius:var(--radius-sm); }
+.operacoes-evidencias-fontes > div { min-width:0; overflow-wrap:anywhere; }
+.operacoes-avisos-dialogo .operacoes-tabela .operacoes-acoes { align-items:stretch; }
+.operacoes-avisos-dialogo .operacoes-tabela .btn { white-space:normal; text-align:center; }
 .operacoes-tabela { width:100%; border-collapse:collapse; text-align:left; font-size:.9rem; }
 .operacoes-tabela th,.operacoes-tabela td { padding:12px; border-bottom:1px solid var(--border); vertical-align:top; min-width:130px; }
 .operacoes-tabela th { font-weight:500; }
@@ -451,3 +455,6 @@
 
 .operacoes-dialogo .modal-rodape .operacoes-stage-footer { display:contents; }
 @media(max-width:760px) { .operacoes-dialogo .modal-rodape:has(.operacoes-stage-footer) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .operacoes-dialogo .modal-rodape:has(.operacoes-stage-footer) .btn { min-height:44px; white-space:normal; } }
+
+.operacoes-avisos-scroll-hint { display:none; }
+@media(max-width:760px) { .operacoes-avisos-scroll-hint { display:block; color:var(--text-muted); font-size:.85rem; } }

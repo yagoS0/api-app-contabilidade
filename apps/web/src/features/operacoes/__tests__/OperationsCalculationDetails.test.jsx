@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { OperationsCalculationDetails, OperationsTransmissionValues, OperationsTransmissionTable } from '../OperationsCalculationDetails';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { Modal } from '../../../components/ui/Modal';
+import { CalculationEvidence, OperationsCalculationDetails, OperationsTransmissionValues, OperationsTransmissionTable } from '../OperationsCalculationDetails';
 const apiFor = () => ({getApuracaoSnapshot:jest.fn(async(id,competencia)=>({ok:true,snapshot:{portalClientId:id,competencia,estado:'transmitida',idempotencyKey:'calculo-1',dasRetornadoSerpro:74,transmitidoEm:'2026-10-20T12:00:00Z',numeroDeclaracao:'123',receitaInterna:1200,receitaExterna:0,dasSimuladoSerpro:72,atividadesEscolhidas:[{idAtividade:'a',anexoImplicito:'III',valorInterno:1200,valorExterno:0}]}})),getAuditoriaNotas:jest.fn(async()=>({auditoria:{competencia:'2026-10',totalAchados:1,foraDaConferencia:{total:2},perguntas:[{id:'x',titulo:'Divergência de nota',situacao:'NAO_CONFERIVEL',achados:[{}],naoAvaliadas:[],motivo:'Dados insuficientes'}]}})),getPgdasHistorico:jest.fn(async()=>({ok:true,competencia:'2026-10',versoes:[{numeroDeclaracao:'123',atual:true,dasTotal:73,origem:'CONSULTA_PGDAS'}]})),saveCompanyOperation:jest.fn(),executeCompanyOperation:jest.fn()});
 
 const transmissionRows = ['a', 'b'].map(id => ({ company: { companyId: id, razao: `Empresa ${id}` } }));
@@ -121,4 +122,109 @@ test.each([undefined,null,{}])('resumo sem conexão disponível (%s) não derrub
 test('detalhe de transmissão mantém revisão, seleção, destino e foco sem ato fiscal',async()=>{
  const api={getOperationsTransmissionDocuments:jest.fn(async(id,period)=>transmissionResponse(id,period)),downloadOperationsTransmissionDocuments:jest.fn()};const changed=jest.fn();render(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={transmissionRows} competencia="2026-10" onDetailChange={changed}/>);
  await waitFor(()=>expect(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'})).toBeEnabled());fireEvent.click(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'}));const trigger=screen.getByRole('button',{name:'Detalhes da transmissão de Empresa a'});fireEvent.click(trigger);expect(screen.getByRole('heading',{name:'Empresa a · 2026-10'})).toHaveFocus();expect(screen.getByText('a'.repeat(64))).toBeInTheDocument();expect(screen.getByRole('link',{name:'Retificar'})).toHaveAttribute('href','/companies/a/cadastro-fiscal?competencia=2026-10');expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Voltar'}));await waitFor(()=>expect(trigger).toHaveFocus());expect(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'})).toBeChecked();fireEvent.click(screen.getByRole('button',{name:'Limites do download'}));expect(screen.getByText(/30 PDFs, 8 MiB por arquivo e 32 MiB por ZIP/)).toBeVisible();expect(changed).toHaveBeenLastCalledWith(false);
+});
+
+test('fontes ausentes, não consultadas e com erro permanecem distintas de evidência disponível', () => {
+ render(<CalculationEvidence details={{ snapshot: { value: null }, auditoria: { error: 'Leitura indisponível nesta conexão' } }} />);
+ const sources = document.querySelector('.operacoes-evidencias-fontes');
+ expect(within(sources).getByText('Cálculo salvo').nextElementSibling).toHaveTextContent('Sem evidência salva disponível');
+ expect(within(sources).getByText('Auditoria de notas').nextElementSibling).toHaveTextContent('Indisponível · erro de leitura');
+ expect(within(sources).getByText('Histórico PGDAS').nextElementSibling).toHaveTextContent('Não consultado nesta conferência');
+ expect(screen.getByRole('alert')).toHaveTextContent('Leitura indisponível nesta conexão');
+ expect(screen.queryByText(/R\$/)).not.toBeInTheDocument();
+ expect(screen.queryByText('Não aplicável')).not.toBeInTheDocument();
+});
+
+test('zero salvo não vira ausência e receita ausente não vira zero', async () => {
+ const api = apiFor();
+ const original = await api.getApuracaoSnapshot('a', '2026-10');
+ api.getApuracaoSnapshot.mockResolvedValue({ snapshot: { ...original.snapshot, receitaInterna: null, receitaExterna: 0, dasSimuladoSerpro: 0 } });
+ render(<OperationsCalculationDetails api={api} companyId="a" competencia="2026-10" />);
+ await screen.findByText('Faturamento interno salvo');
+ expect(screen.getByText('Faturamento interno salvo').nextElementSibling).toHaveTextContent('Não disponível');
+ expect(screen.getByText('Faturamento externo salvo').nextElementSibling).toHaveTextContent(/R\$\s*0,00/);
+ expect(screen.getByText('Cálculo simulado salvo').nextElementSibling).toHaveTextContent(/R\$\s*0,00/);
+ expect(screen.getByText(/Valor zero salvo não significa dispensa/)).toBeInTheDocument();
+ expect(screen.getAllByText('Disponível para conferência')).toHaveLength(3);
+ expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
+test.each([
+ ['SEM_NOTAS', 'Sem notas no conjunto desta verificação; não comprova ausência de movimento.'],
+ ['EMPRESA_SEM_CODIGOS_CADASTRADOS', 'Empresa sem códigos de serviço cadastrados para esta verificação.'],
+ ['NENHUMA_NOTA_AVALIAVEL', 'Nenhuma nota possui os dados necessários para esta verificação.'],
+ ['MOTIVO_FUTURO', 'MOTIVO_FUTURO'],
+])('auditoria não conferível preserva motivo %s e não transforma zero achados em aprovação', (motivo, label) => {
+ render(<CalculationEvidence details={{ auditoria: { value: { totalAchados: 0, perguntas: [{ id: 'a', titulo: 'Atividade', situacao: 'NAO_CONFERIVEL', achados: [], naoAvaliadas: [], motivo }] } } }} />);
+ const region = screen.getByRole('region', { name: 'Auditoria da competência' });
+ expect(within(region).getByText('Sem evidência suficiente para conferir')).toBeInTheDocument();
+ expect(within(region).getByText('Ausência de achados não comprova aprovação.')).toBeInTheDocument();
+ expect(within(region).getByText(label)).toBeInTheDocument();
+ expect(within(region).queryByText('Verificação realizada')).not.toBeInTheDocument();
+});
+
+test('verificação realizada com zero achados conserva o resultado sem aprovação humana inventada', () => {
+ render(<CalculationEvidence details={{ auditoria: { value: { totalAchados: 0, perguntas: [{ id: 'a', titulo: 'Atividade', situacao: 'CONFERIDA', achados: [], naoAvaliadas: [] }] } } }} />);
+ const region = screen.getByRole('region', { name: 'Auditoria da competência' });
+ expect(within(region).getByText('Verificação realizada')).toBeInTheDocument();
+ expect(within(region).getByText('0 achados / 0 notas não avaliadas')).toBeInTheDocument();
+ expect(within(region).queryByText('Sem evidência suficiente para conferir')).not.toBeInTheDocument();
+});
+
+test('histórico limitado é parcial no resumo e tabelas vazias não recebem foco', () => {
+ render(<CalculationEvidence details={{ snapshot: { value: null }, history: { value: { versoes: [], limitado: true } } }} />);
+ expect(screen.getByText('Disponível parcialmente · histórico limitado')).toBeInTheDocument();
+ expect(screen.getByText('Nenhum extrato salvo disponível.')).toBeInTheDocument();
+ expect(screen.queryByRole('region', { name: 'Extratos salvos, sem conciliação de revisão' })).not.toBeInTheDocument();
+ expect(screen.queryByRole('region', { name: 'Atividades do cálculo salvo' })).not.toBeInTheDocument();
+ expect(screen.getByRole('heading', { name: 'Fontes da conferência' })).toHaveAttribute('data-modal-autofocus');
+});
+
+test('modal de conferência inicia no resumo das fontes, antes de tabelas e erros parciais', () => {
+ render(<Modal titulo="Conferir empresa" aoFechar={() => {}}><CalculationEvidence details={{ snapshot: { value: null }, auditoria: { error: 'Fonte temporariamente indisponível' }, history: { value: { versoes: [], limitado: true } } }} /></Modal>);
+ expect(screen.getByRole('heading', { name: 'Fontes da conferência' })).toHaveFocus();
+ expect(screen.getByRole('alert')).toHaveTextContent('Fonte temporariamente indisponível');
+});
+
+test.each([
+ ['conteúdo', { snapshot: { value: { receitaInterna: 1200 } }, history: { value: { versoes: [] } } }],
+ ['erro', { snapshot: { error: 'Fonte temporariamente indisponível' } }],
+])('carregamento preserva o mesmo título e foco ao receber %s', (_, details) => {
+ const modal = value => <Modal titulo="Conferir empresa" aoFechar={() => {}}><CalculationEvidence details={value} /></Modal>;
+ const view = render(modal(null));
+ const loading = screen.getByRole('status');
+ expect(loading.tagName).toBe('H3');
+ expect(loading).toHaveFocus();
+ view.rerender(modal(details));
+ const heading = screen.getByRole('heading', { name: 'Fontes da conferência' });
+ expect(heading).toBe(loading);
+ expect(heading).toHaveFocus();
+ expect(heading).toHaveAttribute('tabindex', '0');
+ expect(screen.queryByRole('status')).not.toBeInTheDocument();
+ expect(screen.queryByRole('table')).not.toBeInTheDocument();
+ if (details.snapshot.error) expect(screen.getByRole('alert')).toHaveTextContent(details.snapshot.error);
+ else expect(screen.getByText('Faturamento interno salvo').nextElementSibling).toHaveTextContent('1.200,00');
+ fireEvent.keyDown(heading, { key: 'Tab' });
+ expect(screen.getByRole('button', { name: 'Fechar' })).toHaveFocus();
+ fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true });
+ expect(heading).toHaveFocus();
+});
+
+test.each([
+ ['fontes ausentes', { snapshot: { value: null }, history: { value: { versoes: [] } } }, 'heading'],
+ ['carregamento', null, 'status'],
+])('modal mantém navegação por Tab no conteúdo de %s sem tabelas vazias', (_, details, role) => {
+ render(<Modal titulo="Conferir empresa" aoFechar={() => {}}><CalculationEvidence details={details} /></Modal>);
+ const content = screen.getByRole(role, role === 'heading' ? { name: 'Fontes da conferência' } : undefined);
+ const close = screen.getByRole('button', { name: 'Fechar' });
+ expect(content).toHaveFocus();
+ expect(content).toHaveAttribute('tabindex', '0');
+ expect(screen.queryByRole('table')).not.toBeInTheDocument();
+ fireEvent.keyDown(content, { key: 'End' });
+ expect(content).toHaveFocus();
+ fireEvent.keyDown(content, { key: 'Tab' });
+ expect(close).toHaveFocus();
+ fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
+ expect(content).toHaveFocus();
+ expect(screen.getByRole('dialog')).toContainElement(document.activeElement);
 });

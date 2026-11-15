@@ -1,0 +1,390 @@
+{
+  "checks": [
+    {
+      "state": "alerts",
+      "width": 1440,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 1440,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "error",
+      "width": 1440,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "missing",
+      "width": 1440,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "loading",
+      "width": 1440,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "evidence",
+      "width": 1440,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "partial",
+      "width": 1440,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "absent",
+      "width": 1440,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "alerts",
+      "width": 390,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 390,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "error",
+      "width": 390,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "missing",
+      "width": 390,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "loading",
+      "width": 390,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "evidence",
+      "width": 390,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "partial",
+      "width": 390,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "absent",
+      "width": 390,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "alerts",
+      "width": 360,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 360,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "error",
+      "width": 360,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "missing",
+      "width": 360,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "loading",
+      "width": 360,
+      "overflow": false,
+      "reads": [
+        0
+      ],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "evidence",
+      "width": 360,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "partial",
+      "width": 360,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "state": "absent",
+      "width": 360,
+      "overflow": false,
+      "reads": [],
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "count": 1
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [],
+  "network": []
+}

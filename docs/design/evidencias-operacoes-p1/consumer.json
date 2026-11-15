@@ -1,0 +1,23 @@
+[
+  {
+    "width": 1440,
+    "opening": {
+      "focus": "<h3 tabindex=\"-1\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+      "scroll": 0
+    }
+  },
+  {
+    "width": 390,
+    "opening": {
+      "focus": "<h3 tabindex=\"-1\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+      "scroll": 0
+    }
+  },
+  {
+    "width": 360,
+    "opening": {
+      "focus": "<h3 tabindex=\"-1\" data-modal-autofocus=\"true\">Fontes da conferência</h3>",
+      "scroll": 0
+    }
+  }
+]
