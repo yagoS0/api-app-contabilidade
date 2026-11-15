@@ -13,6 +13,7 @@ import './operacoes.css';
 import { OperationsApproval } from './OperationsApproval';
 import { OperationsAlerts } from './OperationsAlerts';
 import { OperationsRoutineCompanies } from './OperationsRoutineCompanies';
+import { OperationsDasPendencias } from './OperationsDasPendencias';
 import { useOperationsEvidence } from './useOperationsEvidence';
 import { CompetenciaCarteira } from '../companies/list/components/CompetenciaCarteira';
 import { OperationsProcuracao } from './OperationsProcuracao';
@@ -162,6 +163,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
         <div className="operacoes-quatro-pizzas">{[['parcelas','Parcelamento'],['fiscal','Situação fiscal'],['certificado','Certificado'],['procuracao','Procuração']].map(([key,title]) => <Pizza key={key} title={title} groups={distribution[key]} unavailable={unavailable} onSelect={group => setChart({ key, group, competencia })} />)}</div>
       </div>
       <OperationsRoutineCompanies api={api} companies={companies} competencia={competencia} loading={loading} error={error} onRefreshCompanies={refresh} />
+      <OperationsDasPendencias api={api} companies={companies} competencia={competencia} unavailable={unavailable} />
     </div>
     {panel?.competencia === competencia && !unavailable && !(manualUnavailable && ['guias','concluido','disponivel','enviado','pago'].includes(panel.key)) && <Modal titulo={panel.title} tamanho="lg" className="operacoes-dialogo" suspenso={Boolean(calculationRow) || guideSuspended} ocupado={busy} aoFechar={() => !busy && closePanel()} rodape={<><div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>{!guidePanel && panel.key !== 'transmitido' && <Button variant="secondary" disabled={busy} onClick={closePanel}>Fechar</Button>}</>}>
       <div hidden={guideReviewing}>

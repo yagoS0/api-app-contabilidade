@@ -1,0 +1,16 @@
+.das-pendencias-access { display: flex; justify-content: flex-end; margin-block: var(--space-2, 8px); }
+.das-pendencias { color: var(--text); overflow-wrap: anywhere; }
+.das-pendencias p { line-height: 1.5; }
+.das-pendencias-controls { display: flex; gap: var(--space-3, 12px); align-items: flex-end; flex-wrap: wrap; margin-block: var(--space-4, 16px); }
+.das-pendencias-controls label { flex: 1 1 240px; display: grid; gap: var(--space-2, 8px); min-width: 0; }
+.das-pendencias-controls select { width: 100%; min-height: 40px; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2); }
+.das-pendencias select:focus-visible, .das-pendencias summary:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.das-pendencias summary { cursor: pointer; padding-block: 8px; }
+.das-pendencias-findings { padding-left: 24px; }
+.das-pendencias-findings > li { border-top: 1px solid var(--border); padding-block: 12px; }
+.das-pendencias h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+.das-pendencias dl { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 8px; font-size: .875rem; }
+.das-pendencias dt { font-weight: 600; }
+.das-pendencias dd { margin: 0; }
+.das-pendencias-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 600px) { .das-pendencias-controls { align-items: stretch; flex-direction: column; } .das-pendencias-controls label { flex-basis: auto; } .das-pendencias dl { grid-template-columns: 1fr; } }

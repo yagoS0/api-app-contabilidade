@@ -839,6 +839,7 @@ export function createRealApi() {
     getCompanySimplesCycle: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples`),
     reviseCompanySimplesCycle: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/ciclo-simples/revisao`, { method: 'POST', body: JSON.stringify(input) }),
     getOperationRoutines: () => request('/firm/operacoes/rotinas'),
+    getCompanyDasPendencias: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/pendencias-das`, { method: 'GET', cache: 'no-store' }, true),
     getOperationEvidence: competencia => request('/firm/operacoes/evidencias?competencia=' + encodeURIComponent(competencia)),
     getOperationConsultas: competencia => request('/firm/operacoes/consultas?competencia=' + encodeURIComponent(competencia)),
     getOperationManualInss: competencia => request(`/firm/operacoes/inss-manual?competencia=${encodeURIComponent(competencia)}`),

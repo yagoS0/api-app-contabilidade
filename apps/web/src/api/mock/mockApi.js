@@ -3920,6 +3920,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
   const operationPreviews = new Map(), operationBatches = new Map(), operationReceipts = new Map(), operations = new Map();
 
   return withComposicaoParcelamentoMock(withFluxoCarteiraMock({
+    async getCompanyDasPendencias() {
+      throw new Error('Consulta de evidências DAS/SERPRO indisponível na demonstração.');
+    },
     async getCompanyOperation(companyId, competencia) {
       const k = `${companyId}:${competencia}`;
       if (!operations.has(k)) operations.set(k, { companyId, competencia, status: 'PENDING', revision: crypto.randomUUID(), pending: [], blocked: null, calculation: null, execution: null });
