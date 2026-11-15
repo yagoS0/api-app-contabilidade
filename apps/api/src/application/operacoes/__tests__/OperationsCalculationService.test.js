@@ -17,6 +17,17 @@ function fixture() {
  return {db,deps,settings,audit,setSnapshot:v=>snapshot=v};
 }
 async function command(f) {return {companyId:'a',competencia:'2026-10',userId:'user',requestId:'request-123',confirmCompetencia:'2026-10',expectedRevision:(await prepararCalculoOperacoes(f.db,'a','2026-10',f.deps)).revision};}
+
+test('sem movimento pode passar na prévia, mas exige revisão antes de simular', async () => {
+ const f = fixture();
+ f.deps.getDados.mockResolvedValue({ atividades: [{ idAtividade: '1', valorInterno: 0, valorExterno: 0, sujeitoFatorR: false }], faturamento: { total: 0 }, rbt12Origem: 'EXTRATO_PGDAS', rbt12: 1000 });
+ expect((await prepararCalculoOperacoes(f.db, 'a', '2026-10', f.deps)).canCalculate).toBe(true);
+ const result = await executarCalculoOperacoes(f.db, await command(f), f.deps);
+ expect(result.status).toBe('REVIEW');
+ expect(result.reason).toContain('sem movimento');
+ expect(f.deps.collect).toHaveBeenCalledTimes(1);
+ expect(f.deps.calculate).not.toHaveBeenCalled();
+});
 test('coleta NFS-e, audita e simula uma vez; replay não coleta nem calcula',async()=>{const f=fixture(),c=await command(f); const out=await executarCalculoOperacoes(f.db,c,f.deps);expect(out.status).toBe('CALCULATED');expect(out.calculation).toMatchObject({receita:100,imposto:6});expect(await executarCalculoOperacoes(f.db,c,f.deps)).toEqual(out);expect(f.deps.collect).toHaveBeenCalledTimes(1);expect(f.deps.calculate).toHaveBeenCalledTimes(1);expect((await lerResultadoCalculoOperacoes(f.db,'a','2026-10','request-123')).attempt.requestId).toBe('request-123');await conferirCalculoManualOperacoes(f.db,'a','2026-10',f.deps);});
 test.each([{complete:false},{partial:true},{cnpj:'999'},{ok:false}])('coleta incompleta/identidade inválida impede simulação %j',async patch=>{const f=fixture(),c=await command(f);f.deps.collect.mockResolvedValue({ok:true,complete:true,partial:false,cnpj:'12345678000199',...patch});expect((await executarCalculoOperacoes(f.db,c,f.deps)).status).toBe('REVIEW');expect(f.deps.calculate).not.toHaveBeenCalled();});
 test('NF-e efetiva bloqueia mesmo sem fonte configurada',async()=>{const f=fixture();f.db.portalInvoice.count.mockResolvedValue(1);expect((await prepararCalculoOperacoes(f.db,'a','2026-10',f.deps)).canCalculate).toBe(false);});

@@ -1,0 +1,76 @@
+{
+  "base": "cbea0e52fb2d75327056067283759b3a73c9a3cc",
+  "productionCandidate": "9473df9cc8cc0d99e573848d3e81d9d4fc6d17c8",
+  "scope": "Characterization only; no additional production changes",
+  "environment": {
+    "node": "20.20.2",
+    "network": "closed provider doubles; loopback PostgreSQL",
+    "database": "altan_rotinas_governance_test",
+    "postgres": "16.15"
+  },
+  "api": {
+    "skippedEach": 4,
+    "basePassed": 264,
+    "postgresPassedEach": 24,
+    "candidatePassed": 264,
+    "divergentResults": 0
+  },
+  "web": {
+    "basePassed": 445,
+    "navigationFinalEach": 4,
+    "additionalP1Tests": 21,
+    "candidatePassed": 466,
+    "commonPassed": 445
+  },
+  "governance": {
+    "passed": 40,
+    "candidateViolations": 5023,
+    "architectureTests": 5,
+    "newViolations": 0,
+    "controller": "Prior systemic review inconclusive; repeat interrupted; no ready_for_human",
+    "baselineViolations": 5023,
+    "mode": "diagnose"
+  },
+  "fixtures": [
+    {
+      "sha256": "43a702a708b3d6cb39b9ab5d82832afe39b35cbeaae014b47a5442a29dfdc9e9",
+      "identicalInBase": true,
+      "path": "apps/web/src/features/operacoes/__tests__/OperationsNavigationHttp.test.jsx"
+    },
+    {
+      "sha256": "e49f7c24b2c27b9e0c7533acb91418f12e18ab6693b0e8e906f23f887470810e",
+      "identicalInBase": true,
+      "path": "apps/api/src/application/operacoes/__tests__/OperationsBatchService.postgres.test.js"
+    },
+    {
+      "sha256": "c55ea8cf5e2749ddddb348f2cf29a09a681d8644a835f82adfa105686d79267f",
+      "identicalInBase": true,
+      "path": "apps/api/src/application/operacoes/__tests__/OperationsCalculationService.test.js"
+    },
+    {
+      "sha256": "a561f9e878898246214c108a7db85e56b69dcc8aed209cecba5ec6407d2ca862",
+      "identicalInBase": true,
+      "path": "apps/api/src/application/operacoes/__tests__/OperationsEligibility.characterization.test.js"
+    }
+  ],
+  "limits": [
+    "UI/client and HTTP/PostgreSQL are separate layers, not browser-to-server E2E",
+    "HTTP identity is synthetic; canonical company ACL and services are real",
+    "New HTTP test uses existing synchronous path; no live queue or provider certification",
+    "Four historical skipped tests remain explicitly unexecuted"
+  ],
+  "reviews": [
+    {
+      "reviewer": "/root/p1_contratos",
+      "scope": "Fiscal/Operações",
+      "verdict": "favorable; no blocking findings",
+      "execution": "read-only; tests not rerun by reviewer"
+    },
+    {
+      "reviewer": "/root/p1_arquitetura",
+      "scope": "systemic/backend",
+      "verdict": "favorable; no blocking findings",
+      "execution": "read-only; tests not rerun by reviewer"
+    }
+  ]
+}
