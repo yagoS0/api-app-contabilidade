@@ -1,0 +1,102 @@
+{
+  "summary": "Etapa4.4.7: avaliação de viabilidade de recuperação documental local DAS/SERPRO, sem implementação; base0d3c2f0 (PR283).",
+  "operationalImpact": "Nenhuma alteração operacional. R01/R02/R04–R06/R10–R12/R16/R19/R20/R25/R26 preservadas. Fiscal/SERPRO, Guias, Contabilidade, Operações, segurança e arquitetura analisados; documentação e teste puro sob docs são os únicos novos consumidores de funções existentes. HTTP/UI445/446, contratos GERARDAS12/GERARDASCOBRANCA17,275,cache/TTL,reservas,políticas,escritores,comunicação,comercial,portal,workers,Prisma e implantação sem diff. Registro runtime histórico não altera governança.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance",
+    "fiscal",
+    "guides",
+    "accounting",
+    "operations",
+    "security"
+  ],
+  "tests": [
+    "Novos10 ensaios C1–C10 aprovados por node --test docs/modules/evidencias/serpro-das-447.test.mjs; funções reais puras e fixtures sintéticas, sem algoritmo recuperador.",
+    "10 suítes Jest existentes:159/159 testes e42/42 snapshots aprovados; mocks de transporte,persistência e credenciais conforme cada suíte. Comando completo no documento447.",
+    "Governança88/88; verificador5/5; diagnose sobre base Git e candidata5023→5023, zero acréscimos. Erro técnico inicial por schema omitido do arquivo-base foi corrigido incluindo schema da mesma base, sem alterar analisador ou aceitar resultado incompleto.",
+    "Hash operacional canônico/fallback e50fa30d9c205d4f09fb7638429509bb49bfb49016107e9e27d759faa649639f; Node20.20.2/npm10.8.2. Nenhum teste de recuperação, PostgreSQL novo, crash de worker ou dados reais.",
+    "Check de impacto/governança final aprovado; git diff --check aprovado;308 links relativos do documento447 e índice válidos. Sem diff em apps,packages,scripts,CI,infra,schemas,contratos ou implantação."
+  ],
+  "rollback": "Reverter apenas avaliação, ensaio puro sob docs, índice e registros documentais desta entrega. Nenhum código produtivo,dado,schema,migration ou configuração a desfazer; preservar worktrees,branches,logs e clusters anteriores.",
+  "humanDecisions": [
+    "PR somente rascunho; aguardar autorização humana antes de integrar ou iniciar incremento futuro. Não merge/deploy/AutoDeploy/SERPRO/emissão/retry/recuperação/escrita contábil/resolução de reserva.",
+    "Aprovar separadamente escopo de eventual prévia read-only e, depois, eventual escritor com evidências adicionais. Autorização humana não supre prova de identidade/histórico ausente."
+  ],
+  "base": "0d3c2f0cd136246cfad6cb8f67f2dd1802efd878",
+  "branch": "docs/ddd-serpro-das-recuperacao-avaliacao-447",
+  "controller": {
+    "runId": "2026-11-15T13-12-48-474Z-96021036",
+    "observedStatus": "ready_for_human",
+    "scope": "documento inicial somente",
+    "calls": 4,
+    "rounds": 1,
+    "sourceFingerprint": "ddd95e71b6922bc87f851ce6736f265f8a43aabdbde47bc1b2b524fea62feaae",
+    "initialDocumentSha256": "45b5e2b32efa282451cbdbf8272e3e4d117d5a82ab4d3b796b6c24f94eb1a8c7",
+    "finalCandidateCertified": false,
+    "limitation": "Classificador selecionou documentation/low e apenas gate governança; Principal elevou risco high, executou caracterização/arquitetura e solicitou6papéis independentes. Complementos posteriores mudam fingerprint; status histórico não certifica candidata final. Nenhum gate/permissão/papel/status alterado."
+  },
+  "reviews": [
+    {
+      "reviewer": "/root/revisao_fiscal_operacoes",
+      "roles": [
+        "Fiscal/SERPRO",
+        "Operações"
+      ],
+      "status": "approved_documentary_only",
+      "date": "2026-11-15",
+      "timezone": "America/Sao_Paulo",
+      "blockingFindings": [],
+      "method": "Inspeção independente somente leitura de fontes,diff,ensaio e logs; testes executados pelo Principal, não pelos revisores."
+    },
+    {
+      "reviewer": "/root/revisao_guias_contabilidade",
+      "roles": [
+        "Guias",
+        "Contabilidade"
+      ],
+      "status": "approved_documentary_only",
+      "date": "2026-11-15",
+      "timezone": "America/Sao_Paulo",
+      "blockingFindings": [],
+      "method": "Inspeção independente somente leitura de fontes,diff,ensaio e logs; testes executados pelo Principal, não pelos revisores."
+    },
+    {
+      "reviewer": "/root/revisao_seguranca_arquitetura",
+      "roles": [
+        "segurança",
+        "arquitetura",
+        "sistêmico"
+      ],
+      "status": "approved_documentary_only",
+      "date": "2026-11-15",
+      "timezone": "America/Sao_Paulo",
+      "blockingFindings": [],
+      "method": "Inspeção independente somente leitura de fontes,diff,ensaio e logs; testes executados pelo Principal, não pelos revisores."
+    }
+  ],
+  "limitations": [
+    "Viabilidade de prévia local conservadora, não prova de recuperação segura de casos reais.",
+    "Cache sem vínculo exclusivo resposta→tentativa; parser não valida identidade/PDF; ausência sem tombstone e pagamentos órfãos omitidos445.",
+    "Sem atomicidade global/ensaio crash ou idempotência de recuperação futura; testes caracterizam funções atuais.",
+    "CI hospedada identificada no PR; resultados locais não substituem checks remotos e autorização humana."
+  ],
+  "reviewedArtifacts": {
+    "document": {
+      "path": "docs/modules/serpro-das-recuperacao-avaliacao-447.md",
+      "sha256": "0f20faae14df79990567ce1d7d731ec4c1755f1f39f79a6ce86ad9d3ca37763f"
+    },
+    "characterization": {
+      "path": "docs/modules/evidencias/serpro-das-447.test.mjs",
+      "sha256": "343071b877d0d8066c96f51d9ab0ac9309d3bbd067ba9ae8c8c3f8166172ad4b"
+    }
+  },
+  "finalReview": "Seis papéis cobertos em três pareceres independentes favoráveis, sem bloqueantes. Aprovação exclusiva da avaliação documental e do ensaio caracterizador; não comprova recuperação/idempotência futuras nem autoriza ações operacionais. Julgamento sistêmico final favorável por /root/revisao_seguranca_arquitetura, somente avaliação documental.",
+  "systemReview": {
+    "status": "approved_documentary_only",
+    "reviewer": "/root/revisao_seguranca_arquitetura",
+    "date": "2026-11-15",
+    "timezone": "America/Sao_Paulo",
+    "scope": "Consolidação dos cinco arquivos, pareceres independentes e evidências nos hashes documentais registrados; sem bloqueantes. Não certifica recuperação nem autoriza implementação,integração ou operação."
+  }
+}

@@ -324,3 +324,5 @@ Os caminhos são relativos à raiz do repositório. Cada arquivo aparece na clas
 - [Projeção interna de conciliação DAS/SERPRO 4.4.5](modules/serpro-das-conciliacao-leitura-445.md) — contrato somente leitura, evidências e limitações.
 
 - [Consulta operacional DAS/SERPRO 4.4.6](modules/serpro-das-pendencias-446.md) — apresentação somente leitura por empresa e competência.
+
+- [Avaliação da recuperação documental local DAS/SERPRO 4.4.7](modules/serpro-das-recuperacao-avaliacao-447.md) — viabilidade, matrizes, lacunas, proposta de prévia read-only e evidências sintéticas; sem recuperação implementada.
