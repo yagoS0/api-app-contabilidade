@@ -1,99 +1,100 @@
-# F1 — proposta UX/UI de Operações e Apuração
+# F1 — revisão 2: Operações dentro da Altan
 
-Documento revisável do [plano diretor](../modules/plano-diretor-operacoes-apuracao.md), base `fac886c4dbbf534f76d54d5869ebeee835a31cc9`. **Não implementar interface antes da aprovação humana de F1.** Aprovação visual não autoriza regra tributária, transmissão ou mudança de permissão.
+**Status: proposta anterior rejeitada; alternativas A e B aguardam aprovação humana.** A CI e os pareceres técnicos não aprovam o design. Esta revisão atende ao [comentário do PR #287](https://github.com/yagoS0/api-app-contabilidade/pull/287#issuecomment-6898034360). O [plano técnico F0/F2–F6](../modules/plano-diretor-operacoes-apuracao.md) permanece intacto.
 
-## Evidência da tela atual
+Base do PR: `fac886c4dbbf534f76d54d5869ebeee835a31cc9`. Revisão visual posterior ao head `4a409e7318590bde9888c86043bf2d0de0a43bed`. Nenhuma alteração funcional, fiscal, contábil, HTTP, schema, worker ou configuração de produção.
 
-Inspeção em 15/11/2026, Chrome isolado em desenvolvimento local, `VITE_API_MODE=mock`, nenhum backend iniciado. Navegação permitida somente em loopback; rede externa bloqueada. Operações usa `revisao-dev.html`, que monta `OperationsPage` real. Apuração usa App real, sessão exclusivamente sintética do mock e rota `/companies/:id/cadastro-fiscal`. Não houve login real ou acesso à produção.
+## Abrir e comparar
 
-Foram observados: Operações normal e erro, lista global de Apuração vazia e Apuração da empresa com dados fictícios/Fator R sem folha, nas larguras 1440 e390. A primeira captura da empresa ainda carregava; foi substituída após conclusão da leitura local. Sem overflow global nos estados medidos. Nenhuma captura nova de Operações/Apuração foi fornecida neste pedido; a imagem antiga de NFS-e da conversa não foi usada como prova dessas telas.
+- [Comparação lado a lado: tela atual, A e B](comparacao-operacoes-f1.html) — selecione largura e estado.
+- [Alternativa A: expansão na página](plano-operacoes-apuracao.html?alternativa=A).
+- [Alternativa B: área de trabalho focada](plano-operacoes-apuracao.html?alternativa=B).
+- [Evidências e resultado automatizado](evidencias-plano-operacoes-apuracao/f1-r2/validacao.json).
 
-| Tela real com fixture | Desktop | Celular |
+Os HTMLs devem permanecer no checkout, junto aos CSS/tokens. Podem ser abertos pelo navegador ou por servidor estático somente em loopback na raiz do repositório. Sem API, armazenamento de negócio, consulta externa ou bibliotecas remotas. CSP bloqueia conexões. Os controles demonstram navegação; não executam comandos reais.
+
+## Comparação com a interface real antes de implementar
+
+Reinspecionados [OperationsPage](../../apps/web/src/features/operacoes/OperationsPage.jsx), [operacoes.css](../../apps/web/src/features/operacoes/operacoes.css), [OperationsCalculationDetails e OperationsTransmissionTable](../../apps/web/src/features/operacoes/OperationsCalculationDetails.jsx), [OperationsRoutineCompanies](../../apps/web/src/features/operacoes/OperationsRoutineCompanies.jsx), [instruções da Apuração](../../apps/web/src/features/apuracao-v2/CLAUDE.md), [regras de design](../design-review.md), [DESIGN_SYSTEM](../../DESIGN_SYSTEM.md) e [UX_RULES](../../UX_RULES.md).
+
+A referência visual desta rodada é o **App real**, rota local `/companies?visao=operacoes&competencia=2026-10`, com Vite mock e sessão sintética. Não se limita ao invólucro `revisao-dev.html` usado na primeira rodada. Não houve acesso à produção. O browser bloqueia rede fora do loopback; os valores são fixtures, não dados reais.
+
+| Elemento atual observado | A | B |
 | --- | --- | --- |
-| Operações | [Captura](evidencias-plano-operacoes-apuracao/operacoes-desktop.png) | [Captura](evidencias-plano-operacoes-apuracao/operacoes-mobile.png) |
-| Apuração da empresa | [Captura](evidencias-plano-operacoes-apuracao/apuracao-empresa-desktop.png) | [Captura](evidencias-plano-operacoes-apuracao/apuracao-empresa-mobile.png) |
+| Navegação Operação → Operações, competência acima da página | Preservada no enquadramento | Preservada no enquadramento |
+| Três containers lado a lado, empilhados no celular | Preservados, indicadores de Apuração em linhas | Preservados, quatro indicadores em grade dentro de Apuração |
+| Quatro distribuições cadastrais abaixo | Preservadas | Preservadas no resumo; recolhidas durante a tarefa |
+| Rotinas como faixa horizontal após distribuições | Preservada | Preservada no resumo; recolhida durante a tarefa |
+| Clique no indicador abre tabela contextual | Mesa expandida abaixo dos três containers | Mesa focada com os três containers compactados acima |
+| Detalhe longo de apuração | Substitui somente o conteúdo da mesa, sem modal pequeno | Usa a largura da mesa focada, sem página independente |
+| Guias e Contabilização | Mesmos fatos/indicadores; rótulo proposto Contabilidade | Mesmos fatos/indicadores; resumo recuperável com Voltar |
 
-Achados observados:
+Os overrides finais do CSS real prevalecem: Rotinas **não** é a antiga sidebar. Cabeçalho de navegação é ilustrativo e inerte no artefato; não é nova navegação do produto. O rótulo Contabilidade segue o pedido atual; não implica renomear rotas ou contratos. Os conjuntos/valores das fixtures atuais e propostas diferem, portanto a comparação é visual, **não paridade de números**.
 
-- Operações mantém três blocos altos (Apuração, Guias, Contabilização), indicadores cadastrais e rotinas abaixo. No celular, o percurso até as rotinas fica longo. Não se trata de overflow: é densidade/hierarquia a revisar.
-- O mock informa explicitamente conferência indisponível e não simula aprovação. Isso limita a validação de modais/ações reais; não afirmar homologação integral.
-- Apuração já agrupa competência/ações/cinco indicadores e expõe a tabela de anexo, Fator R e comparação. Preservar essa decisão; não substituir por novo painel de cálculo.
-- Ações “Buscar extrato”, “Atualizar na Receita” e “Calcular/Fechar” convivem na mesma área. A nova organização deve explicar efeitos sem renomear comando de consulta/simulação como cálculo puramente local.
-- Valores ausentes e cenários hipotéticos já têm distinção visual. Não eliminar avisos fiscais para reduzir densidade.
+Capturas atuais em [1440](evidencias-plano-operacoes-apuracao/f1-r2/atual-1440.png), [1366](evidencias-plano-operacoes-apuracao/f1-r2/atual-1366.png), [390](evidencias-plano-operacoes-apuracao/f1-r2/atual-390.png) e [360](evidencias-plano-operacoes-apuracao/f1-r2/atual-360.png). A [Apuração atual desktop](evidencias-plano-operacoes-apuracao/apuracao-empresa-desktop.png) e [mobile](evidencias-plano-operacoes-apuracao/apuracao-empresa-mobile.png) são evidências da rodada anterior, identificadas como tal.
 
-## Tokens e componentes a reutilizar
+## Duas alternativas para decisão humana
 
-Fonte: `apps/web/src/styles/tokens.css`. Fundo `--bg-page`, superfícies `--bg-surface/--bg-subtle`, texto `--text/--text-muted`, borda `--border`, foco `--border-focus`, ação `--primary`, estados `--state-*`. Corpo usa fonte de sistema; Inter fica na navegação/marca. Escala existente4/8/12/16/24/32, raios10/8; mobile com alvos44px. O protótipo carrega o CSS de tokens da própria árvore; não define sistema visual paralelo.
+**A — expansão na página.** Mantém a leitura visual mais próxima da Operações atual. A tabela, seleção, prévia de lote e conferência aparecem numa mesa abaixo dos três containers. O foco leva diretamente à tarefa. Ao retornar, busca, seleção e posição são restauradas. Vantagem: continuidade explícita com o resumo; custo: página mais longa, principalmente no celular.
 
-Reutilizar `components/ui/Button`, `Painel`, `Modal`, `components/layout/PageHeader`, seletor de competência e padrões de tabelas/alertas. Novos nomes abaixo são responsabilidades de componentes propostos, não criação autorizada de uma biblioteca.
+**B — área de trabalho focada.** No resumo, preserva toda a página; Apuração usa quatro indicadores em grade. Ao abrir uma etapa, os três containers são compactados e as distribuições/rotinas recolhidas temporariamente, liberando espaço para a mesa. Voltar ao resumo restaura a organização completa. Vantagem: menor percurso durante a tarefa; custo: mudança visual maior e necessidade de tornar o retorno evidente. Não abre página independente de Apuração.
 
-## Alternativas e fluxo recomendado
+Nenhuma alternativa foi escolhida pelo agente. A escolha humana deve considerar tanto a página completa quanto tabela, lote e conferência, em desktop e celular.
 
-**A — recomendada:** resumo compacto no contexto Operações; tabela da etapa no mesmo espaço; conferência abre a superfície ampla da Apuração da empresa. Voltar preserva competência, etapa, filtro e seleção. Evita duplicar o motor e o formulário de fechamento.
+## Fluxos demonstrados
 
-**B — alternativa:** painel lateral amplo no desktop e página inteira no celular. Exige prova de espaço/foco e preservação de formulários; risco maior de duas implementações da conferência. Não usar modal pequeno para todas as notas, fundamentos, valores e histórico.
+1. Abrir A calcular, A conferir, Confirmadas ou Transmitidas → lista correspondente.
+2. Pesquisar, selecionar uma empresa ou as visíveis → revisar quantidade total e selecionadas fora da busca.
+3. Preparar lote → separar elegíveis ilustrativas, impedidas e motivos → alternar origem manual/automática → ver **resultado ilustrativo**, sem executar.
+4. Conferir uma empresa → ler origem, revisão, impedimentos e próximo passo → retornar à mesma lista, busca, seleção e posição.
+5. Abrir apuração externa → distinguir declaração manual de recibo/transmissão comprovados.
+6. Abrir Impedidas / a revisar → examinar procuração, pausa, recusa, base e regime; Lucro Presumido permanece fora da automação PGDAS.
+7. Abrir Rotinas → comparar capacidades manuais/programadas e bloqueios; nenhuma configuração ativa transmissão.
+8. Abrir notas posteriores → listar empresa e competência, inclusive fora do mês selecionado, sem alterar automaticamente a revisão.
 
-Fluxo: selecionar competência → abrir etapa → examinar pendência/evidências → escolher empresas → revisar elegíveis/bloqueadas e efeito → entrar no comando autorizado. A conferência da revisão não transmite. Consulta, simulação e transmissão possuem confirmações e requisitos próprios. O protótipo demonstra somente navegação, filtro, seleção e detalhe de uma empresa sintética.
+Guias e Contabilidade são referências preservadas, sem novas telas ou regras. Cliques nos seus indicadores apenas informam esse limite do protótipo.
 
-## Contadores: definição proposta a aprovar em F2
+## Indicadores e seleção: proposta, não alteração de regra
 
-Universo U = pares únicos empresa/competência autorizados, com Simples comprovado e obrigação aplicável. Exibir cobertura e origem da leitura; regime/aplicabilidade desconhecidos ficam “A verificar”, sem sumir ou virar não aplicável. Pausas e recusas não eliminam obrigação: mostrar responsabilidade e elegibilidade separadas.
+Universo sintético: **10 empresas Simples** de outubro; **1 Lucro Presumido** e **1 regime a verificar** fora dele. A calcular = 4; A conferir = 3; Confirmadas = 2; Transmitidas = 2. As duas transmitidas também estão confirmadas. Uma empresa tem apuração externa declarada, sem prova oficial. **Os quatro números não são somáveis.** A lista de cinco impedidas/a revisar inclui regime desconhecido; não é subconjunto exclusivo de um indicador.
 
-| Contador | Predicado proposto | Limite |
-| --- | --- | --- |
-| A calcular | Execução interna em escopo, sem cálculo vigente utilizável | Bloqueadas são identificadas dentro da lista; apuração externa não cria cálculo local fictício. |
-| A conferir | Cálculo/revisão disponível e aprovação humana ausente/invalidada | Pode coexistir com declaração oficial já existente. |
-| Confirmadas | Aprovação válida da revisão corrente | Não equivale a autorização de transmissão. |
-| Transmitidas | Declaração comprovada, interna ou externa com evidência | Informação manual sem prova não entra como transmissão comprovada. |
+Os predicados do plano técnico continuam sujeitos a F2/P2a: mudar denominador não é renomeação visual. Preservar empresa/PA/autorização e origem da evidência. Seleção ilustrativa não é política de permissão. O lote atual ainda exige contrato próprio para seleção explícita.
 
-Não somar contadores como partição de U. IDs contados e tabela devem usar o mesmo predicado/snapshot ou explicitar atualização concorrente. As projeções atuais `operacoes.js` misturam regimes e incluem desconhecidos em missing; mudar o denominador **não é renomeação visual** e exige P2a/P2b.
+Busca mantém seleção e explicita quantas ficam ocultas; trocar etapa limpa seleção. O conjunto preparado contém apenas IDs selecionados. Troca real de empresa/competência exigirá invalidar contexto e revalidar no servidor; o protótipo fixa outubro e não simula troca de PA. Zero comprovado, desconhecido e não aplicável são distintos.
 
-Tabela proposta: empresa, PA, regime, origem, resultado, pendência, situação e ação. No desktop, alinhamento numérico à direita e detalhes sob demanda; celular usa linhas/cartões com a mesma informação, sem corte global. Seleção informa total selecionado, elegíveis por capacidade, bloqueadas e motivos. Filtro não amplia seleção; troca de competência invalida a seleção anterior. A opção de preservar seleção ao trocar etapa precisa de decisão explícita; o protótipo a limpa e informa isso.
+## Conferência detalhada e avisos
 
-## Conferência aprofundada
+Horizonte demonstra conferência ampla: empresa/competência/revisão → bloqueio visível junto ao início → cinco informações principais → notas/classificação aberta → Fator R/folha → comparação → documentos e histórico. A organização se baseia na Apuração existente; nenhuma fórmula ou alíquota foi criada. Ausência de FS12 não vira zero; cálculo e comparação permanecem indisponíveis.
 
-Reutilizar ordem vigente: quadro de competência/revisão/ações/cinco indicadores → anexo/tabela aberta e classificação → Fator R → comparação. Acrescentar acesso contextual às notas/segregação e fontes, premissas por receita, alíquota nominal/efetiva, estimativa, comparação R×V e histórico de aprovações/divergências. Não incluir nova fórmula no frontend.
+As demais empresas têm detalhe de evidência específico, não cópias de valores de Horizonte. Procuração vencida bloqueia a consulta oficial; não redefine ACL da leitura local. Pausa/recusa não dispensam obrigação. Informação externa sem prova não vira transmissão, pagamento ou contabilização. Resultado incerto não recebe botão de repetição automática.
 
-No desenho, a conferência ocupa a página, com evidências principais à esquerda e pendência/histórico à direita no desktop; no celular, segue uma coluna. Dados fictícios não apresentam classificação, alíquota ou imposto inventados. O detalhamento interativo é somente da empresa Horizonte; outros registros demonstram conjuntos e seleção e informam a limitação ao abrir.
+Avisos demonstram ocorrência, causa comprovada ou desconhecida, impacto, responsável e próximo passo seguro. Tipos separados: informação/aviso, divergência, erro e bloqueio. Os caminhos de resolução são orientações no protótipo; nenhum cadastro real é aberto ou alterado. As condições de recuperação e reservas existentes permanecem intactas.
 
-## Catálogo de pendências acionáveis
+## Tokens e componentes
 
-Contrato de apresentação proposto: `tipo`, resumo, empresa, PA, etapa, origem, causa comprovada ou hipótese identificada, consequência, responsável, próximo passo seguro, resolução, revisão e data. Código técnico vai em detalhes; não criar código de backend por conveniência de UI. Causa desconhecida permanece desconhecida.
+Reuso direto de [tokens.css](../../apps/web/src/styles/tokens.css) e [operacoes.css](../../apps/web/src/features/operacoes/operacoes.css). Cores: `--bg-page`, `--bg-surface`, `--bg-subtle`, `--text`, `--text-muted`, `--border`, `--border-focus`, `--state-*`; seleção com `--accent-purple-surface`; ação primária com `--primary`. Corpo em fonte de sistema e Inter local na navegação. Espaçamento/raios seguem tokens reais.
 
-| Situação | Tipo / mensagem ao contador | Consequência, responsável e próximo passo |
-| --- | --- | --- |
-| Regime sem prova no PA | Bloqueio: “Confirme o regime deste período.” | Fiscal/cadastro; consultar histórico e evidência, sem copiar regime atual. |
-| Folha/base ausente | Bloqueio: “Faltam dados para conferir esta revisão.” | Contador/DP; completar fonte; não preencher zero. |
-| Sem movimento comprovado | Informação: “Sem movimento; confira a obrigação aplicável.” | Fiscal; fluxo específico, sem concluir dispensa. |
-| Procuração ausente/vencida | Bloqueio da consulta oficial: “A autorização para esta consulta não está válida.” | Responsável cadastral; verificar poderes/vigência; leitura local permanece conforme ACL. |
-| Sem vínculo de acesso | Recusa: “Seu acesso não permite esta operação para a empresa.” | Gestor de acesso; não oferecer atalho que amplie permissões. |
-| Revisão alterada | Revisão: “A base mudou depois da conferência.” | Contador; abrir diferenças e conferir novamente; não retransmitir. |
-| Diferença interno/oficial | Divergência: “Os resultados comparáveis diferem.” | Fiscal; mostrar fonte/revisão/componentes; tolerância não presumida. |
-| Provedor indisponível | Erro técnico: “Não foi possível confirmar o resultado da consulta.” | Operador/suporte; preservar tentativa; não dizer imposto zero. |
-| Reserva/aceite incerto | Bloqueio: “O resultado ainda não está confirmado; não repita a transmissão.” | Fiscal/suporte; seguir conciliação vigente; não botão genérico Tentar novamente. |
-| PDF ausente após confirmação | Pendência documental: “Declaração confirmada; documento ainda indisponível.” | Fiscal/Guias; manter prova, não repetir ato fiscal nem iniciar recuperação automaticamente. |
-| Falha contábil após guia | Erro parcial: “Documento salvo; contabilização requer conferência.” | Contabilidade; comando próprio, fechamento protegido. |
-| Pausa/recusa contratual | Bloqueio operacional: “Execução suspensa neste escopo.” | Responsável pelo contrato/rotina; mostrar motivo/vigência, sem afirmar dispensa legal. |
+Os HTMLs reproduzem visualmente Button, tabela, seletor de competência, indicadores e seções da aplicação; **não são instâncias React dos componentes compartilhados**. Na futura implementação autorizada, reutilizar componentes reais e contratos existentes. Não introduzir biblioteca paralela, motor fiscal ou derivação de autorização no frontend.
 
-Resolução proposta: aberta → em análise → resolvida por evidência/revisão; recorrência registra novo fato, não apaga histórico. Reconhecer aviso não resolve uma obrigação. Esse ciclo não é nova persistência autorizada.
+## Evidências das alternativas
 
-## Protótipos revisáveis
+A galeria mostra lado a lado o atual e as duas propostas, com todos os estados e larguras. Capturas individuais principais:
 
-[Abrir HTML navegável](plano-operacoes-apuracao.html). Abrir a partir do checkout preserva a referência aos tokens; para servir localmente, usar servidor estático somente em loopback na raiz do repositório. Sem API, fetch, formulário de transmissão ou bibliotecas remotas; CSP bloqueia conexões.
+| Estado | A desktop | B desktop | A celular | B celular |
+| --- | --- | --- | --- | --- |
+| Operações completa | [1440](evidencias-plano-operacoes-apuracao/f1-r2/A-operacoes-1440.png) | [1440](evidencias-plano-operacoes-apuracao/f1-r2/B-operacoes-1440.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/A-operacoes-390.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/B-operacoes-390.png) |
+| Tabela A conferir | [1440](evidencias-plano-operacoes-apuracao/f1-r2/A-conferir-1440.png) | [1440](evidencias-plano-operacoes-apuracao/f1-r2/B-conferir-1440.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/A-conferir-390.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/B-conferir-390.png) |
+| Preparação de lote | [1440](evidencias-plano-operacoes-apuracao/f1-r2/A-lote-1440.png) | [1440](evidencias-plano-operacoes-apuracao/f1-r2/B-lote-1440.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/A-lote-390.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/B-lote-390.png) |
+| Conferência ampla | [1440](evidencias-plano-operacoes-apuracao/f1-r2/A-conferencia-1440.png) | [1440](evidencias-plano-operacoes-apuracao/f1-r2/B-conferencia-1440.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/A-conferencia-390.png) | [390](evidencias-plano-operacoes-apuracao/f1-r2/B-conferencia-390.png) |
+| Bloqueio acionável | [1366](evidencias-plano-operacoes-apuracao/f1-r2/A-bloqueio-1366.png) | [1366](evidencias-plano-operacoes-apuracao/f1-r2/B-bloqueio-1366.png) | [360](evidencias-plano-operacoes-apuracao/f1-r2/A-bloqueio-360.png) | [360](evidencias-plano-operacoes-apuracao/f1-r2/B-bloqueio-360.png) |
 
-| Proposta | Desktop | Celular |
-| --- | --- | --- |
-| Resumo e tabela | [Captura](evidencias-plano-operacoes-apuracao/proposta-desktop.png) | [Captura](evidencias-plano-operacoes-apuracao/proposta-mobile.png) |
-| Conferência ampla | [Captura](evidencias-plano-operacoes-apuracao/proposta-conferencia-desktop.png) | [Captura](evidencias-plano-operacoes-apuracao/proposta-conferencia-mobile.png) |
+São 128 capturas das propostas (16 estados × 2 alternativas × 4 larguras) e 4 capturas novas do App atual. As quatro imagens do protótipo anterior permanecem apenas como histórico da rejeição e não representam as alternativas atuais.
 
-O protótipo contém seis pares aplicáveis e um aviso separado de regime desconhecido. Confirmadas e transmitidas se sobrepõem. A lista desconhecida completa e outros modais não foram prototipados; continuam requisitos do incremento, não funcionalidades demonstradas.
+## Validação, limitações e aprovação
 
-## Critérios de aprovação visual e limites
-
-- Aprovar alternativa A/B, hierarquia, nomenclatura e semântica dos contadores separadamente das regras fiscais.
-- Desktop1440/1366, mobile390/360 e zoom200%; sem overflow global, nomes longos, tabelas e foco visível. Testar carregamento, erro, vazio, dados incompletos, zero comprovado, fonte incerta e revisão antiga.
-- Antes de introduzir confirmação real no mobile, incluir resumo/âncora da pendência bloqueante junto ao contexto/ação inicial; a explicação completa pode permanecer abaixo. O protótipo só informa requisitos, sem confirmar.
-- Teclado: etapa, pesquisa, seleção, detalhe, retorno ao gatilho, confirmação; texto além de cor. A ação bloqueada explica motivo sem desaparecer.
-- Contagem/lista/seleção reconciliadas, inclusive paginação e troca de empresa/PA; dado atrasado não repõe outro contexto.
-- Na inspeção inicial foram medidos1440/390; foco de detalhe/retorno e seleção com exclusão foram exercitados no protótipo. Demais dimensões/estados são critérios de aceite do PR funcional, não homologação declarada.
-- Jest e mock não certificam ACL, persistência, legalidade ou provedor. Resultados completos e revisão UI/UX ficam no registro e no PR. Nenhuma tela produtiva foi alterada.
+- Chromium/Chrome isolado, rede externa bloqueada: quatro indicadores reconciliados às listas, busca, seleção individual/lote, retorno da conferência e prévia, origens manual/automática, resultado ilustrativo, externo, impedimentos, avisos e rotinas.
+- Larguras 1440/1366/390/360: propostas sem overflow global ou erros JavaScript nos estados capturados. Tabelas detalhadas podem rolar dentro do próprio container.
+- **Tela atual em 360px apresentou overflow global**: evidência preservada, sem correção funcional neste escopo. Isso não é atribuído às propostas.
+- Capturas não certificam ACL, tributação, PostgreSQL ou contratos de provedor. Nenhuma chamada fiscal, envio ou escrita de negócio. Testes anteriores da entrega inicial continuam históricos, não são contados como reexecutados.
+- Controlador funcional não iniciado nesta correção exclusivamente documental. Revisão independente UI/UX e resultados atuais registrados no PR e na governança, sem declarar `ready_for_human`.
+- Critério de saída: **aprovação humana explícita de A, B ou ajustes definidos**. Nenhuma CI libera F1, P1/P2, integração ou publicação por consequência.

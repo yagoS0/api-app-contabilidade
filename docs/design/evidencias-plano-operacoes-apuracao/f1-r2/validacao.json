@@ -1,0 +1,794 @@
+{
+  "errors": [],
+  "blocked": [],
+  "checks": [
+    {
+      "kind": "atual",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1440,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1440,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "kind": "atual",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 1366,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 1366,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "kind": "atual",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 390,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 390,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "kind": "atual",
+      "width": 360,
+      "overflow": true
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "A",
+      "width": 360,
+      "state": "presumido",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "operacoes",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "calcular",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "conferir",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "confirmadas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "transmitidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "lote",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "lote-automatico",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "resultado",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "conferencia",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "impedidas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "externas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "externa-detalhe",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "rotinas",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "avisos",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "bloqueio",
+      "overflow": false
+    },
+    {
+      "alt": "B",
+      "width": 360,
+      "state": "presumido",
+      "overflow": false
+    }
+  ]
+}
