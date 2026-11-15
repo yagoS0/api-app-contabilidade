@@ -1,0 +1,34 @@
+{
+  "summary": "F1 revisão 4: acabamento e acessibilidade de B, direção adotada e homologação humana pendente. Sem alteração do plano F0/F2–F6 ou código produtivo.",
+  "operationalImpact": "Nenhum código funcional, regra, estado, schema, worker ou configuração alterado. Plano preserva #275, três ACLs distintas, revisão, reservas incertas, pagamento, fechamento, duplicatas e recuperação. Fiscal decide cálculo/transmissão; Operações coordena capacidades; Guias/Contabilidade/Comunicação mantêm fatos próprios. Protótipo com dados fictícios e sem APIs não faz parte do frontend produtivo.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance",
+    "web",
+    "api",
+    "operations",
+    "fiscal",
+    "guides",
+    "accounting",
+    "communication",
+    "security"
+  ],
+  "tests": [
+    "R4: 120 asserções e 108 capturas; zoom Chrome 200% real (12 capturas); pinch 2 móvel emulado (12 capturas) e retorno por toque após pan em 390/360. Axe 4.14.0: dez estados sem violações; quatro células rechecadas com contraste 14,06:1. NVDA 2026.3.1 real com falas registradas e limitações COM/buffer explícitas. 93 testes de governança; 349 links válidos; diagnose 5023→5023, zero novos. CI final no PR.",
+    "R3:120asserções de interação/contexto/teclado e108capturas em1440/1366/390/360; zeroerroJS/overflowglobal daB. Appatual360overflow registrado sem alterar produto. Corrigidos no protótipo: foco tardio, títulos de distribuições, motivo por capacidade e âncoras sob cabeçalho.",
+    "R3:93testes governança/controlador/verificador aprovados;337links/âncoras válidos;diagnose5023→5023,zero novos. CI final registrada noPR.",
+    "R1/R2 permanecem históricos:876testeswebR1 e132capturasR2 não contados como execuçãoR3. Sem nova execução PostgreSQL local, efeito fiscal ou operação de negócio."
+  ],
+  "rollback": "Reverter somente plano, design, HTML ilustrativo, capturas, índice e registro. Nenhum dado ou comportamento a desfazer. Preservar árvores e bancos antigos.",
+  "humanDecisions": [
+    "Usuário adotou B como direção visual/operacional; não homologouF1 nem autorizouP1/P2. Aguardar homologação humana daB refinada e decisões separadas de integração/primeiroincrementofuncional. Não merge/deploy.",
+    "Definir universo/denominadores, prova externa/suspensão, fundamentação tributária, tolerância de comparação e compatibilidade folhasSalario desde202611. Não implementar enquanto bloqueios específicos persistirem."
+  ],
+  "finalReview": "R4: parecer independente de f1_final_ux favorável à entrega documental com ressalva assistiva explícita, sem bloqueador visual/semântico novo no diff. Inspecionou código, capturas finais, zoom, falas NVDA, axe, contraste e pan com retorno nas duas larguras. Não certifica sessão contínua NVDA nem homologa F1. Normalização LF do registro solicitada e aplicada antes do commit. Nenhuma aprovação de implementação funcional, merge ou deploy.",
+  "limitations": [
+    "Controlador executável não iniciado: entrega somente de planejamento/documentação, sem mudanças funcionais; AGENTS exige inicialização antes de mudanças funcionais. Não se declara ready_for_human nem reutiliza escalated do #286. Análise de impacto/testesgovernança/revisões nativas reais realizados.",
+    "Protótipo sintético, sem código produtivo ou APIs. Não certifica ACL, cálculo, concorrência ou persistência. Zoom desktop 200% e pinch móvel emulado 2 exercitados; não telefone físico, TalkBack ou VoiceOver. NVDA real leu os cenários, mas falhas transitórias COM/buffer e anúncio desconhecido exigiram recuperação; estabilidade assistiva contínua e homologação humana permanecem pendentes. HTML não instancia React; elegibilidade é fixture.",
+    "Préviaoficial existente ≠ cálculo interno; lote atual não aceita seleçãoexplícita; sync oficial pode escrever guia/provisão; rotina dia8 e externoPresumido não comprovam requisitos completos. Não há novo motor ou política de recuperação."
+  ]
+}

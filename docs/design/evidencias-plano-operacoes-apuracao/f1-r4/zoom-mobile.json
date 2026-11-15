@@ -1,0 +1,89 @@
+{
+  "method": "Chrome mobile emulation; pinch scale2; no physical phone or TalkBack",
+  "checks": [
+    {
+      "state": "resumo",
+      "width": 390,
+      "scale": 2,
+      "visualWidth": 195,
+      "scroll": 390
+    },
+    {
+      "state": "tabela",
+      "width": 390,
+      "scale": 2,
+      "visualWidth": 195,
+      "scroll": 390
+    },
+    {
+      "state": "lote",
+      "width": 390,
+      "scale": 2,
+      "visualWidth": 195,
+      "scroll": 390
+    },
+    {
+      "state": "conferencia",
+      "width": 390,
+      "scale": 2,
+      "visualWidth": 195,
+      "scroll": 390
+    },
+    {
+      "state": "notas",
+      "width": 390,
+      "scale": 2,
+      "visualWidth": 195,
+      "scroll": 390
+    },
+    {
+      "state": "incerta",
+      "width": 390,
+      "scale": 2,
+      "visualWidth": 195,
+      "scroll": 390
+    },
+    {
+      "state": "resumo",
+      "width": 360,
+      "scale": 2,
+      "visualWidth": 180,
+      "scroll": 360
+    },
+    {
+      "state": "tabela",
+      "width": 360,
+      "scale": 2,
+      "visualWidth": 180,
+      "scroll": 360
+    },
+    {
+      "state": "lote",
+      "width": 360,
+      "scale": 2,
+      "visualWidth": 180,
+      "scroll": 360
+    },
+    {
+      "state": "conferencia",
+      "width": 360,
+      "scale": 2,
+      "visualWidth": 180,
+      "scroll": 360
+    },
+    {
+      "state": "notas",
+      "width": 360,
+      "scale": 2,
+      "visualWidth": 180,
+      "scroll": 360
+    },
+    {
+      "state": "incerta",
+      "width": 360,
+      "scale": 2,
+      "visualWidth": 180,
+      "scroll": 360
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; form-action 'none'">
+<title>Altan · Operações · B refinada</title>
+<link rel="stylesheet" href="../../apps/web/src/styles/tokens.css">
+<link rel="stylesheet" href="../../apps/web/src/features/operacoes/operacoes.css">
+<link rel="stylesheet" href="plano-operacoes-f1.css"><link rel="stylesheet" href="plano-operacoes-b.css"><script src="plano-operacoes-b.js" defer></script>
+</head><body>
+<a class="skip" href="#conteudo">Ir ao conteúdo</a>
+<div class="review-bar"><span>B · direção adotada · homologação F1 pendente</span><nav aria-label="Revisão da proposta"><a href="comparacao-operacoes-b.html">Comparar com Operações atual</a><a href="plano-operacoes-apuracao.html?alternativa=A">A · histórico</a></nav></div>
+<header class="app-header"><svg role="img" aria-label="Altan Contabilidade" focusable="false" height="28" width="71" viewBox="30 56 140 55" xmlns="http://www.w3.org/2000/svg"><path d="M62 102 A38 38 0 0 1 138 102 Z" fill="var(--logo-sol)"/><line x1="40" y1="102" x2="160" y2="102" stroke="var(--logo-horizonte)" stroke-width="2.5" stroke-linecap="round"/></svg><span class="nav-active">Operação</span><span>Suporte</span><span>Comercial</span><span>Gestão</span><span class="right">Tarefas</span></header>
+<div class="app-subnav"><h1>Operações</h1><span>Calendário</span><span>Empresas</span><small class="right">Ambiente de proposta</small></div>
+<main id="conteudo" class="operacoes">
+<div class="period"><label for="period">Competência</label><select id="period"><option value="2026-10">Outubro de 2026</option><option value="2026-09">Setembro de 2026 · sem amostra</option></select><span class="period-note">Protótipo demonstrativo · sem execução</span></div><p id="context-change" role="status" hidden></p>
+<div class="operacoes-layout"><div class="three-containers">
+<section class="operacoes-etapa operacoes-apuracao" aria-labelledby="ap-title">
+<h2 id="ap-title">Apuração <small>Simples Nacional</small></h2><div id="indicators"></div>
+<div class="ap-actions"><button class="text-button" data-open="impedidas">7 impedidas / a revisar</button><button class="text-button" data-open="externas">1 apuração externa</button></div>
+<details class="counter-help"><summary>11 empresas · como ler os indicadores</summary><p>Conjuntos não somáveis: uma empresa pode estar confirmada e transmitida. 1 empresa de Lucro Presumido e 1 regime a verificar ficam fora do universo Simples, mas continuam visíveis em Impedidas / a revisar.</p></details>
+<button class="text-button global-warning" data-open="avisos">△ 2 notas posteriores · todas as competências</button>
+</section>
+<section class="operacoes-etapa operacoes-guias" aria-labelledby="gu-title"><h2 id="gu-title">Guias e pagamentos <span class="warn">△ 1</span></h2><div id="guide-indicators"></div><p class="small">Envio e pagamento permanecem independentes.</p></section>
+<section class="operacoes-etapa operacoes-contabilizacao" aria-labelledby="co-title"><h2 id="co-title">Contabilidade</h2><div id="accounting-indicators"></div><p class="small">Fechamento e revisões preservados.</p></section>
+</div>
+<section id="workspace" class="workspace" hidden aria-labelledby="workspace-title"><header class="work-header"><div><small id="context-path">Operações / Apuração · Simples Nacional</small><h2 id="workspace-title" tabindex="-1" aria-describedby="context-summary"></h2></div><button id="close-work" class="btn">Voltar ao resumo</button><div id="context-summary" class="context-summary"></div></header><div id="work-content"></div></section>
+<div id="secondary-overview"><div class="distributions" id="distributions"></div><section class="operacoes-rotinas-unico"><h2>Rotinas</h2><div class="routine-counts"><button data-open="rotinas">Habilitadas <strong>6</strong></button><button data-open="rotinas">Desabilitadas <strong>5</strong></button><button data-open="rotinas">Com erro <strong>1</strong></button></div><button class="btn" data-open="rotinas">Conferir rotinas</button></section><div class="end-link"><button class="btn" data-open="impedidas">Pendências DAS/SERPRO</button></div></div>
+</div><p id="notice" role="status"></p><footer class="prototype-foot">Protótipo de navegação. Não calcula, salva, consulta, aprova ou transmite. Guias e Contabilidade conservam seus fluxos.</footer>
+</main></body></html>

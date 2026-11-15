@@ -1,0 +1,96 @@
+{
+  "engine": "axe-core",
+  "states": [
+    {
+      "state": "resumo",
+      "width": 1440,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "tabela",
+      "width": 1440,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "lote",
+      "width": 1440,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "conferencia",
+      "width": 1440,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "incerta",
+      "width": 1440,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "resumo",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "tabela",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "lote",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "state": "conferencia",
+      "width": 390,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": [
+            {
+              "target": [
+                "tbody > tr:nth-child(1) > .money"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+            },
+            {
+              "target": [
+                "tr:nth-child(1) > td:nth-child(4)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+            },
+            {
+              "target": [
+                "tr:nth-child(2) > .money"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+            },
+            {
+              "target": [
+                "tr:nth-child(2) > td:nth-child(4)"
+              ],
+              "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "state": "incerta",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    }
+  ],
+  "followUp": "contraste-celulas.json resolve os quatro itens de contraste inicialmente incompletos por rolagem local."
+}

@@ -1,0 +1,33 @@
+{
+  "reader": "NVDA 2026.3.1 portátil, pt_BR, Windows 11, Chrome",
+  "method": "Leitor real e saída de fala do próprio NVDA; foco/ativação via navegador e comandos NVDA por teclado. Não é síntese fabricada da árvore ARIA nem avaliação auditiva humana.",
+  "observations": [
+    "Speaking [LangChangeCommand ('pt_BR'), 'principal marco', 'Apuração Simples Nacional', 'região', 'A conferir · 4 empresas', 'botão de alternância', 'pressionado']",
+    "Speaking [CallbackCommand(name=say-all:lineReached), LangChangeCommand ('pt_BR'), 'botão de alternância', 'pressionado', 'A conferir · 4 empresas', CallbackCommand(name=say-all:lineReached)]",
+    "Speaking [LangChangeCommand ('pt_BR'), 'botão de alternância', 'não pressionado', 'Confirmadas · 1 empresa', CallbackCommand(name=say-all:lineReached)]",
+    "Speaking [LangChangeCommand ('pt_BR'), 'botão de alternância', 'não pressionado', 'Transmitidas · 1 empresa', CallbackCommand(name=say-all:lineReached), 'fora de região']",
+    "Speaking [LangChangeCommand ('pt_BR'), '1 selecionada · 0 fora da busca ']",
+    "Speaking [CallbackCommand(name=say-all:lineReached), LangChangeCommand ('pt_BR'), 'Conferência · Serra Serviços\\n', CallbackCommand(name=say-all:lineReached), 'botão', 'Voltar ao resumo', CallbackCommand(name=say-all:lineReached), 'Contexto da tarefa', 'grupo', 'Outubro de 2026\\n', CallbackCommand(name=say-all:lineReached), 'A conferir\\n', CallbackCommand(name=say-all:lineReached), '4 abrangidas\\n', CallbackCommand(name=say-all:lineReached), '0 selecionadas\\n', CallbackCommand(name=say-all:lineReached), 'Manual em lote\\n', CallbackCommand(name=say-all:lineReached), 'fora de grupo']",
+    "Speaking [CallbackCommand(name=say-all:lineReached), LangChangeCommand ('pt_BR'), 'Serra Serviços\\n', CallbackCommand(name=say-all:lineReached), 'Simples Nacional · Outubro de 2026 · Tentativa 05/11 · revisão 8 · sem recibo conclusivo\\n', CallbackCommand(name=say-all:lineReached), 'Transmissão incerta\\n', CallbackCommand(name=say-all:lineReached), 'Erro / bloqueio\\n', CallbackCommand(name=say-all:lineReached), 'Serra Serviços · Outubro de 2026\\n', CallbackCommand(name=say-all:lineReached), 'Transmissão com resultado incerto\\n', CallbackCommand(name=say-all:lineReached), 'lista', 'com 4 itens', 'Situação encontrada', CallbackCommand(name=say-all:lineReached), 'A tentativa da revisão 8 terminou sem confirmação conclusiva. A causa remota é desconhecida.\\n']",
+    "Speaking [CallbackCommand(name=say-all:lineReached), LangChangeCommand ('pt_BR'), 'Impacto', CallbackCommand(name=say-all:lineReached), 'Não há prova da transmissão desta revisão. Recibo da revisão 7 permanece histórico. Reserva preservada.\\n']",
+    "Speaking [CallbackCommand(name=say-all:lineReached), LangChangeCommand ('pt_BR'), 'Responsável', CallbackCommand(name=say-all:lineReached), 'Responsável fiscal / suporte\\n', CallbackCommand(name=say-all:lineReached), 'Próximo passo', CallbackCommand(name=say-all:lineReached), 'Conferir tentativa, protocolo e evidências pelo fluxo vigente. Não repetir, liberar reserva ou concluir sucesso automaticamente.']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Ver tentativa e comprovantes\\n', CallbackCommand(name=say-all:lineReached), 'Obrigação, execução e cumprimento\\n', CallbackCommand(name=say-all:lineReached), 'lista', 'com 3 itens', 'Obrigação aplicável', CallbackCommand(name=say-all:lineReached), 'Simples Nacional no período; não implica dispensa\\n', CallbackCommand(name=say-all:lineReached), 'Execução permitida', CallbackCommand(name=say-all:lineReached), 'Impedida neste exemplo · Preparar conferência\\n', CallbackCommand(name=say-all:lineReached), 'Cumprimento comprovado', CallbackCommand(name=say-all:lineReached), 'fora de lista']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'principal marco', 'A conferir', 'região', 'A conferir', 'título', 'Outubro de 2026 A conferir 4 abrangidas 1 selecionada Individual · manual Preparar conferência', 'nível 2']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Empresas da etapa', 'tabela', 'com 5 linhas e 6 colunas', 'linha 4', 'Seleção', 'coluna 1', 'Selecionar Maré Consultoria', 'caixa de seleção', 'marcado']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'principal marco', 'A conferir', 'região', 'Empresas da etapa', 'tabela', 'com 5 linhas e 6 colunas', 'Empresas da etapa']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Empresa / regime', 'coluna 2', 'Maré Consultoria', 'Simples Nacional · 10/2026']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Situação / origem', 'coluna 3', 'A conferir', 'Cálculo salvo · revisão 4']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Preparar operação individual · 1 selecionada', 'título', 'Outubro de 2026 A conferir 4 abrangidas 1 selecionada Individual · manual Preparar conferência', 'nível 2']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Preparar lote · 4 selecionadas', 'título', 'Outubro de 2026 A conferir 4 abrangidas 4 selecionadas Manual em lote Preparar conferência', 'nível 2']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'principal marco', 'Apuração Simples Nacional', 'região', 'A conferir · 4 empresas', 'botão de alternância', 'não pressionado']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'A conferir', 'região', 'A conferir', 'título', 'Outubro de 2026 A conferir 4 abrangidas 0 selecionadas Manual em lote Preparar conferência', 'nível 2']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Conferência · Serra Serviços', 'título', 'Outubro de 2026 A conferir 4 abrangidas 1 selecionada Agenda da empresa Preparar conferência', 'nível 2']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Ver tentativa e comprovantes', 'botão']",
+    "Speaking [LangChangeCommand ('pt_BR'), 'Apuração Simples Nacional', 'região', 'A conferir · 4 empresas', 'botão de alternância', 'pressionado']"
+  ],
+  "limitations": [
+    "Falhas transitórias do helper de janelas e COM/IAccessible durante substituição dinâmica; reobservação, foco e atualização do buffer permitiram completar os cenários.",
+    "Algumas transições anunciaram desconhecido antes do título correto; estabilidade em uso contínuo com tecnologia assistiva ainda requer homologação humana.",
+    "Telefone físico, TalkBack, VoiceOver e outros navegadores não exercitados."
+  ]
+}

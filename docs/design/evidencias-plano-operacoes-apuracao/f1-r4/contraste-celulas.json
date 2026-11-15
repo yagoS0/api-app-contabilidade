@@ -1,0 +1,71 @@
+{
+  "violations": [],
+  "incomplete": [],
+  "passes": [
+    {
+      "id": "color-contrast",
+      "nodes": [
+        {
+          "target": [
+            "tbody > tr:nth-child(1) > .money"
+          ],
+          "checks": [
+            {
+              "fgColor": "#f8f8f2",
+              "bgColor": "#24253a",
+              "contrastRatio": 14.06,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "expectedContrastRatio": "4.5:1"
+            }
+          ]
+        },
+        {
+          "target": [
+            "tr:nth-child(1) > td:nth-child(4)"
+          ],
+          "checks": [
+            {
+              "fgColor": "#f8f8f2",
+              "bgColor": "#24253a",
+              "contrastRatio": 14.06,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "expectedContrastRatio": "4.5:1"
+            }
+          ]
+        },
+        {
+          "target": [
+            "tr:nth-child(2) > .money"
+          ],
+          "checks": [
+            {
+              "fgColor": "#f8f8f2",
+              "bgColor": "#24253a",
+              "contrastRatio": 14.06,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "expectedContrastRatio": "4.5:1"
+            }
+          ]
+        },
+        {
+          "target": [
+            "tr:nth-child(2) > td:nth-child(4)"
+          ],
+          "checks": [
+            {
+              "fgColor": "#f8f8f2",
+              "bgColor": "#24253a",
+              "contrastRatio": 14.06,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "expectedContrastRatio": "4.5:1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

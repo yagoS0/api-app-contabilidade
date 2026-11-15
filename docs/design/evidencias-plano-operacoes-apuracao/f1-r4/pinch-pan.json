@@ -1,0 +1,26 @@
+[
+  {
+    "viewportWidth": 390,
+    "x": 195,
+    "y": 0,
+    "width": 195,
+    "scale": 2,
+    "buttonLeft": 248.609375,
+    "buttonRight": 365,
+    "tapX": 111.8046875,
+    "tapY": 60,
+    "returnClosed": true
+  },
+  {
+    "viewportWidth": 360,
+    "x": 180,
+    "y": 0,
+    "width": 180,
+    "scale": 2,
+    "buttonLeft": 218.609375,
+    "buttonRight": 335,
+    "tapX": 96.8046875,
+    "tapY": 60,
+    "returnClosed": true
+  }
+]
