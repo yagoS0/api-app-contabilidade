@@ -1,0 +1,29 @@
+{
+  "summary": "P1: clareza dos avisos e das fontes de conferência na página de Operações, reutilizando React e tokens existentes.",
+  "operationalImpact": "Somente apresentação. Operações consome avisos produzidos por Notas/Fiscal e fontes salvas de cálculo, auditoria e histórico. OperationsAlerts preserva GET, paginação global de 200, polling e links por empresa/competência. CalculationEvidence também é consumido por OperationsApproval: leitores, guardas, revisão, comandos, números e regras de confirmação permanecem intactos. Sem alteração direta no portal, Guias, Comunicação, Contabilidade, autorização, API ou banco. Situação registrada não é prova de estado fiscal atual; extrato histórico não comprova a revisão do cálculo.",
+  "risk": "high",
+  "domains": [
+    "operations",
+    "web",
+    "portal",
+    "documentation",
+    "governance"
+  ],
+  "tests": [
+    "Base remota cbea0e52fb2d75327056067283759b3a73c9a3cc confirmada; árvore nova e limpa. Referência operacional canonical e fallback com SHA-256 e50fa30d9c205d4f09fb7638429509bb49bfb49016107e9e27d759faa649639f.",
+    "Caracterização anterior à edição: 72 testes em cinco suítes. Candidata inicial: 150 testes em sete suítes, incluindo OperationsApproval e integração.",
+    "93 testes de governança/controlador/verificador aprovados. Build web aprovado, com aviso preexistente de tamanho de bundle. Diagnose 5023→5023, zero acréscimos. Validação final e CI registradas no PR e documento P1.",
+    "Regressão final Operações: 458 testes/36 suítes; focal final após ajuste de foco: 59 testes/2 suítes; PostgreSQL 16 descartável: 10 testes aprovados. 24 cenários visuais sem violações axe detectadas; zoom200% sem overflow no recorte; 17 links documentais válidos."
+  ],
+  "rollback": "Reverter somente os componentes, CSS, testes e documentos deste PR. Nenhuma migração, conversão de dados ou reparação fiscal/contábil. Preservar worktrees e materiais locais; rollback não autoriza deploy.",
+  "humanDecisions": [
+    "Usuário autorizou exclusivamente P1 e adotou B como direção. Não implementar P2, merge, deploy, atos fiscais, mensagens ou reativação Railway. Integração exige autorização distinta."
+  ],
+  "finalReview": "Revisões independentes reais p1_contratos, p1_ui e p1_arquitetura; pareceres finais registrados após os ajustes de histórico parcial, foco e rolagem.",
+  "limitations": [
+    "Controlador iniciado em 2026-11-15T18-43-30-609Z-b241b422. Planejador e executor concluíram; governança passou. Gate api-regression falhou por ausência de PostgreSQL descartável obrigatório em OperationsBatchService.postgres.test.js. Rodada interrompida pelo principal durante os gates para incorporar a revisão e preparar ensaio isolado. Estado persistido testing é o último checkpoint, não prontidão. Não se declara ready_for_human; não foram alterados gates ou políticas.",
+    "Executor registrou EPERM ao tentar Node no perfil Windows; testes reais foram executados pelo principal. Regressão ampla interrompida não é declarada aprovada.",
+    "Não há discriminante de não aplicabilidade em todas as fontes; não é fabricado. Motivo desconhecido permanece literal ou não informado. Valores zero não comprovam dispensa. Histórico limitado é explicitamente parcial.",
+    "Capturas usam componentes reais com dados sintéticos e rede externa bloqueada; não representam homologação de produção ou aparelho físico. Overflow preexistente da página completa em 360 px permanece fora do recorte."
+  ]
+}

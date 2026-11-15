@@ -5,35 +5,51 @@ import { InternalLink } from '../../components/ui/InternalLink';
 import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 import { operationMoney as money, operationInstant, readCalculationDetails } from './operationsDetails';
 
+const evidenceSources = { snapshot: 'Cálculo salvo', auditoria: 'Auditoria de notas', history: 'Histórico PGDAS' };
+const auditReasons = {
+  SEM_NOTAS: 'Sem notas no conjunto desta verificação; não comprova ausência de movimento.',
+  EMPRESA_SEM_CODIGOS_CADASTRADOS: 'Empresa sem códigos de serviço cadastrados para esta verificação.',
+  NENHUMA_NOTA_AVALIAVEL: 'Nenhuma nota possui os dados necessários para esta verificação.',
+};
+
 export function CalculationEvidence({ details }) {
-  if (!details) return <p role="status">Lendo cálculo e auditoria salvos…</p>;
+  if (!details) return <p role="status" tabIndex={-1} data-modal-autofocus>Lendo cálculo e auditoria salvos…</p>;
   const snapshot = details.snapshot?.value, audit = details.auditoria?.value;
   // The history DTO has no calculation revision key. Do not join by declaration
   // number/date/current flag: reopening and recalculation preserve old identifiers.
   const history = details.history?.value;
   return <>
+    <h3 tabIndex={-1} data-modal-autofocus>Fontes da conferência</h3>
+    <dl className="operacoes-checklists operacoes-evidencias-fontes">
+      {Object.entries(evidenceSources).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{!details[key] ? 'Não consultado nesta conferência' : details[key].error ? 'Indisponível · erro de leitura' : details[key].value ? (key === 'history' && details[key].value.limitado ? 'Disponível parcialmente · histórico limitado' : 'Disponível para conferência') : 'Sem evidência salva disponível'}</dd></div>)}
+    </dl>
     {Object.entries(details).filter(([, source]) => source.error).map(([key, source]) => <p role="alert" key={key}>Leitura de {({ snapshot: 'cálculo salvo', auditoria: 'auditoria de notas', history: 'histórico PGDAS' })[key]}: {source.error}. Atualize a conferência ou abra a empresa para verificar.</p>)}
+    <h3>Cálculo e retorno salvos</h3>
     <dl className="operacoes-checklists">
       <div><dt>Faturamento interno salvo</dt><dd>{money(snapshot?.receitaInterna)}</dd></div>
       <div><dt>Faturamento externo salvo</dt><dd>{money(snapshot?.receitaExterna)}</dd></div>
       <div><dt>Cálculo simulado salvo</dt><dd>{money(snapshot?.dasSimuladoSerpro)}</dd></div>
-      <div><dt>Estado do snapshot</dt><dd>{snapshot?.estado || 'Não disponível'}</dd></div>
+      <div><dt>Estado do cálculo salvo</dt><dd>{({ aberta: 'Aberta', calculada: 'Calculada', fechada: 'Fechada', revisada: 'Revisada', transmitida: 'Transmitida', erro_transmissao: 'Erro de transmissão' })[snapshot?.estado] || snapshot?.estado || 'Não disponível'}</dd></div>
       <div><dt>Declaração do snapshot</dt><dd>{snapshot?.numeroDeclaracao || 'Não registrada'}</dd></div>
       <div><dt>Retorno salvo da transmissão SERPRO</dt><dd>{money(snapshot?.dasRetornadoSerpro)}</dd></div>
       <div><dt>Data salva da transmissão</dt><dd>{operationInstant(snapshot?.transmitidoEm)}</dd></div>
       <div><dt>Correspondência do extrato com esta revisão</dt><dd>A verificar</dd></div>
     </dl>
+    <p>Valor zero salvo não significa dispensa de obrigação. Valor não disponível não equivale a zero.</p>
+    <h3>Extratos salvos</h3>
     <p>Extrato sem vínculo comprovado com a revisão do cálculo. Número da declaração e valores iguais não comprovam correspondência. O retorno salvo pode pertencer à transmissão anterior quando o cálculo foi reaberto ou recalculado.</p>
     {history && <>
       {(history.declaracaoDiferenteDaInterna || history.entregaSemTransmissaoInterna || history.mudancaDetectada) && <p role="alert">O histórico indica mudança ou divergência de declaração. Confira as versões na apuração da empresa.</p>}
-      <div className="operacoes-tabela-scroll" role="region" aria-label="Extratos salvos, sem conciliação de revisão" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody>{history.versoes.map((v, i) => <tr key={`${v.id || 'legado'}-${i}`}><td>{v.numeroDeclaracao || 'Não registrada'}<br />{v.id || 'Versão não identificada'}</td><td>{money(v.dasTotal)}</td><td>{v.origem || 'Não registrada'}</td><td>{operationInstant(v.consultadaEm)}</td><td>{v.atual ? 'Atual na circular' : 'Histórico'}{v.legado ? ' · Legado' : ''}</td></tr>)}</tbody></table></div>
+      {history.versoes.length > 0 && <div className="operacoes-tabela-scroll" role="region" aria-label="Extratos salvos, sem conciliação de revisão" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Declaração / versão</th><th>Imposto do extrato salvo</th><th>Origem</th><th>Consulta</th><th>Registro</th></tr></thead><tbody>{history.versoes.map((v, i) => <tr key={`${v.id || 'legado'}-${i}`}><td>{v.numeroDeclaracao || 'Não registrada'}<br />{v.id || 'Versão não identificada'}</td><td>{money(v.dasTotal)}</td><td>{v.origem || 'Não registrada'}</td><td>{operationInstant(v.consultadaEm)}</td><td>{v.atual ? 'Atual na circular' : 'Histórico'}{v.legado ? ' · Legado' : ''}</td></tr>)}</tbody></table></div>}
       {!history.versoes.length && <p>Nenhum extrato salvo disponível.</p>}
       {history.limitado && <p>Histórico limitado pela fonte. Abra a apuração para conferir os documentos disponíveis.</p>}
     </>}
-    <div className="operacoes-tabela-scroll" role="region" aria-label="Atividades do cálculo salvo" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna / externa</th></tr></thead><tbody>{(Array.isArray(snapshot?.atividadesEscolhidas) ? snapshot.atividadesEscolhidas : []).map((activity, i) => <tr key={i}><td>{activity.descricao || activity.idAtividade || 'Não informado'}</td><td>{activity.anexoImplicito ?? 'Não registrado no formulário'}</td><td>{money(activity.valorInterno)} / {money(activity.valorExterno)}</td></tr>)}</tbody></table></div>
+    <h3>Atividades do cálculo salvo</h3>
+    {snapshot?.atividadesEscolhidas?.length > 0 && <div className="operacoes-tabela-scroll" role="region" aria-label="Atividades do cálculo salvo" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Atividade salva</th><th>Anexo do formulário</th><th>Receita interna / externa</th></tr></thead><tbody>{(Array.isArray(snapshot?.atividadesEscolhidas) ? snapshot.atividadesEscolhidas : []).map((activity, i) => <tr key={i}><td>{activity.descricao || activity.idAtividade || 'Não informado'}</td><td>{activity.anexoImplicito ?? 'Não registrado no formulário'}</td><td>{money(activity.valorInterno)} / {money(activity.valorExterno)}</td></tr>)}</tbody></table></div>}
     {!snapshot?.atividadesEscolhidas?.length && <p>Atividades/anexo não disponíveis no snapshot. O cadastro atual não substitui o formulário histórico.</p>}
+    <h3>Auditoria de notas</h3>
     <p>Auditoria: {audit ? `${audit.totalAchados ?? 'A verificar'} achados · ${audit.foraDaConferencia?.total ?? 'A verificar'} notas fora da conferência` : 'Indisponível; ausência não significa aprovação.'}</p>
-    {audit && <div className="operacoes-tabela-scroll" role="region" aria-label="Auditoria da competência" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Verificação</th><th>Situação</th><th>Achados / não avaliadas</th><th>Causa</th></tr></thead><tbody>{[...(audit.perguntas || []), ...(audit.manutencao?.leitura ? [audit.manutencao.leitura] : [])].map(p => <tr key={p.id}><td>{p.titulo || p.id}</td><td>{p.situacao || 'A verificar'}</td><td>{p.achados?.length ?? 'A verificar'} / {p.naoAvaliadas?.length ?? 'A verificar'}</td><td>{p.motivo || (p.achados?.length ? 'Revisar as notas apontadas na auditoria' : 'Conferir evidências da verificação')}</td></tr>)}</tbody></table></div>}
+    {audit && <div className="operacoes-tabela-scroll" role="region" aria-label="Auditoria da competência" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th scope="col">Verificação</th><th scope="col">Situação da verificação</th><th scope="col">Achados / notas não avaliadas</th><th scope="col">Causa / próximo passo</th></tr></thead><tbody>{[...(audit.perguntas || []), ...(audit.manutencao?.leitura ? [audit.manutencao.leitura] : [])].map(p => <tr key={p.id}><th scope="row">{p.titulo || p.id}</th><td>{({ CONFERIDA: 'Verificação realizada', NAO_CONFERIVEL: 'Sem evidência suficiente para conferir' })[p.situacao] || p.situacao || 'A verificar'}</td><td>{p.achados?.length ?? 'A verificar'} achados / {p.naoAvaliadas?.length ?? 'A verificar'} notas não avaliadas{p.situacao === 'NAO_CONFERIVEL' && <p>Ausência de achados não comprova aprovação.</p>}</td><td>{auditReasons[p.motivo] || p.motivo || (p.achados?.length ? 'Revisar as notas apontadas na auditoria' : 'Conferir evidências da verificação')}</td></tr>)}</tbody></table></div>}
   </>;
 }
 

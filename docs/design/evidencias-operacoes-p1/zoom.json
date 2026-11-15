@@ -1,0 +1,62 @@
+[
+  {
+    "state": "alerts",
+    "zoom": 2,
+    "viewport": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 713.6000366210938,
+      "clientHeight": 394,
+      "scale": 1,
+      "zoom": 2
+    },
+    "overflow": false
+  },
+  {
+    "state": "partial",
+    "zoom": 2,
+    "viewport": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 713.6000366210938,
+      "clientHeight": 394,
+      "scale": 1,
+      "zoom": 2
+    },
+    "overflow": false
+  },
+  {
+    "state": "evidence",
+    "zoom": 2,
+    "viewport": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 713.6000366210938,
+      "clientHeight": 394,
+      "scale": 1,
+      "zoom": 2
+    },
+    "overflow": false
+  },
+  {
+    "state": "empty",
+    "zoom": 2,
+    "viewport": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 713.6000366210938,
+      "clientHeight": 394,
+      "scale": 1,
+      "zoom": 2
+    },
+    "overflow": false
+  }
+]
