@@ -52,3 +52,51 @@ O controlador executável foi iniciado; planner/executor concluíram e o gate de
 Sem certificação WCAG, ensaio em telefone físico ou nova homologação NVDA contínua. Overflow preexistente da página completa em 360 px não foi corrigido por CSS global. O PR permanece em rascunho para revisão humana; CI não autoriza integração.
 
 Rollback: reverter apenas este incremento de apresentação e testes. Nenhuma reversão de dados necessária. Não publicar, limpar worktrees, reativar Railway ou iniciar P2.
+
+## Revisão de coordenação do PR #288 — 15/11/2026
+
+Atende ao [comentário de coordenação](https://github.com/yagoS0/api-app-contabilidade/pull/288#issuecomment-6900075941). Esta seção complementa, sem apagar, o histórico anterior.
+
+- `TRANSMITIDA`: “Transmissão registrada na época do aviso”. A consulta continua sendo de evidência histórica; não confirma situação fiscal atual.
+- O título das fontes e o carregamento passam pela sequência de Tab. O mesmo `h3` permanece montado na transição carregando → conteúdo/erro, preservando foco e identidade DOM. Não houve mudança no Modal compartilhado, leitores, guardas ou efeitos.
+- 109 testes focais aprovados, incluindo sucesso/erro, identidade do nó e navegação. Diagnose 5023→5023, sem acréscimos.
+
+### Acessibilidade: investigação dos inconclusivos
+
+[Relatório detalhado](evidencias-operacoes-p1/accessibility-review.json): 48 cenários comparados (24 da main e 24 da candidata anterior à correção), análise final, elementos, mensagens axe, cores, fragmentos visíveis, teclado, consumidor e hashes dos dois componentes. O arquivo anterior da base não executava axe; portanto não provava equivalência. Essa lacuna foi suprida, não inferida.
+
+| Ocorrência | Origem e resultado |
+| --- | --- |
+| `scrollable-region-focusable`, cenário sem evidências | Introduzido pela composição P1 após remover tabelas vazias. Reproduzido Tab saindo para body; corrigido com título na sequência de Tab. Resultado final não contém esse inconclusivo. Home/End percorrem o corpo, Tab chega a Fechar e Shift+Tab retorna ao título em 1440/390/360. |
+| Perda de foco ao concluir carregamento | Introduzida pela troca do elemento focado `p` por `h3`. Corrigida mantendo `h3`; teste de identidade DOM e foco para conteúdo/erro. Ensaio de navegador confirma Tab e Escape com retorno ao disparador. |
+| `color-contrast`, botão `✕` | `nonBmp` na base e candidata: axe não interpreta o símbolo. Cores renderizadas sobre fundo opaco resultam em 7,45:1; nome acessível Fechar preservado. Inconclusivo automático permanece registrado. |
+| `color-contrast`, parágrafo introdutório móvel | `elmPartiallyObscuring` na base e candidata. `contrastRatio: 0` é medição inconclusiva, não contraste zero real. Cores efetivas: 14,06:1, sem imagem/opacidade no fundo da caixa. |
+| `color-contrast`, dica móvel nova | Mesmo diagnóstico automático, revisado separadamente: 7,45:1, texto visível nas capturas e fragmentos sem obstrução em 390/360. Não foi ocultado o elemento nem desativada a regra. |
+| Escape no consumidor OperationsApproval | Retorno ao body reproduzido na main e candidata em 1440/390/360. Limitação preexistente do consumidor; não foi ampliada nem corrigida por este P1. Dentro do diálogo, 16 passos Tab/Shift+Tab permanecem contidos. |
+
+24 cenários finais continuam com zero violações detectadas, mas **24 ocorrências de contraste inconclusivo permanecem** (algumas com mais de um nó). A investigação manual não apaga o resultado da ferramenta nem constitui certificação WCAG/NVDA. [Aviso final em 360 px](evidencias-operacoes-p1/after-alerts-360.png).
+
+### Gates e estado real do controlador
+
+Execução `2026-11-15T19-58-04-602Z-72db47ed`, rodada 0, fingerprint `3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd`, HEAD de partida `e7c5c7b9f049e441998c7dd53737d5a37f49d38d` mais o ajuste de carregamento. O catálogo não foi modificado.
+
+[Extrato verificável dos gates e pareceres](evidencias-operacoes-p1/governance-review.json), sem pedido privado ou logs brutos. A documentação foi complementada após os ensaios; os hashes dos componentes no extrato e no relatório de acessibilidade permitem conferir a mesma versão produtiva.
+
+| Gate | Resultado efetivo |
+| --- | --- |
+| governance-engine | 88 testes aprovados |
+| api-regression | 32 lotes; 13.094 testes aprovados, 84 ignorados; 771 suítes aprovadas e 11 ignoradas; zero falhas |
+| web-regression | 24 lotes; 6.969 testes, 588 suítes; zero falhas/ignorados |
+| portal-regression | 5 lotes; 1.610 testes, 102 suítes; zero falhas/ignorados |
+| web-build | Aprovado; avisos de bundle registrados |
+| portal-build | Aprovado |
+
+PG16 exclusivamente descartável e loopback; banco próprio na porta 54661, com as três variáveis de teste coerentes, atende à URL literal exigida pelas suítes legadas. Ambos os clusters criados para P1 foram encerrados ao terminar e preservados em disco. Nenhum banco existente ou produtivo foi alterado.
+
+Os três pareceres de domínio e os pareceres de backend, UI e UX do controlador aprovaram a rodada. O revisor sistêmico ficou **inconclusivo** por não encontrar a investigação final de navegador no pacote documental disponível. Os ensaios já existiam fora do Git e estão anexados nesta revisão. O principal interrompeu a repetição automática seguinte para consolidá-los, preservando os registros; o checkpoint `testing` da rodada seguinte não é prontidão. **Não se declara `ready_for_human` do controlador.** Os seis gates completos da rodada 0 não são substituídos pelos testes focais.
+
+Histórico das tentativas: `19-39-28-690Z-33b0592e` interrompida após falta de igualdade DATABASE_URL/URL descartável; `19-43-35-674Z-7e1ead29` interrompida após bloqueio pela URL literal no lote 13; `19-56-56-254Z-97e420d3` terminou `escalated` por arquivos-alvo já modificados. Correções foram preservadas em commit local antes da rodada integral. Nenhuma tentativa interrompida conta como aprovação.
+
+A decisão sistêmica final sobre o pacote documental complementado depende da revisão independente registrada no PR e da decisão humana de integração, conforme POLICY/REVIEW-CONTRACT. Não há dispensa concedida pelo autor nem alteração de gate. CI e SHA final constam no PR; publicação e P2 continuam não autorizados.
+
+Parecer sistêmico complementar `/root/p1_arquitetura`, 15/11/2026: favorável à entrega revisável após inspecionar este documento, os dois relatórios, o diff e a igualdade dos hashes. A lacuna documental foi suprida; nenhum bloqueio adicional de implementação. O parecer não altera o histórico do controlador, não certifica a rodada interrompida e não autoriza integração. Revisão UI/UX final favorável à continuidade de foco; revisão Fiscal/Operações favorável à semântica histórica. CI no SHA final e decisão humana permanecem necessárias.

@@ -13,7 +13,7 @@ const auditReasons = {
 };
 
 export function CalculationEvidence({ details }) {
-  if (!details) return <p role="status" tabIndex={0} data-modal-autofocus>Lendo cálculo e auditoria salvos…</p>;
+  if (!details) return <h3 role="status" tabIndex={0} data-modal-autofocus>Lendo cálculo e auditoria salvos…</h3>;
   const snapshot = details.snapshot?.value, audit = details.auditoria?.value;
   // The history DTO has no calculation revision key. Do not join by declaration
   // number/date/current flag: reopening and recalculation preserve old identifiers.

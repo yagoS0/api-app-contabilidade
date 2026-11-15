@@ -124,10 +124,6 @@
           {
             "id": "color-contrast",
             "count": 1
-          },
-          {
-            "id": "scrollable-region-focusable",
-            "count": 1
           }
         ]
       }
@@ -144,7 +140,7 @@
         "incomplete": [
           {
             "id": "color-contrast",
-            "count": 3
+            "count": 2
           }
         ]
       }
@@ -256,10 +252,6 @@
           {
             "id": "color-contrast",
             "count": 1
-          },
-          {
-            "id": "scrollable-region-focusable",
-            "count": 1
           }
         ]
       }
@@ -276,7 +268,7 @@
         "incomplete": [
           {
             "id": "color-contrast",
-            "count": 3
+            "count": 2
           }
         ]
       }
@@ -387,10 +379,6 @@
         "incomplete": [
           {
             "id": "color-contrast",
-            "count": 1
-          },
-          {
-            "id": "scrollable-region-focusable",
             "count": 1
           }
         ]

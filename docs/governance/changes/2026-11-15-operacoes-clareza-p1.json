@@ -13,17 +13,20 @@
     "Base remota cbea0e52fb2d75327056067283759b3a73c9a3cc confirmada; árvore nova e limpa. Referência operacional canonical e fallback com SHA-256 e50fa30d9c205d4f09fb7638429509bb49bfb49016107e9e27d759faa649639f.",
     "Caracterização anterior à edição: 72 testes em cinco suítes. Candidata inicial: 150 testes em sete suítes, incluindo OperationsApproval e integração.",
     "93 testes de governança/controlador/verificador aprovados. Build web aprovado, com aviso preexistente de tamanho de bundle. Diagnose 5023→5023, zero acréscimos. Validação final e CI registradas no PR e documento P1.",
-    "Regressão final Operações: 458 testes/36 suítes; focal final após ajuste de foco: 59 testes/2 suítes; PostgreSQL 16 descartável: 10 testes aprovados. 24 cenários visuais sem violações axe detectadas; zoom200% sem overflow no recorte; 17 links documentais válidos."
+    "Regressão final Operações: 458 testes/36 suítes; focal final após ajuste de foco: 59 testes/2 suítes; PostgreSQL 16 descartável: 10 testes aprovados. 24 cenários visuais sem violações axe detectadas; zoom200% sem overflow no recorte; 17 links documentais válidos.",
+    "Revisão PR288: 109 focais; seis gates integrais da rodada0 72db47ed aprovados: governança88, API13094/84ignorados, web6969, portal1610, buildsweb/portal. Fonte fingerprint3f024fe5e2fcaf4a3b13f047a0bf01854f3e09d6579fd68424c0c9c202fa4acd; diagnóstico5023→5023. Evidência detalhada em docs/design/evidencias-operacoes-p1/accessibility-review.json."
   ],
   "rollback": "Reverter somente os componentes, CSS, testes e documentos deste PR. Nenhuma migração, conversão de dados ou reparação fiscal/contábil. Preservar worktrees e materiais locais; rollback não autoriza deploy.",
   "humanDecisions": [
     "Usuário autorizou exclusivamente P1 e adotou B como direção. Não implementar P2, merge, deploy, atos fiscais, mensagens ou reativação Railway. Integração exige autorização distinta."
   ],
-  "finalReview": "Revisões independentes reais p1_contratos, p1_ui e p1_arquitetura; pareceres finais registrados após os ajustes de histórico parcial, foco e rolagem.",
+  "finalReview": "Revisões nativas independentes renovadas sobre microcopy histórica e foco: Fiscal/Operações favorável; UI/UX e arquitetura favoráveis ao código e evidências. Registro final do pacote complementado e CI no PR. Controlador sistêmico inconclusivo preservado; sem alegar ready_for_human.",
   "limitations": [
     "Controlador iniciado em 2026-11-15T18-43-30-609Z-b241b422. Planejador e executor concluíram; governança passou. Gate api-regression falhou por ausência de PostgreSQL descartável obrigatório em OperationsBatchService.postgres.test.js. Rodada interrompida pelo principal durante os gates para incorporar a revisão e preparar ensaio isolado. Estado persistido testing é o último checkpoint, não prontidão. Não se declara ready_for_human; não foram alterados gates ou políticas.",
     "Executor registrou EPERM ao tentar Node no perfil Windows; testes reais foram executados pelo principal. Regressão ampla interrompida não é declarada aprovada.",
     "Não há discriminante de não aplicabilidade em todas as fontes; não é fabricado. Motivo desconhecido permanece literal ou não informado. Valores zero não comprovam dispensa. Histórico limitado é explicitamente parcial.",
-    "Capturas usam componentes reais com dados sintéticos e rede externa bloqueada; não representam homologação de produção ou aparelho físico. Overflow preexistente da página completa em 360 px permanece fora do recorte."
+    "Capturas usam componentes reais com dados sintéticos e rede externa bloqueada; não representam homologação de produção ou aparelho físico. Overflow preexistente da página completa em 360 px permanece fora do recorte.",
+    "Rodada0 do controlador72db47ed passou seis gates e seis pareceres (três domínios/backend/UI/UX); sistêmico inconclusivo por pacote visual ainda não anexado. Ensaios reais agora documentados; repetição automática rodada1 interrompida pelo principal. Não declara ready_for_human. Revisão sistêmica independente do pacote e decisão humana continuam distintas; nenhum gate dispensado.",
+    "Contraste axe permanece incomplete: símbolo Fechar preexistente e parágrafos móveis; contraste efetivo7.45/14.06 e visibilidade verificados. Problemas introduzidos de Tab/continuidadeDOM corrigidos. Escape no consumidor real retorna body na base e candidata; pendência legada mantida."
   ]
 }

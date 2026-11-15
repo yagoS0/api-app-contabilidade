@@ -187,6 +187,30 @@ test('modal de conferência inicia no resumo das fontes, antes de tabelas e erro
 });
 
 test.each([
+ ['conteúdo', { snapshot: { value: { receitaInterna: 1200 } }, history: { value: { versoes: [] } } }],
+ ['erro', { snapshot: { error: 'Fonte temporariamente indisponível' } }],
+])('carregamento preserva o mesmo título e foco ao receber %s', (_, details) => {
+ const modal = value => <Modal titulo="Conferir empresa" aoFechar={() => {}}><CalculationEvidence details={value} /></Modal>;
+ const view = render(modal(null));
+ const loading = screen.getByRole('status');
+ expect(loading.tagName).toBe('H3');
+ expect(loading).toHaveFocus();
+ view.rerender(modal(details));
+ const heading = screen.getByRole('heading', { name: 'Fontes da conferência' });
+ expect(heading).toBe(loading);
+ expect(heading).toHaveFocus();
+ expect(heading).toHaveAttribute('tabindex', '0');
+ expect(screen.queryByRole('status')).not.toBeInTheDocument();
+ expect(screen.queryByRole('table')).not.toBeInTheDocument();
+ if (details.snapshot.error) expect(screen.getByRole('alert')).toHaveTextContent(details.snapshot.error);
+ else expect(screen.getByText('Faturamento interno salvo').nextElementSibling).toHaveTextContent('1.200,00');
+ fireEvent.keyDown(heading, { key: 'Tab' });
+ expect(screen.getByRole('button', { name: 'Fechar' })).toHaveFocus();
+ fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true });
+ expect(heading).toHaveFocus();
+});
+
+test.each([
  ['fontes ausentes', { snapshot: { value: null }, history: { value: { versoes: [] } } }, 'heading'],
  ['carregamento', null, 'status'],
 ])('modal mantém navegação por Tab no conteúdo de %s sem tabelas vazias', (_, details, role) => {
