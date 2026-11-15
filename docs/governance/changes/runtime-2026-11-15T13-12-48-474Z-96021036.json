@@ -1,0 +1,20 @@
+{
+  "summary": "ALTAN etapa4.4.7 exclusivamente avaliação técnica/funcional documental da futura recuperação local DAS/SERPRO sobre0d3c2f0 (PR283). NÃO implementar recuperação ou prévia. ÚNICO arquivo permitido ao executor: docs/modules/serpro-das-recuperacao-avaliacao-447.md. Produza investigação inicial com matriz elegível/bloqueado/não verificável, mapa dados/lacunas, autorização, contrato conceitual prévia interna read-only (não HTTP), concorrência/CAS/auditoria, critérios aceitar/rejeitar, distinção recuperação/conferência contábil/reservas, próximos incrementos não iniciados. Consulte444/445/446 e fontes. Elegível significa potencial para proposta, nunca autorização de escrita. Reservas incertas não são resolvidas por cache. Não mudar código, testes, schema,migrations,HTTP,UI,CI,governança/políticas,275,GERARDAS12/GERARDASCOBRANCA17; não consultas fiscais/retry/recuperação/limpeza,pagamento,contabilidade,deploy,Railway,commit,push,PR. Principal fará testes sintéticos e registro/revisões depois. Não ler .env/dados reais. Marque evidências não verificadas honestamente. Leia somente e escreva esse documento. Documentação sem impacto operacional.\r\n",
+  "risk": "low",
+  "domains": [
+    "documentation"
+  ],
+  "operationalImpact": "Implementation reviewed against the requested behavior and operational reference; see independent findings and source evidence in run 2026-11-15T13-12-48-474Z-96021036",
+  "tests": [
+    "governance-engine: passed against ddd95e71b6922bc87f851ce6736f265f8a43aabdbde47bc1b2b524fea62feaae; logs C:\\Users\\yagoa\\Documents\\ChatGPT\\ALTAN\\worktrees\\ddd-serpro-das-recuperacao-avaliacao-447-20261115\\.altan-governance\\runs\\2026-11-15T13-12-48-474Z-96021036\\round-0-gate-governance-engine"
+  ],
+  "rollback": "Revert only the recorded source delta using baseline-sources in run 2026-11-15T13-12-48-474Z-96021036; preserve unrelated preexisting changes.",
+  "humanDecisions": [
+    "Review final integration diff and mandatory CI checks before merge or publication; technical approval does not authorize external actions."
+  ],
+  "sourceFingerprint": "ddd95e71b6922bc87f851ce6736f265f8a43aabdbde47bc1b2b524fea62feaae",
+  "sourcePaths": [
+    "docs/modules/serpro-das-recuperacao-avaliacao-447.md"
+  ],
+  "runId": "2026-11-15T13-12-48-474Z-96021036"
+}
