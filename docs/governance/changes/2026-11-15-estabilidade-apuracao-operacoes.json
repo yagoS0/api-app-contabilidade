@@ -1,0 +1,33 @@
+{
+  "summary": "Avaliação documental de estabilidade e prontidão para alterações funcionais em Apuração Fiscal e Operações sobre 96ad7e9; não implementa funcionalidades nem continua recuperação DAS.",
+  "operationalImpact": "Somente mapa e matriz por subárea, catálogo de testes, lacunas e critérios de desenvolvimento/integração. Fiscal, Operações, Guias, Contabilidade, Comunicação, frontend e portal mantêm contratos, permissões, cálculos, revisões e efeitos. Preservadas R01/R02/R06/R10/R12/R19/R20/R25/R26, #275, divergência do lote moderno, reservas incertas, pagamentos, fechamento e riscos legados. Nenhuma alteração em schema, código, worker, transporte, regras ou configuração.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance",
+    "api",
+    "web",
+    "fiscal",
+    "operations",
+    "guides",
+    "accounting",
+    "communication",
+    "security",
+    "portal"
+  ],
+  "tests": [
+    "API: 2344 testes/42 snapshots aprovados na seleção ampla; 1 falha de guarda de URL PG e 7 ignorados registrados. Reexecução isolada no endpoint requerido: acompanhamento1/1 e reenvio5/5 aprovados. Consolidado2350 aprovados únicos/164suítes;2 casos da base vulnerável #275 intencionalmente ignorados.",
+    "Web:76suítes/867testes aprovados. Piloto HTTP25/25; PG16fechamento/concorrência10/10. Bancos sintéticos novos, conexões independentes, transportes fictícios.",
+    "Governança/controlador/verificador93/93; diagnose5023→5023 zero novos;305 links/âncoras válidos; gate de impacto e diff-check aprovados. CI hospedada no SHA final registrada no PR."
+  ],
+  "rollback": "Reverter apenas documento, link no índice e este registro. Sem banco/estado/comportamento a desfazer. Não reverter #275, remover evidências ou alterar worktrees antigas.",
+  "humanDecisions": [
+    "Aguardar autorização humana para integrar esta avaliação e para cada incremento funcional delimitado. Classificação LIBERADO não autoriza merge/deploy/ativação. Sem limpeza, fiscal real, mensagens ou reativação Railway."
+  ],
+  "finalReview": "Pareceres independentes favoráveis ao diff documental por avaliacao_fiscal_contabil(Fiscal/Contabilidade) e avaliacao_operacoes_ui(Operações/UI/UX); revisão segurança/arquitetura/backend e sistêmica por avaliacao_seguranca_arquitetura. Achado factual corrigido: prévia persistida não é reserva de execução. Principal executou testes e consolidou limitações; SHA e CI hospedada registrados no PR. Nenhum parecer autoriza função nova, merge ou deploy.",
+  "limitations": [
+    "Controlador2026-11-15T15-21-02-019Z-26620fab terminou escalated no planejamento: empty write allowlist,1chamada/0rodadas. Pedido somente inspeção reservava autoria ao Principal. Não ready_for_human; testes do Principal e revisões independentes como evidência alternativa.",
+    "Lacunas: fronteiras monetárias FatorR, disputa PG classificação×transmissão/salvamento, ACL real das rotas Apuração nos testes que a simulam, validação visual desktop/celular em futuros PRs. Não há homologação tributária ou do provedor.",
+    "Não generalizar atomicidade do piloto ou carteira global do lote moderno de Guias para Apuração/Operações. Preview OperationsBatch persiste registro de prévia (operations_batch_preview), não reserva de execução. Riscos de resultado parcial/timeout/duplicatas/recuperação mantidos."
+  ]
+}
