@@ -185,3 +185,22 @@ test('modal de conferência inicia no resumo das fontes, antes de tabelas e erro
  expect(screen.getByRole('heading', { name: 'Fontes da conferência' })).toHaveFocus();
  expect(screen.getByRole('alert')).toHaveTextContent('Fonte temporariamente indisponível');
 });
+
+test.each([
+ ['fontes ausentes', { snapshot: { value: null }, history: { value: { versoes: [] } } }, 'heading'],
+ ['carregamento', null, 'status'],
+])('modal mantém navegação por Tab no conteúdo de %s sem tabelas vazias', (_, details, role) => {
+ render(<Modal titulo="Conferir empresa" aoFechar={() => {}}><CalculationEvidence details={details} /></Modal>);
+ const content = screen.getByRole(role, role === 'heading' ? { name: 'Fontes da conferência' } : undefined);
+ const close = screen.getByRole('button', { name: 'Fechar' });
+ expect(content).toHaveFocus();
+ expect(content).toHaveAttribute('tabindex', '0');
+ expect(screen.queryByRole('table')).not.toBeInTheDocument();
+ fireEvent.keyDown(content, { key: 'End' });
+ expect(content).toHaveFocus();
+ fireEvent.keyDown(content, { key: 'Tab' });
+ expect(close).toHaveFocus();
+ fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
+ expect(content).toHaveFocus();
+ expect(screen.getByRole('dialog')).toContainElement(document.activeElement);
+});

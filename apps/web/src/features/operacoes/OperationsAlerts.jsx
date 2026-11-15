@@ -6,7 +6,7 @@ import { companyTabPath } from '../companies/detail/lib/rotasDaEmpresa';
 
 // Translate the saved period evidence only; unknown/legacy values prove no stage.
 const periodEvidence = {
-  TRANSMITIDA: ['Declaração transmitida', 'Conferir o impacto na declaração antes de decidir sobre retificação.'],
+  TRANSMITIDA: ['Transmissão registrada na época do aviso', 'Conferir o impacto na declaração antes de decidir sobre retificação.'],
   APURADA: ['Apuração calculada ou simulada', 'Conferir o impacto no cálculo salvo. Cálculo não comprova transmissão.'],
   FECHADA: ['Período fechado', 'Conferir o impacto no fechamento. Fechamento não comprova transmissão.'],
   COMPROVACAO_PENDENTE: ['Comprovação da apuração pendente', 'Conferir as evidências do período antes de concluir a revisão.'],

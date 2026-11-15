@@ -53,7 +53,7 @@ test('aviso compacto oculta somente zero confirmado e preserva falha de atualiza
 });
 
 test.each([
-  ['TRANSMITIDA', 'Declaração transmitida', 'Conferir o impacto na declaração antes de decidir sobre retificação.'],
+  ['TRANSMITIDA', 'Transmissão registrada na época do aviso', 'Conferir o impacto na declaração antes de decidir sobre retificação.'],
   ['APURADA', 'Apuração calculada ou simulada', 'Conferir o impacto no cálculo salvo. Cálculo não comprova transmissão.'],
   ['FECHADA', 'Período fechado', 'Conferir o impacto no fechamento. Fechamento não comprova transmissão.'],
   ['COMPROVACAO_PENDENTE', 'Comprovação da apuração pendente', 'Conferir as evidências do período antes de concluir a revisão.'],
@@ -100,6 +100,6 @@ test('observação recebida permanece literal, inclusive causa desconhecida e do
   render(<OperationsAlerts api={api} />);
   fireEvent.click(screen.getByRole('button', { name: /Notas para revisão/ }));
   expect(await screen.findByText(observacoes)).toBeInTheDocument();
-  expect(screen.queryByText('Declaração transmitida')).not.toBeInTheDocument();
+  expect(screen.queryByText('Transmissão registrada na época do aviso')).not.toBeInTheDocument();
   expect(api.getOperationAlerts).toHaveBeenCalledTimes(1);
 });

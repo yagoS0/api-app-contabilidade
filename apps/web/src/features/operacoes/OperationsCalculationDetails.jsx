@@ -13,13 +13,13 @@ const auditReasons = {
 };
 
 export function CalculationEvidence({ details }) {
-  if (!details) return <p role="status" tabIndex={-1} data-modal-autofocus>Lendo cálculo e auditoria salvos…</p>;
+  if (!details) return <p role="status" tabIndex={0} data-modal-autofocus>Lendo cálculo e auditoria salvos…</p>;
   const snapshot = details.snapshot?.value, audit = details.auditoria?.value;
   // The history DTO has no calculation revision key. Do not join by declaration
   // number/date/current flag: reopening and recalculation preserve old identifiers.
   const history = details.history?.value;
   return <>
-    <h3 tabIndex={-1} data-modal-autofocus>Fontes da conferência</h3>
+    <h3 tabIndex={0} data-modal-autofocus>Fontes da conferência</h3>
     <dl className="operacoes-checklists operacoes-evidencias-fontes">
       {Object.entries(evidenceSources).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{!details[key] ? 'Não consultado nesta conferência' : details[key].error ? 'Indisponível · erro de leitura' : details[key].value ? (key === 'history' && details[key].value.limitado ? 'Disponível parcialmente · histórico limitado' : 'Disponível para conferência') : 'Sem evidência salva disponível'}</dd></div>)}
     </dl>
