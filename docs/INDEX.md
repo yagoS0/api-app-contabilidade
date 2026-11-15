@@ -328,3 +328,5 @@ Os caminhos são relativos à raiz do repositório. Cada arquivo aparece na clas
 - [Avaliação da recuperação documental local DAS/SERPRO 4.4.7](modules/serpro-das-recuperacao-avaliacao-447.md) — viabilidade, matrizes, lacunas, proposta de prévia read-only e evidências sintéticas; sem recuperação implementada.
 
 - [Prévia interna de elegibilidade DAS/SERPRO 4.4.8](modules/serpro-das-previa-recuperacao-448.md) — contrato somente leitura, impedimentos e evidências insuficientes; nenhuma recuperação.
+
+- [Estabilidade de Apuração Fiscal e Operações](modules/estabilidade-apuracao-operacoes.md) — mapa atual, matriz de prontidão por subárea, lacunas e condições para novos incrementos; não autoriza integração ou publicação.
