@@ -36,3 +36,18 @@ body[data-empty=true] #gu-title::after,body[data-empty=true] #co-title::after{co
 }
 
 .section-line[id]{scroll-margin-top:calc(var(--task-header-height,180px) + 16px)}
+/* Refluxo em ampliação extrema: preservar navegação sem overflow global. */
+@media(max-width:340px){
+ .app-header,.app-subnav{flex-wrap:wrap;gap:8px;padding-inline:12px}
+ .work-header{grid-template-columns:minmax(0,1fr)}
+ .work-header #close-work,.context-summary{grid-column:1;grid-row:auto}
+ body[data-alternative=B].working .three-containers{grid-template-columns:minmax(0,1fr)}
+ .facts{grid-template-columns:minmax(0,1fr)}
+}
+/* Contexto compacto em telas estreitas e zoom, sem ocupar a área de leitura. */
+@media(min-width:341px) and (max-width:760px){
+ .work-header>div:first-child{grid-column:1}
+ .work-header #close-work{grid-column:2;grid-row:1}
+ .context-summary{grid-column:1/-1;grid-row:2;display:flex;flex-wrap:wrap;gap:4px 12px}
+ .context-summary span+span{border-left:1px solid var(--border);padding-left:12px}
+}

@@ -1,0 +1,230 @@
+[
+  {
+    "w": 1440,
+    "state": "resumo",
+    "zoom": 2,
+    "width": 713,
+    "height": 394,
+    "scroll": 706,
+    "header": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "left": 0
+    },
+    "focus": ""
+  },
+  {
+    "w": 1440,
+    "state": "tabela",
+    "zoom": 2,
+    "width": 713,
+    "height": 394,
+    "scroll": 706,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 26,
+      "width": 656.4000244140625,
+      "height": 105.30000305175781,
+      "top": 26,
+      "right": 681.2000255584717,
+      "bottom": 131.3000030517578,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1440,
+    "state": "lote",
+    "zoom": 2,
+    "width": 713,
+    "height": 394,
+    "scroll": 706,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 26,
+      "width": 656.4000244140625,
+      "height": 105.30000305175781,
+      "top": 26,
+      "right": 681.2000255584717,
+      "bottom": 131.3000030517578,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1440,
+    "state": "conferencia",
+    "zoom": 2,
+    "width": 713,
+    "height": 394,
+    "scroll": 706,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 26,
+      "width": 656.4000244140625,
+      "height": 105.30000305175781,
+      "top": 26,
+      "right": 681.2000255584717,
+      "bottom": 131.3000030517578,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1440,
+    "state": "notas",
+    "zoom": 2,
+    "width": 713,
+    "height": 394,
+    "scroll": 706,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 0,
+      "width": 656.4000244140625,
+      "height": 105.30000305175781,
+      "top": 0,
+      "right": 681.2000255584717,
+      "bottom": 105.30000305175781,
+      "left": 24.80000114440918
+    },
+    "focus": ""
+  },
+  {
+    "w": 1440,
+    "state": "incerta",
+    "zoom": 2,
+    "width": 713,
+    "height": 394,
+    "scroll": 706,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 0,
+      "width": 656.4000244140625,
+      "height": 105.30000305175781,
+      "top": 0,
+      "right": 681.2000255584717,
+      "bottom": 105.30000305175781,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1366,
+    "state": "resumo",
+    "zoom": 2,
+    "width": 676,
+    "height": 394,
+    "scroll": 668,
+    "header": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "left": 0
+    },
+    "focus": ""
+  },
+  {
+    "w": 1366,
+    "state": "tabela",
+    "zoom": 2,
+    "width": 676,
+    "height": 394,
+    "scroll": 668,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 26,
+      "width": 618.7999877929688,
+      "height": 105.30000305175781,
+      "top": 26,
+      "right": 643.5999889373779,
+      "bottom": 131.3000030517578,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1366,
+    "state": "lote",
+    "zoom": 2,
+    "width": 676,
+    "height": 394,
+    "scroll": 668,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 26,
+      "width": 618.7999877929688,
+      "height": 105.30000305175781,
+      "top": 26,
+      "right": 643.5999889373779,
+      "bottom": 131.3000030517578,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1366,
+    "state": "conferencia",
+    "zoom": 2,
+    "width": 676,
+    "height": 394,
+    "scroll": 668,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 26,
+      "width": 618.7999877929688,
+      "height": 105.30000305175781,
+      "top": 26,
+      "right": 643.5999889373779,
+      "bottom": 131.3000030517578,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  },
+  {
+    "w": 1366,
+    "state": "notas",
+    "zoom": 2,
+    "width": 676,
+    "height": 394,
+    "scroll": 668,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 0,
+      "width": 618.7999877929688,
+      "height": 105.30000305175781,
+      "top": 0,
+      "right": 643.5999889373779,
+      "bottom": 105.30000305175781,
+      "left": 24.80000114440918
+    },
+    "focus": ""
+  },
+  {
+    "w": 1366,
+    "state": "incerta",
+    "zoom": 2,
+    "width": 676,
+    "height": 394,
+    "scroll": 668,
+    "header": {
+      "x": 24.80000114440918,
+      "y": 0,
+      "width": 618.7999877929688,
+      "height": 105.30000305175781,
+      "top": 0,
+      "right": 643.5999889373779,
+      "bottom": 105.30000305175781,
+      "left": 24.80000114440918
+    },
+    "focus": "workspace-title"
+  }
+]
