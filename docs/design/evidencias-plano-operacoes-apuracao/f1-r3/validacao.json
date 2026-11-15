@@ -1,0 +1,648 @@
+{
+  "errors": [],
+  "blocked": [],
+  "assertions": [
+    "1440 títulos distribuições",
+    "1440 etapa calcular",
+    "1440 foco calcular",
+    "1440 ativa calcular",
+    "1440 etapa conferir",
+    "1440 foco conferir",
+    "1440 ativa conferir",
+    "1440 etapa confirmadas",
+    "1440 foco confirmadas",
+    "1440 ativa confirmadas",
+    "1440 etapa transmitidas",
+    "1440 foco transmitidas",
+    "1440 ativa transmitidas",
+    "1440 seleção por teclado",
+    "1440 retorno foco detalhe",
+    "1440 retorno busca",
+    "1440 resumo preserva busca",
+    "1440 resumo preserva seleção",
+    "1440 lote misto",
+    "1440 origem agendada",
+    "1440 âncora visível",
+    "1440 contexto fixo em detalhe",
+    "1440 individual isolada",
+    "1440 capacidade limpa seleção",
+    "1440 não avaliada distinta de bloqueio",
+    "1440 motivo invalidação",
+    "1440 incerta não comprovada",
+    "1440 PA limpa dados",
+    "1440 PA não usa origem antiga",
+    "1440 PA limpa seleção",
+    "1366 títulos distribuições",
+    "1366 etapa calcular",
+    "1366 foco calcular",
+    "1366 ativa calcular",
+    "1366 etapa conferir",
+    "1366 foco conferir",
+    "1366 ativa conferir",
+    "1366 etapa confirmadas",
+    "1366 foco confirmadas",
+    "1366 ativa confirmadas",
+    "1366 etapa transmitidas",
+    "1366 foco transmitidas",
+    "1366 ativa transmitidas",
+    "1366 seleção por teclado",
+    "1366 retorno foco detalhe",
+    "1366 retorno busca",
+    "1366 resumo preserva busca",
+    "1366 resumo preserva seleção",
+    "1366 lote misto",
+    "1366 origem agendada",
+    "1366 âncora visível",
+    "1366 contexto fixo em detalhe",
+    "1366 individual isolada",
+    "1366 capacidade limpa seleção",
+    "1366 não avaliada distinta de bloqueio",
+    "1366 motivo invalidação",
+    "1366 incerta não comprovada",
+    "1366 PA limpa dados",
+    "1366 PA não usa origem antiga",
+    "1366 PA limpa seleção",
+    "390 títulos distribuições",
+    "390 etapa calcular",
+    "390 foco calcular",
+    "390 ativa calcular",
+    "390 etapa conferir",
+    "390 foco conferir",
+    "390 ativa conferir",
+    "390 etapa confirmadas",
+    "390 foco confirmadas",
+    "390 ativa confirmadas",
+    "390 etapa transmitidas",
+    "390 foco transmitidas",
+    "390 ativa transmitidas",
+    "390 seleção por teclado",
+    "390 retorno foco detalhe",
+    "390 retorno busca",
+    "390 resumo preserva busca",
+    "390 resumo preserva seleção",
+    "390 lote misto",
+    "390 origem agendada",
+    "390 âncora visível",
+    "390 contexto fixo em detalhe",
+    "390 individual isolada",
+    "390 capacidade limpa seleção",
+    "390 não avaliada distinta de bloqueio",
+    "390 motivo invalidação",
+    "390 incerta não comprovada",
+    "390 PA limpa dados",
+    "390 PA não usa origem antiga",
+    "390 PA limpa seleção",
+    "360 títulos distribuições",
+    "360 etapa calcular",
+    "360 foco calcular",
+    "360 ativa calcular",
+    "360 etapa conferir",
+    "360 foco conferir",
+    "360 ativa conferir",
+    "360 etapa confirmadas",
+    "360 foco confirmadas",
+    "360 ativa confirmadas",
+    "360 etapa transmitidas",
+    "360 foco transmitidas",
+    "360 ativa transmitidas",
+    "360 seleção por teclado",
+    "360 retorno foco detalhe",
+    "360 retorno busca",
+    "360 resumo preserva busca",
+    "360 resumo preserva seleção",
+    "360 lote misto",
+    "360 origem agendada",
+    "360 âncora visível",
+    "360 contexto fixo em detalhe",
+    "360 individual isolada",
+    "360 capacidade limpa seleção",
+    "360 não avaliada distinta de bloqueio",
+    "360 motivo invalidação",
+    "360 incerta não comprovada",
+    "360 PA limpa dados",
+    "360 PA não usa origem antiga",
+    "360 PA limpa seleção"
+  ],
+  "checks": [
+    {
+      "state": "atual",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "resumo",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "calcular",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "conferir",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "confirmadas",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "transmitidas",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "lote",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "agendada",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "resultado",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "conferencia",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "individual",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "externa",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "externa-evidencias",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "impedidas",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "rotinas",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "avisos",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "procuracao",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "recusa",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "parada",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "cadastro",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "regime",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "incerta",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "presumido",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "sem-movimento",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "sem-amostra",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "busca-vazia",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "state": "atual",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "resumo",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "calcular",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "conferir",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "confirmadas",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "transmitidas",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "lote",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "agendada",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "resultado",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "conferencia",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "individual",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "externa",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "externa-evidencias",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "impedidas",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "rotinas",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "avisos",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "procuracao",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "recusa",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "parada",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "cadastro",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "regime",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "incerta",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "presumido",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "sem-movimento",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "sem-amostra",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "busca-vazia",
+      "width": 1366,
+      "overflow": false
+    },
+    {
+      "state": "atual",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "resumo",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "calcular",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "conferir",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "confirmadas",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "transmitidas",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "lote",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "agendada",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "resultado",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "conferencia",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "individual",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "externa",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "externa-evidencias",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "impedidas",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "rotinas",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "avisos",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "procuracao",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "recusa",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "parada",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "cadastro",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "regime",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "incerta",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "presumido",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "sem-movimento",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "sem-amostra",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "busca-vazia",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "state": "atual",
+      "width": 360,
+      "overflow": true
+    },
+    {
+      "state": "resumo",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "calcular",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "conferir",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "confirmadas",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "transmitidas",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "lote",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "agendada",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "resultado",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "conferencia",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "individual",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "externa",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "externa-evidencias",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "impedidas",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "rotinas",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "avisos",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "procuracao",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "recusa",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "parada",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "cadastro",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "regime",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "incerta",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "presumido",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "sem-movimento",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "sem-amostra",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "state": "busca-vazia",
+      "width": 360,
+      "overflow": false
+    }
+  ]
+}

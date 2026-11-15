@@ -1,5 +1,5 @@
 {
-  "summary": "Plano diretor F0–F6 preservado; revisão 2 da F1 após rejeição humana, com duas alternativas dentro da Operações real, três containers, tabelas/lote/conferência/rotinas e comparação lado a lado.",
+  "summary": "F1 revisão3: direção B adotada pelo usuário, proposta refinada ainda aguardando homologação. Contexto permanente, seleção por capacidade, conferência e ocorrências acionáveis. Plano técnico F0/F2–F6 intacto.",
   "operationalImpact": "Nenhum código funcional, regra, estado, schema, worker ou configuração alterado. Plano preserva #275, três ACLs distintas, revisão, reservas incertas, pagamento, fechamento, duplicatas e recuperação. Fiscal decide cálculo/transmissão; Operações coordena capacidades; Guias/Contabilidade/Comunicação mantêm fatos próprios. Protótipo com dados fictícios e sem APIs não faz parte do frontend produtivo.",
   "risk": "high",
   "domains": [
@@ -15,19 +15,20 @@
     "security"
   ],
   "tests": [
-    "R2: 93 testes de governança/controlador/verificador aprovados; 348 links/âncoras válidos; diagnose 5023→5023, zero novos; diff-check aprovado. CI do novo SHA será registrada no PR.",
-    "R2: Chrome isolado e rede externa bloqueada; 132 capturas (128 propostas e 4 App atual) em 1440/1366/390/360. Quatro indicadores/listas, busca, seleção/lote, retorno e estados documentados. Zero erros JS e zero overflow global das propostas; overflow da tela atual em360 registrado sem alterar produto.",
-    "Histórico da entrega inicial: 76 suítes/876 testes web e93governança passaram no SHA4a409; não contados como reexecução nesta revisão sódocumental. Sem nova execução PostgreSQL local ou operação fiscal."
+    "R3:120asserções de interação/contexto/teclado e108capturas em1440/1366/390/360; zeroerroJS/overflowglobal daB. Appatual360overflow registrado sem alterar produto. Corrigidos no protótipo: foco tardio, títulos de distribuições, motivo por capacidade e âncoras sob cabeçalho.",
+    "R3:93testes governança/controlador/verificador aprovados;337links/âncoras válidos;diagnose5023→5023,zero novos. CI final registrada noPR.",
+    "R1/R2 permanecem históricos:876testeswebR1 e132capturasR2 não contados como execuçãoR3. Sem nova execução PostgreSQL local, efeito fiscal ou operação de negócio."
   ],
   "rollback": "Reverter somente plano, design, HTML ilustrativo, capturas, índice e registro. Nenhum dado ou comportamento a desfazer. Preservar árvores e bancos antigos.",
   "humanDecisions": [
-    "F1 inicial rejeitada expressamente pelo usuário. A e B aguardam escolha/aprovação humana explícita; CI e parecer técnico não aprovam F1 nem P1/P2. Não iniciar funcionalidade, merge, deploy ou ativação.",
+    "Usuário adotou B como direção visual/operacional; não homologouF1 nem autorizouP1/P2. Aguardar homologação humana daB refinada e decisões separadas de integração/primeiroincrementofuncional. Não merge/deploy.",
     "Definir universo/denominadores, prova externa/suspensão, fundamentação tributária, tolerância de comparação e compatibilidade folhasSalario desde202611. Não implementar enquanto bloqueios específicos persistirem."
   ],
-  "finalReview": "R2: parecer independente UI/UX de f1_ux_revisao favorável tecnicamente à apresentação de A/B, sem bloqueadores; inspecionou código, docs, evidências e capturas atuais/A/B (1440/390/360), sem alegar execução própria de browser/testes. Ajustes incorporados: marca real, navegação mobile, destaque da etapa e aviso de rolagem. Registro atualizado para separar históricoR1 e provasR2. F0/F2–F6 sem diff. Aprovação humana F1 permanece pendente, sem funcionalidade, merge ou deploy.",
+  "finalReview": "R3:parecer independente UI/UX f1_ux_revisao favorável tecnicamente à apresentação humana, sem bloqueadores remanescentes. Inspecionou código,docs,evidências,capturas4larguras; não alegou browser/testes próprios. Confirmou contexto permanente, capacidade/motivos, tipos de ocorrência, foco e âncoras. Acabamento não bloqueante: plural em alguns contadores com quantidade1. F0/F2–F6 sem diff. F1 ainda depende de homologação humana.",
   "limitations": [
     "Controlador executável não iniciado: entrega somente de planejamento/documentação, sem mudanças funcionais; AGENTS exige inicialização antes de mudanças funcionais. Não se declara ready_for_human nem reutiliza escalated do #286. Análise de impacto/testesgovernança/revisões nativas reais realizados.",
-    "Mock/sintéticos não certificam ACL, persistência ou provedor.132capturasR2 cobrem1440/1366/390/360; zoom200% e leitor de tela não homologados. HTML reproduz padrões visuais, não instancia React. Cabeçalho é moldura inerte. Protótipo anterior preservado em capturas históricas rejeitadas.",
-    "Préviaoficial existente ≠ cálculo interno; lote atual não aceita seleçãoexplícita; sync oficial pode escrever guia/provisão; rotina dia8 e externoPresumido não comprovam requisitos completos. Não há novo motor ou política de recuperação."
+    "Protótipo sintético não certifica ACL,cálculo,concorrência,persistência,provedor.104capturasB+4Appreal;4larguras. Leitor de tela/zoom200% não homologados. HTML reproduz apresentação e tokens, sem instanciar React. A/R2 preservadas como histórico. Toda elegibilidade é fixture de apresentação, não política de negócio.",
+    "Préviaoficial existente ≠ cálculo interno; lote atual não aceita seleçãoexplícita; sync oficial pode escrever guia/provisão; rotina dia8 e externoPresumido não comprovam requisitos completos. Não há novo motor ou política de recuperação.",
+    "Acabamento não bloqueante identificado pela revisão: alguns contadores usam plural quando a quantidade é1. Não altera seleção, contagem, autorização ou execução."
   ]
 }
