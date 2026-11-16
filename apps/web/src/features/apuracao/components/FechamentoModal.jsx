@@ -11,6 +11,7 @@ import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalF
 import { RelatorioFaturamentoPanel } from "../../apuracao-v2/components/RelatorioFaturamentoPanel";
 import { PANEL, fmtMoney } from '../../notas/components/notasStyles.shared.js';
 import { EmpresaZeradaPanel } from "./EmpresaZeradaPanel";
+import { Fs12DeclaratoriaPanel } from './Fs12DeclaratoriaPanel';
 import "./fechamento-modal.css";
 
 function pasAnteriores(competencia, n = 12) {
@@ -155,7 +156,11 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }, [portalClientId, competencia]);
 
   const temFatorR = atividades.some((a) => a.sujeitoFatorR);
-  const folhaSerie = formularioRecuperado?.folhaMensal12 ?? pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
+  // Corte de apresentação; janela e exigência são consultadas na política B1.
+  // O novo rascunho não é entrada fiscal, nem altera o envelope recuperado.
+  const novaApresentacaoFs12 = competencia >= '2026-11';
+  const folhaSerie = formularioRecuperado?.folhaMensal12 ?? (novaApresentacaoFs12 ? []
+    : pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) })));
 
   // ⚠ ZERADA É QUEM **SOMA** ZERO — não quem tem a lista vazia.
   //
@@ -171,7 +176,9 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   );
   const declaracaoZerada = somaAtividades === 0;
   // O backend recusa antes de gastar a chamada; aqui é só antecipação, com o motivo à vista.
-  const motivoCalcularBloqueado = !declaracaoZerada || semMovimento
+  const motivoCalcularBloqueado = novaApresentacaoFs12
+    ? 'Novo cálculo indisponível: a conferência fiscal mensal da FS12 e sua integração ainda estão pendentes.'
+    : !declaracaoZerada || semMovimento
     ? ""
     : (dados?.semMovimentoDisponivel
       ? "As atividades somam R$ 0,00. Marque \"Declarar SEM MOVIMENTO\" se o mês não teve receita."
@@ -304,6 +311,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
 
   async function handleCalcular() {
+    if (motivoCalcularBloqueado) return;
     if (operacao.current) return;
     operacao.current = true;
     const anterior = { resultado, relatorio, relatorioErro, formularioRecuperado };
@@ -597,7 +605,11 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             </section>
 
             {/* Folha 12m (Fator-R) — só se houver atividade sujeita */}
-            {temFatorR && (
+            {novaApresentacaoFs12 && <Fs12DeclaratoriaPanel key={contexto} api={api} portalClientId={portalClientId}
+              competencia={competencia} temFatorR={temFatorR}
+              referencia={formularioRecuperado?.folhaMensal12 ?? dados?.folhaMensal12}
+              recuperado={Boolean(formularioRecuperado)} />}
+            {temFatorR && !novaApresentacaoFs12 && (
               <section className="fechamento-secao" aria-label="Folha de salários e Fator R">
                 <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 6 }}>
                   Folha de salários · Fator-R (12 meses)
@@ -754,7 +766,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 há UM accent, e ele é sempre o próximo passo legítimo.
                 As cores antigas eram token de ESTADO em botão de AÇÃO (ciano = categoria,
                 âmbar = pendência) — ver `apps/web/CLAUDE.md`. */}
-            {motivoCalcularBloqueado && <Aviso compacto tom="atencao" titulo="Antes de calcular">{dados?.semMovimentoDisponivel ? "As atividades somam R$ 0,00. Confirme a opção de declaração sem movimento antes de calcular." : motivoCalcularBloqueado}</Aviso>}
+            {motivoCalcularBloqueado && !novaApresentacaoFs12 && <Aviso compacto tom="atencao" titulo="Antes de calcular">{dados?.semMovimentoDisponivel ? "As atividades somam R$ 0,00. Confirme a opção de declaração sem movimento antes de calcular." : motivoCalcularBloqueado}</Aviso>}
             <div className="fechamento-acoes">
               {/* ⚠ Saída no RODAPÉ, não só no ✕ do topo. O modal rola por dentro
                   (`maxHeight: 94vh` + `overflowY: auto`) e o cabeçalho rola junto: quem desceu até

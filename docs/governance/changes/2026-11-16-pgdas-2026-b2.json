@@ -1,0 +1,37 @@
+{
+  "summary": "PGDAS-2026-B2: interface mensal FS12 e projeção somente leitura, sem integração fiscal.",
+  "operationalImpact": "Fiscal possui política B1 e interpretação cadastral pura. Nova consulta autorizada ACCOUNTANT lê PortalClient/Company/histórico em RepeatableRead. Web mantém rascunho descartável separado do cálculo recuperado. Novos cálculos neste modal a partir de11/2026 ficam bloqueados pela ausência de integração autenticada; endpoints legados/rotinas não recebem bloqueio global. Até10/2026 fluxo histórico preservado. Fator R, payload, fechamento produtivo, transmissão, schema, Guias, Contabilidade e Operações não alterados. UI com revisão específica; consumidores transitivos conservados.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "web",
+    "portal",
+    "documentation",
+    "fiscal",
+    "accounting",
+    "guides",
+    "operations",
+    "communication",
+    "commercial",
+    "security",
+    "governance"
+  ],
+  "tests": [
+    "Base API560pass/9skip32suítes;web58pass8suítes. Candidata API596pass/9skip36suítes eweb592pass51suítes.",
+    "Governança88pass;analisador5pass;diagnose5023→5023zero; guarda HTTP real, Prisma/dados simulados.",
+    "10cenários visuais desktop/mobile semaxe/overflow/JS; teclado/foco1440/390/720. Capturas sintéticas versionadas; sem chamadas externas.",
+    "Build web aprovado; avisos legados de bundle/imports mistos preservados."
+  ],
+  "rollback": "Reverter somente diff B2 incluindo novo GET/cliente/painel/testes/documentos e restaurar caracterização A. Sem dados a migrar ou declarações a desfazer. Não reverter B1 ou trabalho paralelo.",
+  "humanDecisions": [
+    "Merge e deploy exigem autorização própria. B3 não iniciado.",
+    "B3 precisa origem/autoria mensais autenticadas, persistência/revisão/auditoria e homologação de integração ao cálculo/payload; isso não está certificado por B2."
+  ],
+  "limitations": [
+    "Controlador2026-11-16T17-06-59-960Z-205d2bbf escalated timeout executor600s apósEPERM; semready_for_human. Principal executou correções/testes e revisores independentes.",
+    "9testesPGlocais ignorados; nova leitura transacional testada comdouble, não banco real.",
+    "Vigência parcial inclusive abertura no meio do PA permanece pendente; não inventa regime ou janela. Rascunho não salvo nem validado fiscalmente.",
+    "Bloqueio novo cálculo é visual neste consumidor; não alegar proteção global ou conformidade produtiva. CI e build finais registrados no PR."
+  ],
+  "finalReview": "Fiscal/segurança (/root/b2_fiscal_seguranca), UI/UX (/root/b2_ui_plano) e arquitetura/backend (/root/b2_arquitetura) favoráveis após correções. Revisores inspecionaram código e artefatos sem reexecução própria. Fechamento sistêmico documental final favorável por /root/b2_arquitetura. Controlador permanece escalated, sem ready_for_human."
+}
