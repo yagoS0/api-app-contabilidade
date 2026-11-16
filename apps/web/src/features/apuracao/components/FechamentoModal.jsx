@@ -605,7 +605,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             </section>
 
             {/* Folha 12m (Fator-R) — só se houver atividade sujeita */}
-            {novaApresentacaoFs12 && <Fs12DeclaratoriaPanel key={contexto} api={api} portalClientId={portalClientId}
+            {novaApresentacaoFs12 && <Fs12DeclaratoriaPanel key={contexto} razao={razao} api={api} portalClientId={portalClientId}
               competencia={competencia} temFatorR={temFatorR}
               referencia={formularioRecuperado?.folhaMensal12 ?? dados?.folhaMensal12}
               recuperado={Boolean(formularioRecuperado)} />}

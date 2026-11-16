@@ -2872,6 +2872,14 @@ export function createRealApi() {
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);
     },
+    async getFs12Confirmacoes(companyId, competencia) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/fs12/confirmacoes`);
+    },
+    async confirmarFs12Fechamento(companyId, competencia, payload) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/fs12/confirmacoes`, {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+    },
     async getFs12Fechamento(companyId, competencia) {
       return request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/fs12`);
     },
