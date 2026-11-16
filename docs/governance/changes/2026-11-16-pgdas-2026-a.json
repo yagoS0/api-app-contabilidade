@@ -1,0 +1,38 @@
+{
+  "summary": "PGDAS-2026-A: caracterização da FS12 declaratória e regime de apuração, sem correção fiscal produtiva.",
+  "operationalImpact": "Somente documentação e testes. Fiscal possui exigibilidade e Fator R; Cadastro fornece regime; Operações e frontend consomem evidências; Guias/Contabilidade conservam escritas. Contratos HTTP, autorização, simulação/transmissão, reservas, payloads produtivos, token e schema inalterados. O mapa conservador inclui commercial, communication e portal como consumidores transitivos; não há mudança em seus contratos, efeitos ou interface. Sem edição de layout, revisão UI/UX visual nova não é aplicável.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web",
+    "governance"
+  ],
+  "tests": [
+    "Base remota5192996343f3f1b8a64197df8d7ab2c17009399b confirmada; worktree exclusiva codex/pgdas-2026-a-20261116; anteriores preservadas.",
+    "API referência443 aprovados/27suítes e9ignorados; candidata487 aprovados/29suítes e mesmos9ignorados. 44novos testes. Sem alteração produtiva.",
+    "Web43 aprovados/5suítes, quatro novos cenários no modal real com API em memória.",
+    "Governança 40/40; analisador 5/5; diagnose 5023→5023, zero acréscimos. Baseline da árvore P2a tem código produtivo idêntico à base integrada; diff confirmado. O relatório diagnose é texto; tentativa de lê-lo como JSON falhou apenas no leitor auxiliar, depois conferida corretamente.",
+    "Fontes oficiais consultadas16/11/2026; manual download direto13/11/2026 hash1786a9badcd6676567b8a2ce27c6f11466b3abaf1ea1330a27eef31ec013119f e página77 visualmente conferida. Busca em cache não usada como versão atual.",
+    "Fixture inicial de token incompleta e seletor acessível de botão corrigidos nos testes; nenhum código produtivo modificado para passar."
+  ],
+  "rollback": "Reverter exclusivamente documentação e testes desta entrega; sem transformação de dados, schema, retificação ou ato fiscal. B somente após nova autorização; eventual rollback B não desfaz declarações nem libera reservas incertas.",
+  "humanDecisions": [
+    "Integrar PR somente mediante autorização específica; não iniciar PGDAS-2026-B, deploy, SERPRO real, Drive, limpeza ou reativação Railway.",
+    "B exige revisão fiscal de fontes mensais/zero/início de atividade, subconjuntos aceitos pelo SERPRO, fonte anual de regime e contrato2027."
+  ],
+  "limitations": [
+    "Sem homologação SERPRO: testes locais observam funções/doubles, não aceite do provedor.",
+    "Nove testes PostgreSQL ignorados por falta de URL descartável local: conferenciaAdn7 e cicloSimples2. Não contados como aprovados; sem alteração transacional nesta entrega.",
+    "Controlador não executado nesta caracterização sem edição funcional; principal e revisores independentes reais, sem ready_for_human.",
+    "Sem leitura de documentos de clientes, dados reais, credenciais ou bancos existentes."
+  ],
+  "finalReview": "16/11/2026: pareceres independentes favoráveis de /root/pgdas_fiscal, /root/pgdas_arquitetura e /root/pgdas_sistemico. Corrigidas referências de página, redação de autorização humana e renderização Markdown. Revisores inspecionaram código, documentos, fonte oficial e relatórios; não reexecutaram testes. Gate de impacto inicialmente apontou domínios transitivos ausentes; registro complementado, sem alterar gate. CI será vinculada ao SHA final no PR."
+}
