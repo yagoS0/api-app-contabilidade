@@ -30,7 +30,7 @@ Prefixo HTTP: `/firm/companies/:companyId`; nesse contrato legado, o identificad
 
 Autoria, timestamp, empresa real, regime, revisão sequencial e versão da política não vêm do navegador.
 Guarda inicial ACCOUNTANT preserva admin global e filtros canônicos. Dentro da transação, usuário e vínculo são relidos; revogação/inatividade impede confirmação.
-Erros: 400 comando/série inválidos; 401 sem autenticação; 403 política de acesso; 404 empresa não encontrada; 409 contexto, revisão ou idempotência conflitantes; 503 falha inesperada sanitizada. A UI não apresenta sucesso em falha.
+Erros: 400 identidade/comando inválidos; 401 sem autenticação; 403 política de acesso; 404 empresa não encontrada; 409 contexto, revisão ou idempotência conflitantes; 422 série/contexto fiscal inválidos; 503 falha inesperada sanitizada. A UI não apresenta sucesso em falha.
 
 ## Estados visuais
 
