@@ -1,0 +1,29 @@
+{
+  "summary": "PGDAS-2026-B3: caracterização dos caminhos e proposta de evidência mensal; integração fiscal não implementada por depender de aprovação de persistência e critérios de payload.",
+  "operationalImpact": "Nenhuma alteração operacional. Fiscal mantém interpretação e futura propriedade da evidência; Cadastro fornece contexto; Identidade preserva guarda; Operações mantém reservas/execução; Guias, Contabilidade, Comunicação, web e portal sem alterações. Apenas testes novos, documentação e passo adicional de CI PostgreSQL16. R01/R02/R06/R19/R20 e R25/R26 preservados. Nenhuma nova tabela, migração, contrato público produtivo, fórmula, transmissão, retificação ou mudança de recuperação. Lote moderno e legado conservam políticas distintas. Segurança #275 intacta.",
+  "risk": "high",
+  "domains": ["api", "ci", "fiscal", "operations", "security", "data", "accounting", "guides", "communication", "web", "portal", "commercial", "documentation", "governance"],
+  "tests": [
+    "PostgreSQL16.15 local novo, loopback e banco altan_piloto_governance_test: 40 testes aprovados em 5 suítes; 12 novos FS12/HTTP/ACL/RepeatableRead/rollback/fingerprint. Zero ignorados.",
+    "29 novos testes de serviços com doubles aprovados: 4 PAs, FatorR, recuperação/salvar/transmissão simulada, identidade, resultado incerto e ciclo automático.",
+    "Governança: 88 aprovados; analisador: 4 aprovados; diagnose5023→5023, zero novas violações. Baseline B2 produtivo comparado ao squash main, sem diferenças.",
+    "Regressão ampliada API: 950 aprovados, 59 suítes aprovadas, 7 ignorados. Web Apuração/Operações:620 aprovados em51suítes. Quatro links relativos e diff whitespace válidos. CI hospedada do SHA final será registrada no PR."
+  ],
+  "rollback": "Reverter somente os dois testes novos, documento B3, este registro e passo CI adicional. Nenhuma mudança de dados produtivos. Proposta futura exige rollout aditivo, preservar evidências e não confundir rollback de código com reversão de ato fiscal.",
+  "humanDecisions": [
+    "Aprovar fonte manual, referência mínima verificável e alcance da conferência autenticada.",
+    "Aprovar persistência mensal versionada, auditoria/CAS e vínculo imutável com cálculo antes de implementar schema ou contrato sensível.",
+    "Aprovar política de novo ato a partir de cálculo antigo11/12 sem prova; preservar histórico, declarações e incerteza sem retransmissão automática.",
+    "Resolver seleção SERPRO, histórico confiável, lista vazia/omissão e início de atividade parcial; homologação externa exige autorização separada.",
+    "2027 continua pendente; merge/deploy e incrementos seguintes não autorizados."
+  ],
+  "limitations": [
+    "Não há fonte mensal autenticada no produto; bloqueio B2 continua apenas no modal, não global. B3 não declara conformidade fiscal nem proteção de todos os caminhos.",
+    "Novo teste HTTP usa sessão sintética, ACL/roteador/composição/banco reais; revogação depois da guarda inicial permite leitura em voo. Isso não é uma guarda de despacho.",
+    "Teste de serviços usa doubles de banco/lease/contexto/transporte. Não homologa SERPRO, folha real ou atomicidade fiscal futura.",
+    "Local usa db push no banco novo, não valida histórico de migrations; CI usa migrations existentes em PostgreSQL16. Psql bloqueado pelo controle de aplicativos, sem alterar política Windows.",
+    "Sete skips da regressão ampliada: dois cenários históricos de base vulnerável #275 intencionalmente ignorados e cinco OperationsGuideResend que exigem outro destino descartável fixo. Não alteramos esse guard nem iniciamos cluster antigo. Novos41testes B3 executados, sem skips.",
+    "Controlador funcional não iniciado: escopo final apenas caracterização/proposta/testes. Nenhum ready_for_human alegado. Revisões independentes reais registradas separadamente."
+  ],
+  "finalReview": "Fiscal/segurança por /root/b3_fiscal e arquitetura/backend/segurança/CI por /root/b3_arquitetura favoráveis ao recorte de caracterização após inspeção dos arquivos e relatório PG40pass. Sem reexecução própria dos revisores. Autor de fs12B3Contratos: /root/b3_rotas_seguranca; demais arquivos: Principal. Parecer sistêmico e CI definitivos registrados no PR."
+}
