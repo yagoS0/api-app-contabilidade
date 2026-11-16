@@ -21,4 +21,3 @@ test('não homologa 2027 nem presume regime', () => {
   expect(() => validarSerieManualFs12(contexto('2020-01', '2027-01'), serie)).toThrow(/contexto/);
   expect(() => validarSerieManualFs12({ ...contexto(), regimeDoPeriodo: null }, serie)).toThrow(/contexto/);
 });
-

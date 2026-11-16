@@ -103,4 +103,3 @@ A declaração manual não autentica documentos externos. B2 bloqueia o novo cá
 
 Rollback de código: reverter commits deste incremento, retornando ao B2, mantendo a tabela e todas as revisões já confirmadas. Não executar DROP, apagar confirmações, retroagir migrações ou remover autores. Antes de publicação futura: backup/restauração verificados, compatibilidade aditiva e plano aprovado. A reversão visual não reverte ato fiscal (nenhum é realizado aqui).
 Nenhuma migração em produção, merge, deploy, transmissão, limpeza ou reativação Railway foi autorizada/executada.
-
