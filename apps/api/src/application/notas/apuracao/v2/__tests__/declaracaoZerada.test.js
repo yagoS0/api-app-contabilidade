@@ -137,6 +137,36 @@ describe("calcularFechamento — a declaração zerada é decidida pela SOMA", (
   });
 });
 
+describe("PGDAS-2026-A — preparação legada por competência", () => {
+  test.each(["2026-10", "2026-11", "2026-12", "2027-01"])("%s mantém filtro de folha por Fator R", async competencia => {
+    const folhaMensal12 = [{ pa: 202609, valor: 0 }, { pa: 202610, valor: 100 }];
+    for (const sujeitoFatorR of [false, true]) {
+      mockSimular.mockClear();
+      await calcularFechamento({ ...BASE, competencia, folhaMensal12,
+        atividades: [{ idAtividade: 11, valorInterno: 100, valorExterno: 0, sujeitoFatorR }] });
+      expect(mockSimular).toHaveBeenCalledTimes(1);
+      expect(mockSimular.mock.calls[0][0].folhasSalario).toEqual(sujeitoFatorR ? folhaMensal12 : []);
+    }
+  });
+  test.each(["2026-10", "2026-11", "2026-12", "2027-01"])("%s rejeita CAIXA antes do provedor", async competencia => {
+    await expect(calcularFechamento({ ...BASE, competencia, regimeApuracao: "CAIXA",
+      atividades: [{ idAtividade: 11, valorInterno: 100 }] })).rejects.toMatchObject({ code: "REGIME_APURACAO_NAO_SUPORTADO" });
+    expect(mockSimular).not.toHaveBeenCalled();
+    expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+    expect(prisma.apuracaoSnapshot.update).not.toHaveBeenCalled();
+  });
+  test("sem movimento e sem atividade descarta folha informada no PA11, comportamento ainda legado", async () => {
+    await calcularFechamento({ ...BASE, competencia: "2026-11", atividades: [], semMovimento: true,
+      folhaMensal12: [{ pa: 202610, valor: 100 }] });
+    expect(mockSimular.mock.calls[0][0]).toMatchObject({ folhasSalario: [], permitirSemMovimento: true });
+  });
+  test("folha ausente não bloqueia simulação de atividade Fator R no PA11", async () => {
+    await calcularFechamento({ ...BASE, competencia: "2026-11",
+      atividades: [{ idAtividade: 11, valorInterno: 100, sujeitoFatorR: true }] });
+    expect(mockSimular.mock.calls[0][0].folhasSalario).toEqual([]);
+  });
+});
+
 describe("traduzirRecusaDeclaracaoZerada", () => {
   it("a frase da RFB é CITADA, não reescrita — e ganha o contexto que falta", () => {
     const out = traduzirRecusaDeclaracaoZerada(new Error(RECUSA_RFB), true);
