@@ -1,0 +1,32 @@
+{
+  "summary": "PGDAS-2026-B1: política declaratória FS12 temporal e evidências mensais puras, sem integração produtiva.",
+  "operationalImpact": "Fiscal possui exigibilidade e qualidade das evidências; aplicação coordena fatos por contrato público. Fechamento, simulação, Fator R, UI, Cadastro, Guias, Contabilidade e Operações permanecem sem alterações ou imports novos. Portal/web são impacto conservador do mapa, sem mudança de interface ou contrato. Nenhuma consulta, persistência, rede ou autorização produtiva alterada.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "documentation",
+    "portal",
+    "web",
+    "fiscal",
+    "governance",
+    "accounting",
+    "operations",
+    "guides"
+  ],
+  "tests": [
+    "API:560 aprovados em32suítes;73 novos testes B1;9 PostgreSQL ignorados sem configuração local, não contados como aprovados.",
+    "Governança:88 aprovados. Diagnose:5023→5023,zero acréscimos; baseline produtiva A equivalente à main integrada.",
+    "Main remota028920a99bcef065014fedbde04439a8f1a44e92 reconfirmada. Somente arquivos novos; nenhum consumidor produtivo importou política."
+  ],
+  "rollback": "Reverter exclusivamente arquivos novos B1 e registro; nenhuma migração, dado persistido, declaração ou efeito externo alterado.",
+  "humanDecisions": [
+    "Autorizar integração separadamente. Não iniciar B2 automaticamente.",
+    "B2 exige fonte/autoria autorizadas, revisão consistente, mapeamento empresarial, seleção de meses e homologação técnica do payload;2027 permanece pendente."
+  ],
+  "limitations": [
+    "Controlador run2026-11-16T16-09-55-373Z-1fe29625 interrompido pelo Principal durante gate API para incorporar revisão empresarial. Executor registrou EPERM/rede; Principal executou testes e confirmou main. Não ready_for_human.",
+    "Nove testes PostgreSQL ignorados; B1 não altera persistência. Sem homologação SERPRO ou leitura de dados de clientes.",
+    "CI hospedada e pareceres finais vinculados ao SHA no PR. Fonte e conferência são fatos recebidos, não autenticação de procedência."
+  ],
+  "finalReview": "16/11/2026: pareceres independentes favoráveis Fiscal (/root/b1_fiscal), arquitetura/backend (/root/b1_arquitetura) e sistêmico (/root/pgdas_sistemico), por inspeção do código e artefatos, sem reexecução própria. Achado de identidade empresarial do regime corrigido e testado. Sem novos bloqueadores técnicos B1. Conclusão não equivale a ready_for_human do controlador ou aprovação humana. Sem alteração visual, revisão UI/UX não aplicável. CI final registrada no PR."
+}
