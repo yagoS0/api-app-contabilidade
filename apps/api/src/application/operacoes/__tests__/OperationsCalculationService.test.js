@@ -18,6 +18,35 @@ function fixture() {
 }
 async function command(f) {return {companyId:'a',competencia:'2026-10',userId:'user',requestId:'request-123',confirmCompetencia:'2026-10',expectedRevision:(await prepararCalculoOperacoes(f.db,'a','2026-10',f.deps)).revision};}
 
+test('P2a: pausa empresarial aparece separada da aptidão preliminar e não dispara efeitos', async () => {
+ const f = fixture();
+ f.settings.set('company_automation_policy:a', { paused: true, version: 1, reason: 'Fixture de pausa', updatedBy: 'user', updatedAt: '2026-10-01T10:00:00Z', resumedAt: null });
+ const result = await prepararCalculoOperacoes(f.db, 'a', '2026-10', f.deps);
+ expect(result.routine.status).toBe('PAUSED');
+ expect(result.canCalculate).toBe(true);
+ expect(f.deps.collect).not.toHaveBeenCalled(); expect(f.deps.calculate).not.toHaveBeenCalled();
+ expect(f.db.appSetting.upsert).not.toHaveBeenCalled();
+});
+
+test.each(['INATIVA', 'SUSPENSA'])('P2a: cadastro %s bloqueia o atalho sem decidir dispensa fiscal', async status => {
+ const f = fixture();
+ f.db.portalClient.findUnique.mockResolvedValue({ id: 'a', companyId: 'legacy', cnpj: '12345678000199', status });
+ const result = await prepararCalculoOperacoes(f.db, 'a', '2026-10', f.deps);
+ expect(result.canCalculate).toBe(false);
+ expect(result.blockers).toContain('Empresa não está ativa.');
+ expect(f.deps.collect).not.toHaveBeenCalled(); expect(f.db.appSetting.upsert).not.toHaveBeenCalled();
+});
+
+test('P2a: prévia sem procuração e com cadastro atual divergente preserva decisão pelo histórico', async () => {
+ const f = fixture();
+ f.db.company.findUnique.mockResolvedValue({ regimeTributario: 'LUCRO_PRESUMIDO' });
+ const result = await prepararCalculoOperacoes(f.db, 'a', '2026-10', f.deps);
+ expect(result.regime).toBe('SIMPLES');
+ expect(result.canCalculate).toBe(true);
+ expect(f.db.appSetting.findUnique.mock.calls.map(([args]) => args.where.key)).not.toContain('serpro_procuration_status:a');
+ expect(f.deps.collect).not.toHaveBeenCalled(); expect(f.deps.calculate).not.toHaveBeenCalled();
+});
+
 test('sem movimento pode passar na prévia, mas exige revisão antes de simular', async () => {
  const f = fixture();
  f.deps.getDados.mockResolvedValue({ atividades: [{ idAtividade: '1', valorInterno: 0, valorExterno: 0, sujeitoFatorR: false }], faturamento: { total: 0 }, rbt12Origem: 'EXTRATO_PGDAS', rbt12: 1000 });

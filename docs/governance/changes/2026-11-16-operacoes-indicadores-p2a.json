@@ -1,0 +1,25 @@
+{
+  "summary": "P2a: caracterização do universo, indicadores e elegibilidade de Apuração; proposta de contratos e critérios para P2b, sem implementação produtiva.",
+  "operationalImpact": "Nenhuma alteração funcional, visual, HTTP, de autorização, cálculo, persistência ou efeito externo. Operações consome projeções de Cadastro/Fiscal e evidências de Guias/Contabilidade. Foram caracterizados universo, regime atual versus mensal, confirmação, tarefa manual, número oficial externo, pausa, procuração, sobreposição, contador/lista e paginação. Consumidores da carteira, portal e comandos existentes permanecem compatíveis porque apenas testes/documentação mudam. Recusa do cliente e responsabilidade contratada por capacidade/PA não possuem fonte canônica demonstrada; permanecem desconhecidas na proposta.",
+  "risk": "high",
+  "domains": ["api", "operations", "web", "portal", "documentation", "governance"],
+  "tests": [
+    "Base remota e7429ee8c44b3924cd7f130b3df3dc316a87abc7 confirmada. Nova branch/worktree exclusiva; anteriores preservadas. Referência operacional canonical e fallback reconciliados com SHA-256 e50fa30d9c205d4f09fb7638429509bb49bfb49016107e9e27d759faa649639f.",
+    "Referência anterior à caracterização: 466 testes web / 37 suítes aprovados. Nova suíte OperationsIndicators.characterization: 30 testes aprovados; inclui componentes reais e divergência contador/lista 3/4→4, 1/4→3, 1/4→4 e paginação 30+1.",
+    "API focal: 176 testes / 11 suítes aprovados, dois testes PostgreSQL de OperationsConsultas ignorados por ausência de URL descartável nesta execução. Inclui quatro novos cenários em OperationsCalculationService (18 testes totais desse arquivo), regime, pausa, autorização, conferência/transmissão, fluxo e entrega externa. Nenhuma chamada fiscal real.",
+    "Governança: 40 testes aprovados; verificador: cinco aprovados; diagnose 5023→5023, zero acréscimos. Versão produtiva da base é idêntica à árvore integrada P1 usada como baseline de imports.",
+    "Regressão web final: 506 testes / 39 suítes aprovados: 466 já existentes em Operações, 30 novos de caracterização e 10 existentes de companiesCompetenciaConcorrente incluídos no escopo final para respostas atrasadas. Sete links locais válidos e diff --check aprovado. CI hospedada será consultada no SHA efetivo e registrada no PR, sem presumir aprovação."
+  ],
+  "rollback": "Reverter exclusivamente os testes de caracterização e os documentos/registro P2a. Sem migration, reparação ou transformação de dados. Não remover worktrees, branches, clusters ou materiais anteriores. Rollback P2b proposto repõe somente a leitura/interface anterior e não desfaz atos fiscais.",
+  "humanDecisions": [
+    "P2a autorizado exclusivamente como caracterização/documentação/testes, com PR draft. Não iniciar P2b, merge, deploy, SERPRO real, mensagens, limpeza ou reativação Railway.",
+    "P2b depende da aprovação de S/I/H, critérios de prova oficial, fonte de responsabilidade/carteira no PA e apresentação explícita de universo incompleto. Sem fonte não assumir empresa contratada/recusada nem dispensa fiscal."
+  ],
+  "limitations": [
+    "Não foi criada nem executada projeção futura. Aplicabilidade legal e responsabilidade por capacidade/PA não são inferidas dos testes. Documento distingue rigorosamente legado e proposta.",
+    "Os dois ensaios PostgreSQL ignorados não são contados como aprovados; persistência/transações não mudaram. Evidências PG16 P1 são referência histórica, não nova execução P2a.",
+    "Não houve nova execução do controlador: a regra de inicialização antes de alterações funcionais não se aplica a esta caracterização sem edição produtiva. Principal executa testes e solicita revisões independentes reais; não declara ready_for_human do controlador nem herda o estado anterior.",
+    "Dependências locais reaproveitadas por junção somente para executar testes; lockfile idêntico ao P1. Nenhuma instalação ou arquivo original foi modificado."
+  ],
+  "finalReview": "16/11/2026: pareceres finais favoráveis, sem bloqueadores, de /root/p2a_fiscal (Fiscal/Operações), /root/p2a_operacoes (Operações/UI) e /root/p2a_sistemico (sistêmico/backend). Rodada 1 identificou inconsistência entre confirmação externa e cálculo interno; rodada 2 confirmou correção separando R vigente de C interno, com contrato externo pendente P5, e vocabulário T consistente. Revisores inspecionaram código/documentos; sistêmico conferiu artefatos de testes/diagnose. Não reexecutaram suítes. Pareceres não autorizam integração ou P2b; CI será consultada no SHA final."
+}
