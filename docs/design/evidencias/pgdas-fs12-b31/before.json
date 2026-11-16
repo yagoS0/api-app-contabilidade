@@ -1,0 +1,17 @@
+{
+  "base": "434ae8405d63cdf314ac594f10902d874c341338",
+  "results": [
+    {
+      "device": "desktop",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "device": "mobile",
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "errors": [],
+  "blocked": []
+}

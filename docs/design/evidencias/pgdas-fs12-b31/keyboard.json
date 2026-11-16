@@ -1,0 +1,20 @@
+{
+  "focusConfirmacao": {
+    "tag": "H4",
+    "text": "Conferir folha de Empresa demonstrativa · 11/2026"
+  },
+  "focusVoltar": {
+    "tag": "BUTTON",
+    "text": "Confirmar valores da folha"
+  },
+  "firstTab": {
+    "tag": "INPUT",
+    "type": "checkbox"
+  },
+  "focusSucesso": {
+    "tag": "P",
+    "text": "Confirmada · 1 de 1 meses preenchidos"
+  },
+  "efeitos": 1,
+  "calcularBloqueado": true
+}

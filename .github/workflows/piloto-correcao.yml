@@ -124,3 +124,18 @@ jobs:
           npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath
           src/routes/firm/__tests__/fs12B3.postgres.test.js
           src/application/notas/apuracao/v2/__tests__/fs12B3Contratos.test.js
+      - name: Validar FS12 manual B3.1 sem cálculo ou transmissão
+        env:
+          NODE_ENV: test
+          ALTAN_TESTE_POSTGRES: '1'
+          DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+          ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+        run: >-
+          npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath
+          src/routes/firm/__tests__/fs12B31.postgres.test.js
+          src/routes/firm/__tests__/fs12B31.http.test.js
+          src/modules/fiscal/domain/__tests__/serieManualFs12.test.js
+          src/modules/fiscal/application/__tests__/confirmarFs12DaApuracao.test.js
+          src/modules/fiscal/application/__tests__/consultarFs12DaApuracao.test.js
+          src/modules/fiscal/infrastructure/prisma/__tests__/fs12DaApuracao.test.js
+          src/modules/identity/domain/__tests__/acessoEmpresaEscritorio.test.js
