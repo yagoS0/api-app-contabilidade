@@ -69,6 +69,7 @@ A linha imutável incorpora a auditoria mínima (autor/instante/contexto); não 
 - UI focal:50 aprovados em3 suítes. Cobertura de série, revisão, falhas/replay, trocas de contexto, precisão, foco e cálculo recuperado.
 - Regressão web Apuração/Apuração-v2/Operações:917 aprovados em76 suítes, sem skips, executados em lotes locais para evitar a execução ampla sem progresso no Windows.
 - OperationsConsultas com PostgreSQL real:23 aprovados, incluindo os dois cenários condicionais ignorados na execução API sem banco.
+- Piloto de correção de guia:24 testes aprovados. A primeira CI encontrou a lista explícita de módulos da VM ainda sem a política de Identidade extraída; acrescentados apenas os dois módulos reais, sem mock de autorização ou remoção do guard.
 - Governança88; analisador arquitetural5; diagnose5023→5023, zero novas violações.
 - Gate de dados aprovado: validação Prisma/migrations e regressões DRE/fluxo de caixa em banco sintético.
 - Build web aprovado; aviso de chunks grandes preexistente, sem mudança da configuração.

@@ -23,7 +23,8 @@
     "PostgreSQL16.15:26 aprovados/2 suítes B3+B3.1, banco novo e214 migrations; concorrência2conexões, ACL real, contexto, imutabilidade, rollback após INSERT e ausência de efeitos externos. OperationsConsultas PG executado separadamente.",
     "UI focal50/3suítes;26ensaios desktop/mobile zero axe/overflow/JS/rede externa; teclado/foco; regressão ampla e CI final registradas no PR.",
     "Governança88, arquitetura5, diagnose5023→5023/zero novas; gate de dados com Prisma, migrations, DRE e fluxo de caixa; build web aprovado.",
-    "Regressão web:917 aprovados/76suítes/zero skips, em8lotes locais. OperationsConsultas PostgreSQL:23 aprovados incluindo os2condicionais da regressão API."
+    "Regressão web:917 aprovados/76suítes/zero skips, em8lotes locais. OperationsConsultas PostgreSQL:23 aprovados incluindo os2condicionais da regressão API.",
+    "CI inicial falhou na allowlist VM do piloto por novo import identity; adicionados public.js e política real ao conjunto permitido, sem neutralizar autorização. Piloto local24pass; CI final reexecutada pelo push."
   ],
   "rollback": "Reverter commits de código/UI para B2 e manter tabela aditiva, revisões e auditoria. Não apagar confirmações/autor, não executar DROP ou migration reversa silenciosa. Aplicação produtiva não autorizada; futura publicação requer backup verificável e aprovação própria.",
   "humanDecisions": [
