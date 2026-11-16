@@ -10588,6 +10588,17 @@ export function createMockApi({ delay = defaultDelay } = {}) {
     // Mock com atividade SUJEITA A FATOR R e folha derivada dos lançamentos — é a única forma de
     // conferir a comparação da folha sem backend. A folha digitada vem DIFERENTE da derivada de
     // propósito: o caso que precisa avisar é a divergência, não a coincidência.
+    async getFs12Fechamento(companyId, competencia) {
+      // Demo não simula autenticidade fiscal nem replica a janela da política B1.
+      return { ok: true, fs12: { portalClientId: companyId, competencia,
+        politica: { empresaId: `demo:${companyId}`, competenciaApuracao: competencia,
+          situacao: 'PENDENTE', regra: 'CONTEXTO_DEMONSTRATIVO', exigida: null, janela: null,
+          impedimentos: ['REGIME_DO_PERIODO_NAO_COMPROVADO'] },
+        qualidade: { situacao: 'NAO_AVALIADA', cobertura: null, totalCentavos: null },
+        evidenciaSuficiente: false, autorizaEfeitoFiscal: false,
+        integracao: { situacao: 'PENDENTE', permiteNovoCalculo: false },
+      } };
+    },
     async getFechamento(companyId, competencia) {
       await delay(60);
       const pas = [];

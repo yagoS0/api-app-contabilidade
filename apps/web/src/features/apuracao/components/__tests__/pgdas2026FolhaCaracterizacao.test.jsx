@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { FechamentoModal } from "../FechamentoModal.jsx";
 
-// Componente real, somente API em memória: caracteriza o legado sem homologar folha zero.
+// Componente real, API em memória. B2 mantém a caracterização até outubro;
+// novembro em diante deixa de fabricar zeros e bloqueia novo cálculo nesta UI.
 describe("PGDAS-2026-A — apresentação e formulário atuais", () => {
   test.each(["2026-10", "2026-11", "2026-12", "2027-01"])(
-    "%s esconde folha sem Fator R e prepara zeros mesmo sem digitação", async competencia => {
+    "%s preserva legado até outubro e impede zeros presumidos no novo caminho", async competencia => {
       const api = {
         getFechamento: jest.fn(async () => ({ ok: true, dados: {
           razao: "Empresa sintética", regimeApuracao: "COMPETENCIA", cadastroCompleto: true,
@@ -21,6 +22,13 @@ describe("PGDAS-2026-A — apresentação e formulário atuais", () => {
         razao="Empresa sintética" onClose={() => {}} onChanged={() => {}} />);
       await screen.findByText("Atividade sintética sem Fator R");
       expect(screen.queryByRole("region", { name: "Folha de salários e Fator R" })).not.toBeInTheDocument();
+      if (competencia >= '2026-11') {
+        expect(screen.getByRole('region', { name: 'FS12 declaratória' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Calcular \(simulação\)/i })).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: /Calcular \(simulação\)/i }));
+        expect(api.calcularFechamento).not.toHaveBeenCalled();
+        return;
+      }
       fireEvent.click(screen.getByRole("button", { name: /Calcular \(simulação\)/i }));
       await waitFor(() => expect(api.calcularFechamento).toHaveBeenCalledTimes(1));
       const args = api.calcularFechamento.mock.calls[0];

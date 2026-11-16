@@ -2872,6 +2872,9 @@ export function createRealApi() {
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);
     },
+    async getFs12Fechamento(companyId, competencia) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/fs12`);
+    },
     async calcularFechamento(companyId, competencia, payload) {
       return background.request(`/firm/companies/${companyId}/fechamento/${competencia}/calcular`, {
         method: "POST", body: JSON.stringify(payload),

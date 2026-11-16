@@ -2,6 +2,7 @@
 // Mount: /firm/companies/:companyId/{cadastro-fiscal,produtos-servicos,pendencias,classificar-v2}
 
 import { Router } from "express";
+import { consultarFs12DoFechamento } from '../../composition/consultaFs12.js';
 import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
@@ -76,6 +77,17 @@ function mapRegime(company) {
 
 export function createApuracaoV2Router({ log } = {}) {
   const router = Router({ mergeParams: true });
+
+  router.get('/fechamento/:competencia/fs12', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      const fs12 = await consultarFs12DoFechamento({ portalClientId: String(req.params.companyId), competencia: req.params.competencia });
+      return res.json({ ok: true, fs12 });
+    } catch (err) {
+      return res.status(err?.status || 503).json({ ok: false, error: err?.code || 'FS12_INDISPONIVEL',
+        message: err?.status ? err.message : 'Não foi possível consultar a FS12. Tente novamente; nenhum dado foi alterado.' });
+    }
+  });
 
   function bad(res, status, error, message, extra = {}) {
     return res.status(status).json({ ok: false, error, message, ...extra });
