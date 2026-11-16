@@ -1,0 +1,30 @@
+{
+  "summary": "B3.1: proposta mínima de FS12 exclusivamente na Apuração, conforme revisão de escopo do proprietário; sem implementação de schema ou comportamento.",
+  "operationalImpact": "Registra a decisão aprovada de preenchimento manual somente na Apuração. Nenhum impacto operacional em execução: Fiscal permanece dono; interface, Operações, DP, Contabilidade e provedores não são modificados. Preserva R01/R02/R06/R19/R20/R22, B1 e distinção FS12/Fator R. Substitui apenas o desenho proposto do B3, mantendo achados e testes históricos.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance",
+    "fiscal",
+    "api",
+    "web",
+    "security",
+    "data"
+  ],
+  "tests": [
+    "npm run governance:test: 40 testes aprovados, zero falhas ou ignorados.",
+    "Plano de impacto sem caminhos desconhecidos e check de governança válido; oito links relativos válidos; git diff --check válido; referência canônica e snapshot com SHA-256 idêntico.",
+    "Somente documentação: não executados testes de banco/interface nem controlador funcional; cenários da proposta são critérios futuros. CI do novo SHA será registrada no PR, sem herdar aprovação do PR293."
+  ],
+  "rollback": "Reverter somente documento B3.1, aviso de substituição no B3 e este registro. Nenhum dado, código produtivo, schema ou migração alterado.",
+  "humanDecisions": [
+    "Aprovar persistência mínima por confirmação da série da apuração e vínculo imutável de uso por cálculo, com criação aditiva apenas junto dos consumidores. Não implementar schema/migração antes da aprovação."
+  ],
+  "limitations": [
+    "Proposta não libera cálculo/transmissão; B2 continua limitado ao modal.",
+    "Seleção de meses SERPRO e homologação2027 permanecem pendentes; não iniciar B3.2.",
+    "Sem alteração funcional: controlador funcional não iniciado e nenhum ready_for_human alegado.",
+    "Revisões e resultados desta entrega não serão apresentados como prova de persistência nova ou funcionamento produtivo."
+  ],
+  "review": "Parecer independente /root/b31_revisao favorável à proposta documental: Fiscal/segurança/backend/arquitetura. Inspecionou B1/B2 e referências; sem execução de testes funcionais. Condição: provar preservação calculoId-declaração após reabertura antes de conectar motor. Sem ready_for_human; aprovação humana do desenho continua necessária."
+}
