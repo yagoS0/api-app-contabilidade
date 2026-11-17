@@ -1,4 +1,5 @@
 import { conferirCalculoManualOperacoes } from './OperationsCalculationService.js';
+import { exigirDespachoPgdasFs12Permitido } from '../../modules/fiscal/public.js';
 import { createHash } from 'node:crypto';
 import { contextoOrigemCalculo, recuperarCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
 import { conferirProvaAutomatica } from '../notas/apuracao/v2/PreparacaoAutomaticaSimples.js';
@@ -32,7 +33,15 @@ export async function lerOperacao(db, companyId, competencia, { rootDb = db, con
     } catch { proofError = 'A prova do preparo automático não foi confirmada. Confira a tentativa antes de continuar.'; }
   }
   const recovery = proofError ? { calculoRecuperacaoMotivo: proofError } : recuperarCalculo(snapshot, { portalClientId: companyId, competencia, contextoOrigem: contexto, cnpj: contexto.contribuinteCnpj, regimeApuracao: contexto.regimeApuracao, preparacaoAtual });
+  let fiscalBlock = null;
+  // Apenas novas ações dependentes de cálculo; histórico transmitido/documental
+  // mantém seu caminho. A guarda final também cobre liberações antigas e lotes.
+  if (snapshot && ['aberta', 'calculada', 'fechada'].includes(snapshot.estado)) {
+    try { exigirDespachoPgdasFs12Permitido({ competencia }); }
+    catch (error) { fiscalBlock = error.message; }
+  }
   const blocked = pending.length ? 'Há notas ou eventos posteriores à apuração. Revise as pendências da competência.'
+    : fiscalBlock ? fiscalBlock
     : !recovery.calculoRecuperavel ? recovery.calculoRecuperacaoMotivo || 'Abra a apuração para conferir um cálculo válido antes de confirmar.' : null;
   const execution = state.releaseId ? (await db.appSetting.findUnique({ where: { key: `operations_execution:${companyId}:${competencia}:${state.releaseId}` } }))?.value : null;
   const status = execution?.status === 'DONE' ? (pending.length || state.contextHash !== contexto.hash ? 'INVALIDATED' : 'EXECUTED')

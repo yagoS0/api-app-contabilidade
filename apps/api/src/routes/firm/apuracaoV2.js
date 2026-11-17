@@ -3,6 +3,7 @@
 
 import { Router } from "express";
 import { consultarSerieFs12DaApuracao, confirmarSerieFs12DaApuracao } from '../../composition/fs12DaApuracao.js';
+import { consultarVinculoFs12DoCalculo } from '../../composition/fs12DoCalculo.js';
 import { consultarFs12DoFechamento } from '../../composition/consultaFs12.js';
 import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -79,6 +80,20 @@ function mapRegime(company) {
 export function createApuracaoV2Router({ log } = {}) {
   const router = Router({ mergeParams: true });
 
+  router.get('/fechamento/:competencia/fs12/calculos/:calculoId', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      const vinculo = await consultarVinculoFs12DoCalculo({ portalClientId: String(req.params.companyId),
+        competencia: req.params.competencia, calculoId: req.params.calculoId, autorId: req.auth?.user?.id });
+      return res.json({ ok: true, situacao: vinculo ? 'VINCULADO' : 'DESCONHECIDO', vinculo, autorizaEfeitoFiscal: false });
+    } catch (err) {
+      const conhecido = Number.isInteger(err?.status) && err.status >= 400 && err.status < 500;
+      return res.status(conhecido ? err.status : 503).json({ ok: false,
+        error: conhecido ? err.code : 'FS12_INDISPONIVEL',
+        message: conhecido ? err.message : 'Não foi possível consultar o vínculo histórico. Nenhum dado foi alterado.' });
+    }
+  });
+
   router.get('/fechamento/:competencia/fs12', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -136,6 +151,7 @@ export function createApuracaoV2Router({ log } = {}) {
 
   // Erro de negócio/config conhecido (validação nossa ou rejeição do SERPRO) → 400; 500 só pro inesperado.
   function statusForFechamentoErr(err) {
+    if (String(err?.code || '').startsWith('FS12_')) return err.status || 409;
     if (['SERPRO_CHAMADA_REPETIDA', 'SERPRO_CHAMADA_EM_ANDAMENTO', 'SERPRO_SIMULACAO_ANTERIOR_NAO_RECUPERAVEL'].includes(err?.code)) return 409;
     if (['SERPRO_MEDICAO_INDISPONIVEL', 'PERIODOS_RECUSADOS_REGISTRO_INDISPONIVEL'].includes(err?.code)) return 503;
     if (['CALCULO_EM_ANDAMENTO', 'CALCULO_DESATUALIZADO', 'TRANSMISSAO_PENDENTE_CONFERENCIA', 'TRANSMISSAO_RESULTADO_INCERTO'].includes(err?.code)) return 409;

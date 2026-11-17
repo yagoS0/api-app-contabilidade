@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { exigirDespachoPgdasFs12Permitido } from '../../../../modules/fiscal/public.js';
 import { prisma } from '../../../../infrastructure/db/prisma.js';
 import { hashCalculo } from './CalculoConfirmado.js';
 import { conferirContextoCicloFiscal, comVerificacaoTentativaAutomatica } from '../../../fiscal/automacaoCicloFiscalContext.js';
@@ -135,6 +136,9 @@ export async function executarCicloSimples(args, dependencies = {}) {
   const claim = await locked(d.db, key, async tx => {
     const before = (await tx.appSetting.findUnique({ where: { key } }))?.value || initial(portalClientId, competencia);
     if (!['NAO_INICIADO', 'AGUARDANDO_COLETA_FINAL'].includes(before.status) || before.scheduledAt === at.toISOString()) return { acquired: false, value: before };
+    // Não reservar/coletar para uma simulação incompatível; resultado incerto
+    // anterior continua retornado acima, sem reiniciar a tentativa.
+    exigirDespachoPgdasFs12Permitido({ competencia });
     if (before.scheduledAt) await tx.appSetting.create({ data: { key: `${key}:janela:${before.scheduledAt}`, value: copy(before) } });
     const value = { ...before, revision: before.revision || 1, status: 'COLETANDO', reason: 'Coleta reservada. Em caso de interrupção, confira os registros antes de continuar; a tentativa não será repetida automaticamente.', token, scheduledAt: at.toISOString(), updatedAt: now.toISOString(), coleta: {} };
     return { acquired: true, value: await save(tx, key, value) };
