@@ -1,5 +1,7 @@
 # PGDAS-2026-B3 — caracterização e proposta de integração segura da FS12
 
+> Revisão de escopo do proprietário em 16/11/2026: a [proposta B3.1 — FS12 exclusivamente na Apuração](pgdas-2026-b31-fs12-na-apuracao.md) substitui o desenho de persistência e de origem deste documento. Não implementar cadastro geral de folha ou integrações com DP, Drive, eSocial e Contabilidade. Os achados e testes abaixo permanecem históricos; schema e migração continuam sujeitos a aprovação prévia.
+
 Base remota confirmada em 16/11/2026: `3f48a6385d3cfa63ad0b22c2c419be53b2a108e9` (B2, PR #292). Branch `codex/pgdas-2026-b3-20261116`, worktree `worktrees/pgdas-2026-b3-20261116`. Esta entrega contém testes, documentação e inclusão dos novos testes na CI; **não habilita FS12 no motor ou no SERPRO**.
 
 ## Decisão de escopo e impacto
