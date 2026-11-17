@@ -6420,6 +6420,7 @@ model ApuracaoFs12Revisao {
   confirmadoEm      DateTime @default(now())
   chaveIdempotencia String
   motivo            String?
+  calculos ApuracaoFs12Calculo[]
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
   company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
   autor User @relation(fields: [autorId], references: [id], onDelete: Restrict)
@@ -6427,4 +6428,42 @@ model ApuracaoFs12Revisao {
   @@unique([portalClientId, competencia, chaveIdempotencia], map: "fs12_apuracao_idempotencia_key")
   @@index([portalClientId, companyId, competencia, revisao], map: "fs12_apuracao_escopo_revisao_idx")
   @@map("apuracao_fs12_revisoes")
+}
+
+// Immutable local evidence. No foreign key to the mutable snapshot token.
+model ApuracaoFs12Calculo {
+  id String @id @default(uuid())
+  portalClientId String
+  companyId String
+  competencia String
+  calculoId String @unique
+  revisaoFs12 Int
+  contextoHash String
+  politicaVersao String
+  calculoConfirmado Json
+  calculoHash String
+  criadoEm DateTime @default(now())
+  revisao ApuracaoFs12Revisao @relation(fields: [portalClientId, companyId, competencia, revisaoFs12], references: [portalClientId, companyId, competencia, revisao], onDelete: Restrict, onUpdate: Restrict)
+  fatos ApuracaoFs12CalculoFato[]
+  @@index([portalClientId, companyId, competencia])
+  @@map("apuracao_fs12_calculos")
+}
+
+// Facts are evidence only; ApuracaoSnapshot remains the state owner.
+model ApuracaoFs12CalculoFato {
+  id String @id @default(uuid())
+  vinculoId String
+  tentativaId String
+  tipo String
+  chaveIdempotencia String
+  conteudoHash String
+  origem String
+  evidenciaReferencia String?
+  numeroDeclaracao String?
+  versaoDocumentoId String?
+  registradoEm DateTime @default(now())
+  vinculo ApuracaoFs12Calculo @relation(fields: [vinculoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([vinculoId, chaveIdempotencia])
+  @@unique([vinculoId, tentativaId, tipo])
+  @@map("apuracao_fs12_calculo_fatos")
 }
