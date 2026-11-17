@@ -139,3 +139,18 @@ jobs:
           src/modules/fiscal/application/__tests__/consultarFs12DaApuracao.test.js
           src/modules/fiscal/infrastructure/prisma/__tests__/fs12DaApuracao.test.js
           src/modules/identity/domain/__tests__/acessoEmpresaEscritorio.test.js
+      - name: Validar vínculo FS12 B3.2 e bloqueio de despacho
+        env:
+          NODE_ENV: test
+          ALTAN_TESTE_POSTGRES: '1'
+          DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+          ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+        run: >-
+          npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --runTestsByPath
+          src/modules/fiscal/domain/__tests__/guardaPgdasFs12.test.js
+          src/modules/fiscal/application/__tests__/vincularFs12AoCalculo.test.js
+          src/modules/fiscal/application/__tests__/registrarFatoCalculoFs12.test.js
+          src/modules/fiscal/infrastructure/prisma/__tests__/fs12DoCalculo.postgres.test.js
+          src/routes/firm/__tests__/fs12B32.http.test.js
+          src/routes/firm/__tests__/fs12B32.postgres.test.js
+          src/application/fiscal/serpro/__tests__/fs12B32Transporte.test.js
