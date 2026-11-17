@@ -1,0 +1,51 @@
+{
+  "summary": "PGDAS-2026-B3.3a: política pura de análise da seleção FS12, sem consumidor produtivo ou liberação de remessa.",
+  "risk": "high",
+  "domains": ["api", "documentation", "fiscal", "portal", "web"],
+  "operationalImpact": "Nenhum impacto operacional produtivo. Fiscal é proprietário da política nova. Preservadas R01/R02/R04-R06/R19/R20 e seções36/37; B1, confirmação B31, vínculo B32 e bloqueios permanecem intactos. Nenhuma rota, payload, schema, migration, cálculo, transporte ou consumidor é alterado. Operações, Guias, Contabilidade, web e portal continuam com os mesmos contratos. Não há interface nova nem integração DP/Drive/eSocial.",
+  "base": "2cd0924498a6bb5d94cbfe0fe009c81559974595",
+  "authorization": "https://github.com/yagoS0/api-app-contabilidade/pull/297#issuecomment-6957496618",
+  "operationalReferenceSha256": "4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113",
+  "tests": [
+    "30 suítes/502 testes aprovados, zero falhas/ignorados: .altan-governance/b33a-final.json. Incluem79 da política nova e423 regressões B1-B33, HTTP, vínculo, recuperação, guardas, concorrência e idempotência.",
+    "43 PostgreSQL16 incluídos nos502:14 B31,11 vínculo,12 B3 e6 B32, banco descartável exclusivo loopback porta55487.215 migrations existentes aplicadas somente nele. Nenhuma migration nova ou banco preexistente alterado.",
+    "79 testes focais também executados independentemente por Fiscal e segurança/arquitetura. Inicialmente53 passaram e1 falhou (autor alterado); corrigido com referência vigente independente e cenários adicionais, sem remover a exigência.",
+    "Governança final88/88: check, orchestrate, bootstrap, data-gate e run-jest-batches. Verificador5/5. Diagnose5023base→5023candidata, zero novas violações.",
+    "Baseline arquitetura obtida da árvore B33 cujo apps/api/src é idêntico à main integrada; comparação Git confirmada. Mesmo verificador nas duas árvores; modo diagnose preservado.",
+    "Nove fontes públicas reconsultadas pelo revisor Fiscal em17/11/2026 18:50:33UTC: HTTP200, hashes/tamanhos iguais ao manifesto B33. Nenhum endpoint fiscal autenticado chamado.",
+    "CI hospedada será vinculada no PR ao SHA final; testes locais não equivalem a homologação SERPRO. Nenhuma nova rota consumidora: HTTP novo não aplicável, regressões HTTP existentes executadas. UI/UX não alterada."
+  ],
+  "rollback": "Reverter somente os cinco arquivos novos B33a deste PR. Não há persistência, dados, migrações ou consumidores produtivos a reverter; preservar guardas B32, histórico e worktrees.",
+  "humanDecisions": [
+    "Desenvolvimento da análise pura e minuta não enviada autorizado; aprovação técnica não autoriza integração ou despacho.",
+    "Aguardar resposta oficial para vazio/omissão, cobertura parcial, reenvio, início de atividade e contrato2027. Todos os mesesPropostos permanecem null.",
+    "B3.3b, leitor oficial mensal, remoção de bloqueios, merge e deploy exigem autorização própria. Nenhuma transferência, mensagem ou chamada fiscal autorizada."
+  ],
+  "controller": {
+    "runId": "2026-11-17T18-48-57-090Z-85f3d207",
+    "result": "interrupted_by_principal_for_review_corrections",
+    "rawState": "testing",
+    "completed": ["planner", "executor", "governance-engine"],
+    "incomplete": ["api-regression e gates/revisores seguintes da execução automática"],
+    "reason": "Após executor concluir, o Principal interrompeu o controlador durante API regression por falha focal e quatro achados independentes, para corrigir antes da validação final. Processos locais dessa execução encerrados; journal, lock e logs preservados. Não houve ready_for_human.",
+    "executorLimit": "Node do executor sofreu EPERM em lstat no perfil Windows; principal executou testes com permissões já existentes, sem modificar permissões do delegado ou gates.",
+    "alternativeEvidence": "Principal corrigiu achados, executou502 testes finais,88 governança,5 arquitetura e diagnose; revisores independentes Fiscal e segurança/arquitetura conferiram diff e executaram79 focais cada. CI final registrada separadamente no PR."
+  },
+  "reviews": {
+    "fiscal": {
+      "reviewer": "/root/b33a_fontes",
+      "result": "Favorável ao recorte analítico, sem achados impeditivos. Reconsultou fontes, reviu os quatro arquivos e executou79 testes focais; inspecionou423 regressões incluindo43PG. Não homologou protocolo remoto."
+    },
+    "securityArchitecture": {
+      "reviewer": "/root/b33a_revisor",
+      "result": "Favorável após correção de referência vigente manual, vigência oficial, CNPJ do cálculo e alcance da abertura parcial. Executou79 testes focais e inspecionou423 regressões/43PG. Código novo somente consumido pelo teste; sem achados impeditivos.",
+      "reviewedPolicySha256": "0f2a583d95fd626a58f23b4440786135722266b4d1de08110daef79ccc47632a"
+    }
+  },
+  "limitations": [
+    "Consistência estrutural/hash não autentica procedência. Referências vigentes devem vir de leituras independentes e autorizadas no futuro coordenador; nenhum leitor foi criado.",
+    "mesesComProvaOficial não é certificado remoto; o contrato não pode ser exposto como autorização HTTP. analiseCandidata é comparação não liberadora.",
+    "Código puro não comprova atomicidade do futuro B33b, aceite remoto ou atualidade externa. Sem prova de protocolo, mesesPropostos:null e autorizaEfeitoFiscal:false em todos os caminhos.",
+    "Controlador automático interrompido; evidências complementares não são reclassificadas como ready_for_human."
+  ]
+}
