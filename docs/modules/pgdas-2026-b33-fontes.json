@@ -1,0 +1,95 @@
+{
+  "purpose": "Fontes públicas de caracterização; nenhum endpoint fiscal autenticado chamado; corpos não armazenados. Hashes do conteúdo HTTP obtido, não assinatura da autoridade.",
+  "sources": [
+    {
+      "id": "rfb-noticia",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/novembro/pgdas-d-e-atualizado-para-atender-a-reforma-tributaria-a-partir-de-novembro-de-2026",
+      "retrievedAt": "2026-11-17T17:49:23.044428+00:00",
+      "status": 200,
+      "finalUrl": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/novembro/pgdas-d-e-atualizado-para-atender-a-reforma-tributaria-a-partir-de-novembro-de-2026",
+      "contentType": "text/html;charset=utf-8",
+      "bytes": 207804,
+      "sha256": "ab34f6989dfdb47457e201b79a62224bc93fe4abb113b5f1900a4592c3209164"
+    },
+    {
+      "id": "manual",
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/MANUAL_PGDAS-D_2018_V4.pdf",
+      "retrievedAt": "2026-11-17T17:49:23.046308+00:00",
+      "status": 200,
+      "finalUrl": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/MANUAL_PGDAS-D_2018_V4.pdf",
+      "contentType": "application/pdf",
+      "bytes": 6853300,
+      "sha256": "1786a9badcd6676567b8a2ce27c6f11466b3abaf1ea1330a27eef31ec013119f"
+    },
+    {
+      "id": "entrada",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/entregar_declaracao_mensal_entrada/",
+      "retrievedAt": "2026-11-17T17:49:23.047436+00:00",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/entregar_declaracao_mensal_entrada/",
+      "contentType": "text/html",
+      "bytes": 201687,
+      "sha256": "ad992a147da90d89e1517fa5d25c2bf770f818b74b24bf7d3efb7d1993e9eff9"
+    },
+    {
+      "id": "mensagens",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/mensagens/",
+      "retrievedAt": "2026-11-17T17:49:23.048442+00:00",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/mensagens/",
+      "contentType": "text/html",
+      "bytes": 154791,
+      "sha256": "a2b60ff1b5199a6f9d0cb24c3df68b412d0b7385de2afa3f50118fadbaaf703b"
+    },
+    {
+      "id": "changelog",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/changelog/",
+      "retrievedAt": "2026-11-17T17:49:23.468215+00:00",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/changelog/",
+      "contentType": "text/html",
+      "bytes": 139342,
+      "sha256": "727c5a9d4958e9f7e68c58a276b55acced3e55aff64aa5a2b0ec780fb3abb691"
+    },
+    {
+      "id": "consulta13",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_declaracao_por_ano_pa/",
+      "retrievedAt": "2026-11-17T17:49:23.471517+00:00",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_declaracao_por_ano_pa/",
+      "contentType": "text/html",
+      "bytes": 153863,
+      "sha256": "e30792c6570827d017157911aa174a5cda95dfdd2898535a75d8f65198b51a16"
+    },
+    {
+      "id": "consulta14",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_ultima_declaracao_recibo/",
+      "retrievedAt": "2026-11-17T17:49:23.554818+00:00",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_ultima_declaracao_recibo/",
+      "contentType": "text/html",
+      "bytes": 148058,
+      "sha256": "8b5b9e25c69f339349549738b569132f39158d75b68427217cb61b8e91662b1b"
+    },
+    {
+      "id": "consulta15",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_declaracao_recibo/",
+      "retrievedAt": "2026-11-17T17:49:23.575128+00:00",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/consultar_declaracao_recibo/",
+      "contentType": "text/html",
+      "bytes": 147876,
+      "sha256": "489bea676eaf4569852d5eefe970e350ffdb7aa7e969928d230858b8a917854e"
+    },
+    {
+      "id": "saida11",
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/entregar_declaracao_mensal_saida/",
+      "retrievedAt": "2026-11-17T17:54:51.973Z",
+      "status": 200,
+      "finalUrl": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/entregar_declaracao_mensal_saida/",
+      "contentType": "text/html",
+      "bytes": 143632,
+      "sha256": "506e3938b31c8f3e1997eeea4e943ac3a1b887708043cdd0d477ede4583e14e6"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "summary": "PGDAS-2026-B3.3: caracterização do protocolo SERPRO e distinção entre janela completa FS12 e seleção remota.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Nenhum impacto operacional produtivo. Seções36/37 e regras R01/R02/R06/R19/R20 preservadas. Apenas documentação e testes; payload, guardas B3.2, políticas B1, confirmação B3.1, schema e migrações inalterados. Seleção/remessa e abertura no meio do mês permanecem decisões pendentes.",
+  "tests": [
+    "29 suítes/421 testes aprovados, zero ignorados, com HTTP e PostgreSQL16 descartável; evidência local .altan-governance/b33-regression.json. Inclui B1/B31/B32, concorrência, rollback, idempotência, recuperação e guardas.",
+    "Novo contrato B33 final:27/27 aprovados (25 incluídos na regressão anterior mais2 testes de retorno/correlação). Transportes e documentos sintéticos; nenhum ato fiscal.",
+    "40 testes de governança e5 testes do verificador aprovados; diagnose5023→5023/zero acréscimos. Baseline da árvore B32 integrada:git diff entre a68045a e2eb7e99 em apps/api/src confirmou identidade.",
+    "215 migrations existentes aplicadas somente no PostgreSQL16 descartável; PrismaClient gerado. Nenhuma migration criada.",
+    "Links relativos/documentos e manifesto público validados; fontes com data/hash, sem corpos fiscais privados. Teste inicial antes de gerar Prisma não iniciou; mock explícito do banco global deixa o novo contrato isolado sem neutralizar guardas.",
+    "43 testes PostgreSQL aprovados:14 B3.1,11 vínculo,12 B3 e6 B3.2; incluídos nos421. Banco descartável exclusivo encerrado após os ensaios, arquivos preservados."
+  ],
+  "rollback": "Reverter somente documentos e teste deste PR. Não remover guardas B3.2, alterar banco, reescrever histórico ou reabrir despacho. Produção permanece idêntica à base.",
+  "humanDecisions": [
+    "Autorizada caracterização e contratos/testes pelo comentário6955182328 doPR296.",
+    "Pendente decisão fiscal para seleção mensal, vazio/omissão/todosdeclarados, evidência reaproveitada e início de atividade.",
+    "B3.3a/b, remoção de bloqueios,2027,merge,deploy e migração produtiva exigem nova aprovação."
+  ],
+  "controller": {
+    "status": "not_started_nonfunctional_scope",
+    "reason": "Inicialização obrigatória antes de alterações funcionais não se aplica a este recorte exclusivamente documental/testes. Plano de impacto, gates e revisões independentes executados pelo Principal; nenhum ready_for_human alegado."
+  },
+  "reviews": {
+    "fiscal": {
+      "reviewer": "b33_fontes",
+      "scope": "Documento principal e teste escritos por outros autores; não autoaprova fontes.",
+      "result": "Favorável sem bloqueadores;25 testes executados independentemente antes do complemento de retorno."
+    },
+    "architectureDocuments": {
+      "reviewer": "b33_contratos",
+      "scope": "Documentos do Principal e pesquisador; não autoaprova teste próprio.",
+      "result": "Favorável após corrigir nome real SerproCallGuard; fontes confrontadas diretamente."
+    },
+    "securitySystemic": {
+      "reviewer": "b33_revisao",
+      "result": "Favorável após revisão final do registro, complemento de retorno e evidências; sem achados impeditivos no recorte documental/caracterização. Revisor executou25 testes originais e conferiu27 finais e43 PostgreSQL.",
+      "interruption": "Primeira retomada da revisão final interrompida por limite de uso; após usuário informar redefinição, revisão retomada e concluída. Sem aprovação simulada."
+    }
+  },
+  "limitations": [
+    "Fontes públicas não são homologação remota; nenhum cliente real usado.",
+    "Leitor de histórico mensal estruturado não localizado; índice/PDF não autorizam subtração de meses.",
+    "Coordenador B3.3 não implementado; testes PG comprovam contratos B32 existentes, não atomicidade distribuída ou novo despacho.",
+    "UI/UX não alterada; domínios consumidores preservados sem mudanças de contrato.",
+    "CI hospedada será registrada no PR sobre SHA final, não presumida pelos testes locais."
+  ]
+}
