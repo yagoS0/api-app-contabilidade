@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { exigirDespachoPgdasFs12Permitido } from '../../modules/fiscal/public.js';
 import { regimeComprovado, avaliarAuditoriaNfse } from './OperationsEligibility.js';
 import { auditarCompetencia } from '../notas/auditoria/AuditoriaNotasService.js';
 import { contextoOrigemCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
@@ -46,6 +47,10 @@ async function inputs(db, companyId, competencia, deps) {
   const regime = regimeComprovado(history, competencia, cadastro, company);
   const auditSummary = avaliarAuditoriaNfse(audit, companyId, competencia);
   const blockers = [];
+  if (regime === 'SIMPLES') {
+    try { exigirDespachoPgdasFs12Permitido({ competencia }); }
+    catch (error) { blockers.push(error.message); }
+  }
   if (portal.status !== 'ATIVA') blockers.push('Empresa não está ativa.');
   if (regime !== 'SIMPLES') blockers.push(regime === 'PRESUMIDO' ? 'Apuração externa do Lucro Presumido.' : 'Simples não comprovado para toda a competência.');
   if (cadastro?.regime !== 'SIMPLES_NACIONAL' || cadastro?.regimeApuracao !== 'COMPETENCIA') blockers.push('Confira o cadastro fiscal e o regime de competência.');

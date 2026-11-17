@@ -1,4 +1,5 @@
 import axios from "axios";
+import { exigirEnvelopePgdasFs12Permitido } from '../../../modules/fiscal/publicFs12.js';
 import { conferirTransporteCicloFiscal as conferirContextoCicloFiscal, conferirContribuinteCicloFiscal } from '../automacaoCicloFiscalContext.js';
 import { mapSerproError } from "./SerproErrorMapper.js";
 import { SerproAuthService } from "./SerproAuthService.js";
@@ -21,6 +22,7 @@ export class SerproHttpClient {
   }
 
   async request({ method = "POST", path = "", data, headers = {}, params, raw = false, validateStatus }) {
+    exigirEnvelopePgdasFs12Permitido({ payload: data });
     await conferirContextoCicloFiscal();
     await conferirContribuinteCicloFiscal(data?.contribuinte?.numero);
     const salva = await lerResposta(data, path);

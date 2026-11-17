@@ -20,6 +20,7 @@
 
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { SerproPgdasdService } from "./SerproPgdasdService.js";
+import { exigirDespachoPgdasFs12Permitido } from '../../../modules/fiscal/publicFs12.js';
 
 function onlyDigits(v) { return String(v || "").replace(/\D+/g, ""); }
 // pa é NUMBER no payload (AAAAMM). "2021-01" → 202101
@@ -240,6 +241,7 @@ export class PgdasSimulacaoService {
   async _executar(opts) {
     const competencia = normalizeCompetencia(opts.competencia);
     if (!competencia) throw new PgdasSimulacaoError("INVALID_COMPETENCIA", "competência YYYY-MM inválida");
+    exigirDespachoPgdasFs12Permitido({ competencia });
     // Declaração SEM MOVIMENTO: permite atividades vazias. buildDeclaracaoPayload já produz o
     // payload zerado (receitaPaCompetencia* = 0, estabelecimentos[0].atividades = []).
     if (!opts.permitirSemMovimento && (!Array.isArray(opts.atividades) || opts.atividades.length === 0)) {

@@ -1,0 +1,70 @@
+{
+  "summary": "PGDAS-2026-B3.2: vínculo imutável FS12/cálculo, fatos probatórios separados e bloqueios temporais no servidor.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "governance",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Seção37/T149-T155 registra autorização B3.2. PA11/12/2026 não pode realizar novo cálculo/confirmar/despachar incompatível antes de B3.3; 2027 depende de homologação. Histórico e conciliação permanecem disponíveis. Nenhuma alteração em payload, Fator R, anexos, regime ou módulos externos. Contratos internos de vínculo/fatos preparados; não há produtor oficial novo habilitado.",
+  "tests": [
+    "38 suítes focais: 533 aprovados, 2 ignorados; HTTP, PostgreSQL16, concorrência, rollback, idempotência, FS12/B3/B31, recuperação, Operações e segurança #275. Evidência local .altan-governance/b32-regression.json.",
+    "PostgreSQL16 descartável: 215 migrations aplicadas; nova persistência11 testes, HTTPB32 seis. Sem migração produtiva.",
+    "92 testes de governança aprovados; diagnose5023 base/5023 candidata/zero novas violações; buildweb aprovado.",
+    "Referência prévia86 contratos/recuperação e26 HTTP/PG aprovados; candidata86 aprovados com mudança intencional de bloqueios temporais documentada.",
+    "Regressão web ampla encontrou timeout preexistente de bootstrapDataRouter; repetição isolada40/40 aprovada. Regressoes amplas não declaradas integralmente aprovadas; CI no SHA do PR deve ser consultada.",
+    "declaracaoZerada:22/22 após atualizar expectativas intencionalmente alteradas pelo B32; sem neutralizar guarda. Auditoria SQL de migrations e Prisma validate aprovados.",
+    "Regressão ampliada Fiscal/SERPRO, Apuração e Operações:101 suítes aprovadas,5 condicionais ignoradas;1443 testes aprovados,39 ignorados;42 snapshots aprovados (.altan-governance/b32-broad-fiscal-final.json). Sem ALTAN_TESTE_POSTGRES neste ensaio; PostgreSQL focal foi executado separadamente.",
+    "pgdas2026Caracterizacao:21/21, preservando builder em todos os PAs e despacho legado outubro, recusas11/12/2027 sem neutralizar guardas.",
+    "Os2 testes ignorados no focal533 caracterizam a base vulnerável anterior ao #275 e são intencionalmente desativados na candidata segura."
+  ],
+  "rollback": "Preservar migração aditiva e evidências, sem DROP/backfill. Reverter componentes apenas mantendo bloqueio temporal de novos atos ou suspendendo comandos; código anterior sem guarda não constitui rollback fiscal seguro. Nenhum deploy autorizado.",
+  "humanDecisions": [
+    "Implementação e persistência aditiva mínima autorizadas pelo proprietário em17/11/2026.",
+    "Merge, deploy, migração produtiva, chamadas reais e B3.3 não autorizados."
+  ],
+  "controller": {
+    "runId": "2026-11-17T13-46-04-903Z-853ba6cc",
+    "status": "escalated",
+    "reason": "Executor EPERM lstat C:\\Users\\yagoa; sem alterações produzidas. Implementação e revisões nativas pelo principal, sem alteração de permissões/gates. Não ready_for_human."
+  },
+  "reviews": {
+    "securityBackend": {
+      "reviewer": "b32_seguranca",
+      "result": "Favorável ao diff local em17/11/2026; sem achados impeditivos. Revisão somente leitura de código, migração, workflow, regras e evidências; não executou testes.",
+      "corrected": [
+        "Company atual resolvida no servidor para consultas/fatos.",
+        "Bloqueio B3.3 antes do CAS impede TOCTOU."
+      ],
+      "conditions": [
+        "CI no SHA final",
+        "B3.3: atomicidade FS12/CAS e correlação oficial antes de retirar guardas"
+      ]
+    },
+    "fiscalArchitecture": {
+      "reviewer": "b32_revisao_fiscal_arquitetura",
+      "result": "Favorável para commit/draft, revisão independente somente leitura em17/11/2026; sem achado impeditivo fiscal/arquitetural. Cobriu código, txinjetadaSerializable, migração, seção37/hash, workflow e documentação. Reexecutou diagnose5023/5023/zeroacréscimos.",
+      "conditions": [
+        "CI hospedada no SHA final",
+        "Não declara regressão ampla integralmente aprovada",
+        "B3.3 depende de correlação oficial e atomicidade FS12/CAS"
+      ],
+      "complement": "Parecer complementar favorável sobre ajuste de pgdas2026Caracterizacao.test.js, sem modificação funcional. Regressoes/CI final verificadas pelo principal."
+    }
+  },
+  "limitations": [
+    "Porta probatória padrão retorna null até integração B3.3; navegador não confirma prova fiscal.",
+    "Histórico antigo sem vínculo comprovado não é preenchido retroativamente.",
+    "B3.3 exige validação FS12 e CAS atômicos e proveniência oficial correlacionada à tentativa."
+  ]
+}

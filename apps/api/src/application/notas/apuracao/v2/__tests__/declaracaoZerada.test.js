@@ -137,8 +137,9 @@ describe("calcularFechamento — a declaração zerada é decidida pela SOMA", (
   });
 });
 
-describe("PGDAS-2026-A — preparação legada por competência", () => {
-  test.each(["2026-10", "2026-11", "2026-12", "2027-01"])("%s mantém filtro de folha por Fator R", async competencia => {
+describe("PGDAS-2026-A/B3.2 — legado e bloqueio de novos comandos", () => {
+  test("2026-10 mantém filtro de folha por Fator R", async () => {
+    const competencia = '2026-10';
     const folhaMensal12 = [{ pa: 202609, valor: 0 }, { pa: 202610, valor: 100 }];
     for (const sujeitoFatorR of [false, true]) {
       mockSimular.mockClear();
@@ -148,6 +149,24 @@ describe("PGDAS-2026-A — preparação legada por competência", () => {
       expect(mockSimular.mock.calls[0][0].folhasSalario).toEqual(sujeitoFatorR ? folhaMensal12 : []);
     }
   });
+  // Esta fixture não possui ator autenticado nem confirmação mensal persistida.
+  // Os casos HTTP/PostgreSQL B32 cobrem confirmação válida ainda bloqueada por B3.3.
+  // Não simular a composição/guarda para reabrir o antigo caminho de despacho.
+  test.each([
+    ['2026-11', 'FS12_SEM_AUTENTICACAO'],
+    ['2026-12', 'FS12_SEM_AUTENTICACAO'],
+    ['2027-01', 'FS12_HOMOLOGACAO_2027_PENDENTE'],
+  ])('%s não despacha por ter folha e atividade Fator R', async (competencia, code) => {
+    for (const sujeitoFatorR of [false, true]) {
+      await expect(calcularFechamento({ ...BASE, competencia,
+        folhaMensal12: [{ pa: 202610, valor: 100 }],
+        atividades: [{ idAtividade: 11, valorInterno: 100, valorExterno: 0, sujeitoFatorR }] }))
+        .rejects.toMatchObject({ code });
+    }
+    expect(mockSimular).not.toHaveBeenCalled();
+    expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+    expect(prisma.apuracaoSnapshot.update).not.toHaveBeenCalled();
+  });
   test.each(["2026-10", "2026-11", "2026-12", "2027-01"])("%s rejeita CAIXA antes do provedor", async competencia => {
     await expect(calcularFechamento({ ...BASE, competencia, regimeApuracao: "CAIXA",
       atividades: [{ idAtividade: 11, valorInterno: 100 }] })).rejects.toMatchObject({ code: "REGIME_APURACAO_NAO_SUPORTADO" });
@@ -155,15 +174,27 @@ describe("PGDAS-2026-A — preparação legada por competência", () => {
     expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
     expect(prisma.apuracaoSnapshot.update).not.toHaveBeenCalled();
   });
-  test("sem movimento e sem atividade descarta folha informada no PA11, comportamento ainda legado", async () => {
-    await calcularFechamento({ ...BASE, competencia: "2026-11", atividades: [], semMovimento: true,
-      folhaMensal12: [{ pa: 202610, valor: 100 }] });
-    expect(mockSimular.mock.calls[0][0]).toMatchObject({ folhasSalario: [], permitirSemMovimento: true });
+  test.each(['2026-10', '2026-11'])("%s sem movimento preserva legado ou exige evidência autenticada", async competencia => {
+    const calcular = calcularFechamento({ ...BASE, competencia, atividades: [], semMovimento: true,
+      folhaMensal12: [{ pa: 202609, valor: 100 }] });
+    if (competencia === '2026-10') {
+      await calcular;
+      expect(mockSimular.mock.calls[0][0]).toMatchObject({ folhasSalario: [], permitirSemMovimento: true });
+    } else {
+      await expect(calcular).rejects.toMatchObject({ code: 'FS12_SEM_AUTENTICACAO' });
+      expect(mockSimular).not.toHaveBeenCalled();
+    }
   });
-  test("folha ausente não bloqueia simulação de atividade Fator R no PA11", async () => {
-    await calcularFechamento({ ...BASE, competencia: "2026-11",
+  test.each(['2026-10', '2026-11'])("%s folha ausente não concede exceção aos bloqueios novos", async competencia => {
+    const calcular = calcularFechamento({ ...BASE, competencia,
       atividades: [{ idAtividade: 11, valorInterno: 100, sujeitoFatorR: true }] });
-    expect(mockSimular.mock.calls[0][0].folhasSalario).toEqual([]);
+    if (competencia === '2026-10') {
+      await calcular;
+      expect(mockSimular.mock.calls[0][0].folhasSalario).toEqual([]);
+    } else {
+      await expect(calcular).rejects.toMatchObject({ code: 'FS12_SEM_AUTENTICACAO' });
+      expect(mockSimular).not.toHaveBeenCalled();
+    }
   });
 });
 

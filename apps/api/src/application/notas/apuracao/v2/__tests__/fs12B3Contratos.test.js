@@ -1,4 +1,5 @@
-// B3: caracterização de lacunas legadas, não aprovação fiscal de 11/2026 ou 2027.
+// B3/B3.2: a base permitia despachos nos quatro PAs. B3.2 fecha essa lacuna
+// somente a partir de 11/2026; preserva recuperação e protocolos históricos.
 // Doubles isolam banco, credenciais, armazenamento e transporte; nenhum endpoint externo é usado.
 jest.mock("../../../../../infrastructure/db/prisma.js", () => {
   const model = () => ({
@@ -32,6 +33,10 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
 });
 
 const mockSimular = jest.fn();
+jest.mock('../../../../../composition/fs12DoCalculo.js', () => ({
+  validarFs12ParaNovoCalculo: jest.fn(async () => { throw Object.assign(new Error('Confirme a FS12 na Apuração.'), { code: 'FS12_AUSENTE', status: 409 }); }),
+  validarUsoFs12DoCalculo: jest.fn(async () => { throw Object.assign(new Error('Uso não comprovado.'), { code: 'FS12_CALCULO_SEM_VINCULO', status: 409 }); }),
+}));
 const mockTransmitir = jest.fn();
 const mockIndice = jest.fn();
 jest.mock("../../../../fiscal/serpro/PgdasSimulacaoService.js", () => ({
@@ -108,7 +113,16 @@ describe('B3 — fronteira manual atual: lacunas não são critérios tributári
     const folhas = [{ pa: anterior.toISOString().slice(0, 7), valor: 0, origem: 'NAVEGADOR_NAO_COMPROVADO', conferidoPor: 'alegado-pelo-cliente' }];
     const stop = Object.assign(new Error('DOUBLE: interrompe antes de persistir'), { code: 'B3_TEST_STOP' });
     mockSimular.mockRejectedValueOnce(stop);
-    await expect(calcularFechamento({ ...contexto(competencia), ...formulario, atividades: [{ ...formulario.atividades[0], sujeitoFatorR }], folhaMensal12: folhas })).rejects.toBe(stop);
+    const result = calcularFechamento({ ...contexto(competencia), ...formulario, atividades: [{ ...formulario.atividades[0], sujeitoFatorR }], folhaMensal12: folhas });
+    if (competencia >= '2026-11') {
+      await expect(result).rejects.toMatchObject({ code: competencia >= '2027-01' ? 'FS12_HOMOLOGACAO_2027_PENDENTE' : 'FS12_AUSENTE' });
+      expect(mockSimular).not.toHaveBeenCalled();
+      expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
+      expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+      expect(lease.release).toHaveBeenCalledTimes(1);
+      return;
+    }
+    await expect(result).rejects.toBe(stop);
     expect(mockSimular).toHaveBeenCalledTimes(1);
     expect(mockSimular.mock.calls[0][0].folhasSalario).toEqual(sujeitoFatorR ? [{ pa: folhas[0].pa, valor: 0 }] : []);
     expect(prisma.apuracaoSnapshot.create).not.toHaveBeenCalled();
@@ -123,7 +137,14 @@ describe('B3 — fronteira manual atual: lacunas não são critérios tributári
     const recuperado = await calcularFechamento({ ...contexto(competencia), ...formulario });
     expect(recuperado).toMatchObject({ recuperado: true, calculoId: saved.idempotencyKey, formulario });
     expect(mockSimular).not.toHaveBeenCalled();
-    const fechado = await salvarFechamento({ ...contexto(competencia), ...formulario, userId: 'contador-sintetico', calculoId: saved.idempotencyKey });
+    const fechamento = salvarFechamento({ ...contexto(competencia), ...formulario, userId: 'contador-sintetico', calculoId: saved.idempotencyKey });
+    if (competencia >= '2026-11') {
+      await expect(fechamento).rejects.toMatchObject({ code: competencia >= '2027-01' ? 'FS12_HOMOLOGACAO_2027_PENDENTE' : 'FS12_CALCULO_SEM_VINCULO' });
+      expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+      expect(saved).toEqual(before);
+      return;
+    }
+    const fechado = await fechamento;
     expect(fechado.snapshot).toMatchObject({ estado: 'fechada', idempotencyKey: saved.idempotencyKey });
     expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledTimes(1);
     expect(saved).toEqual(before);
@@ -133,7 +154,15 @@ describe('B3 — fronteira manual atual: lacunas não são critérios tributári
   test.each(PERIODOS)('%s: transmissão fictícia de token legado não verifica conferência mensal FS12', async competencia => {
     const saved = snapshot(competencia, 'fechada');
     prisma.apuracaoSnapshot.findUnique.mockResolvedValue(saved);
-    await expect(transmitirFechamento({ ...contexto(competencia), calculoId: saved.idempotencyKey, userId: 'contador-sintetico', somenteDocumentosFaltantes: true })).resolves.toMatchObject({ ok: true, numeroDeclaracao: 'FICTICIA-B3' });
+    const result = transmitirFechamento({ ...contexto(competencia), calculoId: saved.idempotencyKey, userId: 'contador-sintetico', somenteDocumentosFaltantes: true });
+    if (competencia >= '2026-11') {
+      await expect(result).rejects.toMatchObject({ code: competencia >= '2027-01' ? 'FS12_HOMOLOGACAO_2027_PENDENTE' : 'FS12_INTEGRACAO_B33_PENDENTE' });
+      expect(mockIndice).toHaveBeenCalledTimes(1);
+      expect(mockTransmitir).not.toHaveBeenCalled();
+      expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ estado: 'fechada' }) }));
+      return;
+    }
+    await expect(result).resolves.toMatchObject({ ok: true, numeroDeclaracao: 'FICTICIA-B3' });
     expect(mockIndice).toHaveBeenCalledTimes(1);
     expect(mockTransmitir).toHaveBeenCalledTimes(1);
     expect(mockTransmitir).toHaveBeenCalledWith(expect.objectContaining({ competencia, folhasSalario: [], tipoDeclaracao: 1 }));
@@ -200,6 +229,13 @@ function automatico(competencia) {
 describe('B3 — coordenação automática atual, sem habilitação fiscal nova', () => {
   test.each(PERIODOS)('%s: sem Fator R ainda prepara folha vazia; repetição não recalcula', async competencia => {
     const f = automatico(competencia);
+    if (competencia >= '2026-11') {
+      await expect(executarCicloSimples(f.args, f.deps)).rejects.toMatchObject({ code: competencia >= '2027-01' ? 'FS12_HOMOLOGACAO_2027_PENDENTE' : 'FS12_INTEGRACAO_B33_PENDENTE' });
+      expect(f.deps.calcular).not.toHaveBeenCalled();
+      expect(f.deps.coletarAdn).not.toHaveBeenCalled();
+      expect(f.deps.db.appSetting.upsert).not.toHaveBeenCalled();
+      return;
+    }
     const result = await executarCicloSimples(f.args, f.deps);
     expect(result).toMatchObject({ status: 'CALCULADO' });
     expect(f.deps.calcular).toHaveBeenCalledWith(expect.objectContaining({ ...contexto(competencia), folhaMensal12: [] }));
@@ -209,11 +245,16 @@ describe('B3 — coordenação automática atual, sem habilitação fiscal nova'
   });
   test.each(PERIODOS)('%s: Fator R exige conferência e não promove folha sugerida à prova', async competencia => {
     const f = automatico(competencia); f.dados.atividades[0].sujeitoFatorR = true;
+    if (competencia >= '2026-11') {
+      await expect(executarCicloSimples(f.args, f.deps)).rejects.toMatchObject({ code: competencia >= '2027-01' ? 'FS12_HOMOLOGACAO_2027_PENDENTE' : 'FS12_INTEGRACAO_B33_PENDENTE' });
+      expect(f.deps.calcular).not.toHaveBeenCalled();
+      return;
+    }
     expect(await executarCicloSimples(f.args, f.deps)).toMatchObject({ status: 'REVISAO_NECESSARIA', errorCode: 'CICLO_FATOR_R_CONFERENCIA' });
     expect(f.deps.calcular).not.toHaveBeenCalled();
   });
   test('timeout após reserva continua incerto após reinício, sem repetir cálculo', async () => {
-    const f = automatico('2026-11');
+    const f = automatico('2026-10');
     f.deps.calcular.mockRejectedValueOnce(Object.assign(new Error('Timeout sintético'), { code: 'TIMEOUT' }));
     expect(await executarCicloSimples(f.args, f.deps)).toMatchObject({ status: 'INCERTO', canRevise: false });
     expect(await executarCicloSimples(f.args, f.deps)).toMatchObject({ status: 'INCERTO' });

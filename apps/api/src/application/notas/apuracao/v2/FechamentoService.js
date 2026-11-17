@@ -1,4 +1,6 @@
 import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/serproCallContext.js";
+import { exigirDespachoPgdasFs12Permitido } from '../../../../modules/fiscal/public.js';
+import { validarFs12ParaNovoCalculo, validarUsoFs12DoCalculo } from '../../../../composition/fs12DoCalculo.js';
 // Q15.5 — Orquestrador do fechamento de apuração (motor do FechamentoModal).
 //
 // 4 operações:
@@ -729,6 +731,19 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   const anterior = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
   exigirEstadoLivre(anterior);
   if (anterior?.estado === 'transmitida') throw new FechamentoError('ESTADO_INVALIDO', 'Reabra a apuração para retificar antes de calcular novamente.');
+  // B3.2: recuperar é leitura, não uma nova simulação. Não materializar RBT nem
+  // consumir a revisão atual como prova retroativa de um cálculo legado.
+  if (competencia >= '2026-11') {
+    const contexto = await contextoOrigemCalculo({ portalClientId, competencia });
+    const salvo = recuperarCalculo(anterior, { portalClientId, competencia,
+      cnpj: contexto.contribuinteCnpj, regimeApuracao: regimeCadastrado?.regimeApuracao || 'COMPETENCIA',
+      contextoOrigem: contexto }).calculoRecuperavel;
+    if (salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao })))
+      return { ok: true, ...salvo, recuperado: true, snapshot: anterior };
+    if (!automatico && competencia < '2027-01') await validarFs12ParaNovoCalculo({
+      portalClientId, competencia, autorId: contextoSerproAtual().userId });
+    exigirDespachoPgdasFs12Permitido({ competencia });
+  }
   // Normaliza pra [] — o restante usa atividades.reduce/JSON.stringify.
   atividades = Array.isArray(atividades) ? atividades : [];
 
@@ -961,6 +976,13 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
   const vinculo = validarCalculoConfirmado(existing, { portalClientId, competencia, calculoId, formulario: insumosFormulario({ atividades, folhaMensal12, regimeApuracao }) });
   if (!vinculo.contextoOrigem || hashCalculo(vinculo.contextoOrigem) !== hashCalculo(await contextoOrigemCalculo({ portalClientId, competencia }))) throw erroCalculoObsoleto();
   if (!['calculada', 'fechada'].includes(existing.estado)) throw erroCalculoObsoleto();
+  if (competencia >= '2027-01') exigirDespachoPgdasFs12Permitido({ competencia });
+  if (competencia >= '2026-11') {
+    await validarUsoFs12DoCalculo({ portalClientId, competencia, calculoId, autorId: userId });
+    // Nenhuma simulação compatível nova foi habilitada no B3.2. Mesmo uma prova
+    // local válida não pode promover o cálculo a fechado antes do B3.3.
+    exigirDespachoPgdasFs12Permitido({ competencia });
+  }
   // Camada 2 (Robustez): se a conferência com o ADN achou nota que falta no nosso lado, TRAVA o
   // fechamento (é o "28 vs 27"). Só trava em divergência confirmada — "nao_conferivel" (município
   // fora do ADN / sem cert próprio) e "ok" liberam. Resolver: capturar/importar a(s) nota(s) faltante(s)
@@ -1146,6 +1168,9 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
     };
   }
 
+  // Consulta/conciliação acima não atribui uma declaração ao cálculo. Um novo
+  // despacho continua bloqueado até o contrato SERPRO do B3.3, inclusive retificação.
+  exigirDespachoPgdasFs12Permitido({ competencia });
   // 2. Transmite de fato
   const sim = new PgdasSimulacaoService();
   let resultado;
