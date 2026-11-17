@@ -39,3 +39,15 @@
   .fechamento-atividades select { min-height: 44px !important; }
   .fechamento-acoes .btn { flex: 1 1 100%; min-height: 44px; margin-right: 0 !important; }
 }
+
+.fs12-confirmacao { margin-top: var(--space-4, 16px); display: grid; gap: var(--space-3, 12px); }
+.fs12-confirmacao label { display: block; }
+.fs12-confirmacao textarea { display: block; width: 100%; min-height: 80px; }
+.fs12-acoes { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); }
+.fs12-historico { margin-top: var(--space-4, 16px); overflow-wrap: anywhere; }
+.fs12-historico summary { cursor: pointer; min-height: 44px; padding-block: var(--space-2, 8px); }
+@media (max-width: 600px) {
+  .fs12-declaratoria button { min-height: 44px; }
+  .fs12-acoes > button { width: 100%; }
+  .fs12-confirmacao .fs12-conferencia { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+}

@@ -1,0 +1,21 @@
+{
+  "note": "Hashes finais após normalização de fim de linha/EOF sem mudança visual.",
+  "files": [
+    {
+      "path": "apps/web/src/features/apuracao/components/Fs12DeclaratoriaPanel.jsx",
+      "sha256": "448a3668e8cbe123cbaf463cd4ffb4ec5b9c649fce5841cc1e7536a0e2bc3f65"
+    },
+    {
+      "path": "apps/web/src/features/apuracao/components/fechamento-modal.css",
+      "sha256": "c7b4e5cbe79267278b735f6690dd3c0fc5b1de816b9b50a246cc0000b625df28"
+    },
+    {
+      "path": "apps/web/src/features/apuracao/lib/fs12Formulario.js",
+      "sha256": "3d57ba1f04c845d868dee1db5d4777a4f2d6eed972b87c9883c557b7d974b401"
+    },
+    {
+      "path": "apps/web/src/features/apuracao/components/FechamentoModal.jsx",
+      "sha256": "49398fae581bd1314d939622417a48be2805f1f55f7a1e607c39daa3a042b401"
+    }
+  ]
+}

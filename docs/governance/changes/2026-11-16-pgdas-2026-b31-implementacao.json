@@ -1,0 +1,93 @@
+{
+  "summary": "PGDAS-2026-B3.1: entrada e confirmação manual de séries completas FS12 na Apuração, com histórico imutável e sem conexão fiscal.",
+  "operationalImpact": "Seção36/T142-T148 registra decisão expressa do proprietário: FS12 exclusivamente na Apuração, confirmação autenticada, revisões completas imutáveis; migração aditiva somente desenvolvimento/descartável. Fiscal possui política e confirmação; Identidade compartilha a política canônica sem mudar permissões; web apresenta/consolida. Consumidores transitivos API, Operações, Guias, Contabilidade, Comunicação, portal e comercial preservados; não alimenta cálculo, transmissão, retificação, Fator R, III/V, DP, Google Drive ou contabilidade. Mantém segurança #275, B1, B2 e reserva/incerteza/fechamento. Nenhum efeito fiscal automático ou publicação.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "ci",
+    "fiscal",
+    "operations",
+    "security",
+    "data",
+    "accounting",
+    "guides",
+    "communication",
+    "web",
+    "portal",
+    "commercial",
+    "documentation",
+    "governance"
+  ],
+  "tests": [
+    "API:852 aprovados/53 suítes;4 skips documentados (2 PG condicionais executados separadamente;2 base vulnerável275 intencionalmente desabilitados).",
+    "PostgreSQL16.15:26 aprovados/2 suítes B3+B3.1, banco novo e214 migrations; concorrência2conexões, ACL real, contexto, imutabilidade, rollback após INSERT e ausência de efeitos externos. OperationsConsultas PG executado separadamente.",
+    "UI focal50/3suítes;26ensaios desktop/mobile zero axe/overflow/JS/rede externa; teclado/foco; regressão ampla e CI final registradas no PR.",
+    "Governança88, arquitetura5, diagnose5023→5023/zero novas; gate de dados com Prisma, migrations, DRE e fluxo de caixa; build web aprovado.",
+    "Regressão web:917 aprovados/76suítes/zero skips, em8lotes locais. OperationsConsultas PostgreSQL:23 aprovados incluindo os2condicionais da regressão API.",
+    "CI inicial falhou na allowlist VM do piloto por novo import identity; adicionados public.js e política real ao conjunto permitido, sem neutralizar autorização. Piloto local24pass; CI final reexecutada pelo push."
+  ],
+  "rollback": "Reverter commits de código/UI para B2 e manter tabela aditiva, revisões e auditoria. Não apagar confirmações/autor, não executar DROP ou migration reversa silenciosa. Aplicação produtiva não autorizada; futura publicação requer backup verificável e aprovação própria.",
+  "humanDecisions": [
+    "Implementação e migração mínima aditiva aprovadas pelo usuário apenas para desenvolvimento/descartável; não implica merge ou produção.",
+    "Integração do PR, migração produtiva e deploy exigem autorização específica.",
+    "B3.2 (vínculo imutável ao cálculo e SERPRO) não iniciado; homologação2027 permanece pendente."
+  ],
+  "controller": {
+    "run": "2026-11-16T20-41-09-048Z-3b431fdc",
+    "status": "escalated",
+    "reason": "executor excedeu600s; sem gates/revisões finais do controlador e sem ready_for_human",
+    "continuation": "Principal concluiu implementação, testes reais e revisões nativas após término; nenhuma alteração no runtime/permissões/gates."
+  },
+  "reviews": [
+    {
+      "reviewer": "/root/b31_fiscal",
+      "scope": "Fiscal, arquitetura, SQL/dados, contratos e sistêmico",
+      "result": "Favorável sem bloqueantes na árvore revisada; leu testes e evidências sem reexecutar."
+    },
+    {
+      "reviewer": "/root/b31_seguranca",
+      "scope": "Segurança/autorização/backend/CI",
+      "result": "Favorável ao código produtivo. Autor dos testes PostgreSQL, examinados pelo Fiscal e executados pelo Principal."
+    },
+    {
+      "reviewer": "/root/b31_ui_revisao_final",
+      "scope": "UI/UX independente",
+      "result": "Favorável após código/estados e seis capturas; separado do autorUI /root/b31_visual. Sem leitor de tela real."
+    }
+  ],
+  "limitations": [
+    "Confirmação prova autoria manual, não veracidade externa da folha.",
+    "Bloqueio B2 do modal preservado; não promete bloqueio global de caminhos legados.",
+    "Rascunhos parciais não persistem; recarregar avisa descarte.",
+    "Controlador escalated não é aprovação técnica automática. CI final e autorização humana continuam necessárias."
+  ],
+  "integrationUpdate": {
+    "previousHead": "da65098586dcb0a577e9dfe7aa74872f75c7f429",
+    "main": "5753cce89bd0eaff968f30082ceae7837435db4b",
+    "mergeCommit": "bd69042791ca3beaa5ab83f3a5ab03e1925e07cb",
+    "method": "Merge não destrutivo da main na branch original, sem conflitos e sem force push. Preservados commits, arquivos locais ignorados e worktrees existentes.",
+    "preservation": "Os três documentos do PR294 são idênticos aos da main. Código, schema, migration, contratos HTTP, autorização, B1/B2, cálculos, Fator R, transmissão e workflows são idênticos ao head anterior. Proposta294 permanece histórica; autorização posterior da seção36 rege a implementação B3.1.",
+    "operationalImpact": "Nenhum novo impacto operacional. Somente reconciliação documental e este registro; nenhuma nova funcionalidade ou modificação de regra.",
+    "tests": [
+      "API852pass/53suítes/4skips conhecidos; os2PGcondicionais executados separadamente, outros2 são vulnerabilidade histórica275.",
+      "PostgreSQL16 descartável49pass/3suítes (B3.1, B3 e OperationsConsultas), zero skips; Prisma válido e214migrations sem pendências.",
+      "Governança88pass, arquitetura5pass, pilotoGuias24pass; diagnose5023→5023, zero novas; árvoreAPI da base5753 idêntica à baseline434.",
+      "Regressão web em lotes e CI hospedada do novo SHA: resultados definitivos registrados no PR295."
+    ],
+    "requiredChecks": [
+      "governance",
+      "accounting-regression",
+      "validate",
+      "usability-regression",
+      "whatsapp-regression",
+      "whatsapp-postgres",
+      "confirmation-postgres",
+      "lead-postgres",
+      "coleta-cbs-postgres"
+    ],
+    "review": "/root/integracao295_revisao: favorável à reconciliação, preservação integral comprovada por comparação Git; testes e CI executados pelo Principal.",
+    "controller": "Sem novo controlador: nenhuma alteração funcional nesta atualização. O escalated da implementação anterior permanece registrado; não se declara ready_for_human.",
+    "rollback": "Se necessário, reverter exclusivamente o commit de merge e este registro, preservando commits originais e revisões FS12. Nenhuma reversão de dados, exclusão ou force push.",
+    "restrictions": "Não integrar o PR, fazer deploy, migrar produção, chamar SERPRO ou iniciar B3.2 nesta execução. Proteções e Railway não alterados."
+  }
+}

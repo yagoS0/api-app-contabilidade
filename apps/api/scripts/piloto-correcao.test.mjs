@@ -74,6 +74,8 @@ function synthetic(id, exports) {
 const real = new Set([
   'routes/firm/corrigirValorGuia.js',
   'middlewares/requireFirmCompanyAccess.js',
+  'modules/identity/public.js',
+  'modules/identity/domain/acessoEmpresaEscritorio.js',
   'application/guides/CorrigirValorGuiaService.js',
   'application/guides/GuideService.js',
   'application/guides/lib/documentoNaoArrecadatorio.js',

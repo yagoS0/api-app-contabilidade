@@ -1,0 +1,540 @@
+{
+  "results": [
+    {
+      "device": "desktop",
+      "scenario": "vazia",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "preenchimento",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "pronta",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "confirmacao",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "H4",
+        "text": "Conferir folha de Empresa demonstrativa · 11/2026"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "confirmada",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "alterada",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "historico",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "SUMMARY",
+        "text": "Revisão anterior · 1"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "falha",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "conflito",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "Confirmar declaração manual"
+      },
+      "efeitos": [
+        {
+          "tipo": "confirmacao-sintetica",
+          "company": "empresa-sintetica",
+          "competencia": "2026-11",
+          "payload": {
+            "serie": [
+              {
+                "mes": "2025-11",
+                "valorCentavos": 0
+              },
+              {
+                "mes": "2025-12",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-01",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-02",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-03",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-04",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-05",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-06",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-07",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-08",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-09",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-10",
+                "valorCentavos": 120000
+              }
+            ],
+            "revisaoEsperada": 0,
+            "contextoRevisao": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "motivo": null,
+            "chaveIdempotencia": "ee7b5648-9f05-4897-b729-05528164499f"
+          }
+        }
+      ]
+    },
+    {
+      "device": "desktop",
+      "scenario": "erro-gravacao",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "Confirmar declaração manual"
+      },
+      "efeitos": [
+        {
+          "tipo": "confirmacao-sintetica",
+          "company": "empresa-sintetica",
+          "competencia": "2026-11",
+          "payload": {
+            "serie": [
+              {
+                "mes": "2025-11",
+                "valorCentavos": 0
+              },
+              {
+                "mes": "2025-12",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-01",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-02",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-03",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-04",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-05",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-06",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-07",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-08",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-09",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-10",
+                "valorCentavos": 120000
+              }
+            ],
+            "revisaoEsperada": 0,
+            "contextoRevisao": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "motivo": null,
+            "chaveIdempotencia": "5e61ca04-1848-45bd-a5e4-91794e446d9c"
+          }
+        }
+      ]
+    },
+    {
+      "device": "desktop",
+      "scenario": "carregando",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "inicio",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "desktop",
+      "scenario": "recuperado",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "vazia",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "preenchimento",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "pronta",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "confirmacao",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "H4",
+        "text": "Conferir folha de Empresa demonstrativa · 11/2026"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "confirmada",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "alterada",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "historico",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "SUMMARY",
+        "text": "Revisão anterior · 1"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "falha",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "conflito",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "Confirmar declaração manual"
+      },
+      "efeitos": [
+        {
+          "tipo": "confirmacao-sintetica",
+          "company": "empresa-sintetica",
+          "competencia": "2026-11",
+          "payload": {
+            "serie": [
+              {
+                "mes": "2025-11",
+                "valorCentavos": 0
+              },
+              {
+                "mes": "2025-12",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-01",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-02",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-03",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-04",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-05",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-06",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-07",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-08",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-09",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-10",
+                "valorCentavos": 120000
+              }
+            ],
+            "revisaoEsperada": 0,
+            "contextoRevisao": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "motivo": null,
+            "chaveIdempotencia": "470f338f-3142-453c-a6f8-9f1f6b83f3e0"
+          }
+        }
+      ]
+    },
+    {
+      "device": "mobile",
+      "scenario": "erro-gravacao",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "Confirmar declaração manual"
+      },
+      "efeitos": [
+        {
+          "tipo": "confirmacao-sintetica",
+          "company": "empresa-sintetica",
+          "competencia": "2026-11",
+          "payload": {
+            "serie": [
+              {
+                "mes": "2025-11",
+                "valorCentavos": 0
+              },
+              {
+                "mes": "2025-12",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-01",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-02",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-03",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-04",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-05",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-06",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-07",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-08",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-09",
+                "valorCentavos": 120000
+              },
+              {
+                "mes": "2026-10",
+                "valorCentavos": 120000
+              }
+            ],
+            "revisaoEsperada": 0,
+            "contextoRevisao": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "motivo": null,
+            "chaveIdempotencia": "2c70473c-a6fe-482d-9b7b-d6a5898e0ef2"
+          }
+        }
+      ]
+    },
+    {
+      "device": "mobile",
+      "scenario": "carregando",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "inicio",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "INPUT",
+        "text": ""
+      },
+      "efeitos": []
+    },
+    {
+      "device": "mobile",
+      "scenario": "recuperado",
+      "overflow": false,
+      "violations": [],
+      "active": {
+        "tag": "BUTTON",
+        "text": "✕"
+      },
+      "efeitos": []
+    }
+  ],
+  "errors": [],
+  "blocked": []
+}

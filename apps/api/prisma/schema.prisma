@@ -114,6 +114,7 @@ model NfseConsultaMunicipal {
 }
 
 model Company {
+  fs12ApuracaoRevisoes ApuracaoFs12Revisao[]
   consultasMunicipais NfseConsultaMunicipal[]
   id                            String            @id @default(uuid())
   clientId                      String
@@ -355,6 +356,7 @@ model RegimeHistorico {
 }
 
 model User {
+  fs12ApuracaoRevisoes ApuracaoFs12Revisao[]
   referenciasConfirmadas ReferenciaVencimentoFiscal[] @relation("ReferenciaConfirmador")
   referenciasAtualizadas ReferenciaVencimentoFiscal[] @relation("ReferenciaAtualizador")
   referenciaEventos ReferenciaVencimentoFiscalEvento[]
@@ -943,6 +945,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  fs12ApuracaoRevisoes ApuracaoFs12Revisao[]
   referenciasVencimento ReferenciaVencimentoFiscal[]
   solicitacoes EncaminhamentoSuporte[]
   implantacaoTarefas ImplantacaoTarefa[]
@@ -6398,4 +6401,30 @@ model ReferenciaVencimentoFiscalEvento {
   @@unique([actorId, requestId], map: "ref_vencimento_evento_request_key")
   @@unique([referenceId, revision], map: "ref_vencimento_evento_revision_key")
   @@map("referencias_vencimento_fiscal_eventos")
+}
+
+// Fiscal owns this append-only manual declaration. No calculation association in B3.1.
+model ApuracaoFs12Revisao {
+  id                String @id @default(uuid())
+  portalClientId    String
+  companyId         String
+  competencia       String
+  revisao           Int
+  serie             Json
+  politicaVersao    String
+  contexto          Json
+  contextoRevisao   String
+  serieHash         String
+  comandoHash       String
+  autorId           String
+  confirmadoEm      DateTime @default(now())
+  chaveIdempotencia String
+  motivo            String?
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  autor User @relation(fields: [autorId], references: [id], onDelete: Restrict)
+  @@unique([portalClientId, companyId, competencia, revisao], map: "fs12_apuracao_revisao_key")
+  @@unique([portalClientId, competencia, chaveIdempotencia], map: "fs12_apuracao_idempotencia_key")
+  @@index([portalClientId, companyId, competencia, revisao], map: "fs12_apuracao_escopo_revisao_idx")
+  @@map("apuracao_fs12_revisoes")
 }

@@ -2,6 +2,7 @@
 // Mount: /firm/companies/:companyId/{cadastro-fiscal,produtos-servicos,pendencias,classificar-v2}
 
 import { Router } from "express";
+import { consultarSerieFs12DaApuracao, confirmarSerieFs12DaApuracao } from '../../composition/fs12DaApuracao.js';
 import { consultarFs12DoFechamento } from '../../composition/consultaFs12.js';
 import { backgroundRoute } from "../../application/tasks/ManualTaskService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -88,6 +89,27 @@ export function createApuracaoV2Router({ log } = {}) {
         message: err?.status ? err.message : 'Não foi possível consultar a FS12. Tente novamente; nenhum dado foi alterado.' });
     }
   });
+
+  // Manual declaration only; not routed through any calculation/fiscal service.
+  for (const method of ['get', 'post']) {
+    router[method]('/fechamento/:competencia/fs12/confirmacoes', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      try {
+        const identidade = { portalClientId: String(req.params.companyId), competencia: req.params.competencia,
+          autorId: req.auth?.user?.id };
+        if (method === 'get') return res.json({ ok: true, fs12: await consultarSerieFs12DaApuracao(identidade) });
+        const { serie, revisaoEsperada, contextoRevisao, chaveIdempotencia, motivo } = req.body || {};
+        const resultado = await confirmarSerieFs12DaApuracao({ ...identidade,
+          serie, revisaoEsperada, contextoRevisao, chaveIdempotencia, motivo });
+        return res.json({ ok: true, ...resultado });
+      } catch (err) {
+        const conhecido = Number.isInteger(err?.status) && err.status >= 400 && err.status < 500;
+        return res.status(conhecido ? err.status : 503).json({ ok: false,
+          error: conhecido ? err.code : 'FS12_INDISPONIVEL',
+          message: conhecido ? err.message : 'Não foi possível concluir a operação. Confira o histórico antes de tentar novamente.' });
+      }
+    });
+  }
 
   function bad(res, status, error, message, extra = {}) {
     return res.status(status).json({ ok: false, error, message, ...extra });
