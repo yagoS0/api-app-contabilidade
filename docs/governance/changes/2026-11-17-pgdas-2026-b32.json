@@ -23,7 +23,10 @@
     "92 testes de governança aprovados; diagnose5023 base/5023 candidata/zero novas violações; buildweb aprovado.",
     "Referência prévia86 contratos/recuperação e26 HTTP/PG aprovados; candidata86 aprovados com mudança intencional de bloqueios temporais documentada.",
     "Regressão web ampla encontrou timeout preexistente de bootstrapDataRouter; repetição isolada40/40 aprovada. Regressoes amplas não declaradas integralmente aprovadas; CI no SHA do PR deve ser consultada.",
-    "declaracaoZerada:22/22 após atualizar expectativas intencionalmente alteradas pelo B32; sem neutralizar guarda. Auditoria SQL de migrations e Prisma validate aprovados."
+    "declaracaoZerada:22/22 após atualizar expectativas intencionalmente alteradas pelo B32; sem neutralizar guarda. Auditoria SQL de migrations e Prisma validate aprovados.",
+    "Regressão ampliada Fiscal/SERPRO, Apuração e Operações:101 suítes aprovadas,5 condicionais ignoradas;1443 testes aprovados,39 ignorados;42 snapshots aprovados (.altan-governance/b32-broad-fiscal-final.json). Sem ALTAN_TESTE_POSTGRES neste ensaio; PostgreSQL focal foi executado separadamente.",
+    "pgdas2026Caracterizacao:21/21, preservando builder em todos os PAs e despacho legado outubro, recusas11/12/2027 sem neutralizar guardas.",
+    "Os2 testes ignorados no focal533 caracterizam a base vulnerável anterior ao #275 e são intencionalmente desativados na candidata segura."
   ],
   "rollback": "Preservar migração aditiva e evidências, sem DROP/backfill. Reverter componentes apenas mantendo bloqueio temporal de novos atos ou suspendendo comandos; código anterior sem guarda não constitui rollback fiscal seguro. Nenhum deploy autorizado.",
   "humanDecisions": [
@@ -55,7 +58,8 @@
         "CI hospedada no SHA final",
         "Não declara regressão ampla integralmente aprovada",
         "B3.3 depende de correlação oficial e atomicidade FS12/CAS"
-      ]
+      ],
+      "complement": "Parecer complementar favorável sobre ajuste de pgdas2026Caracterizacao.test.js, sem modificação funcional. Regressoes/CI final verificadas pelo principal."
     }
   },
   "limitations": [

@@ -34,25 +34,44 @@ describe("PGDAS-2026-A — builder existente, sem validação remota", () => {
     expect(buildDeclaracaoPayload({ ...base, competencia: "2026-11", folhasSalario }).declaracao.folhasSalario)
       .toEqual(folhasSalario);
   });
-  test("null direto difere de null normalizado pela fachada", async () => {
-    expect(() => buildDeclaracaoPayload({ ...base, competencia: "2026-11", folhasSalario: null })).toThrow(TypeError);
+  test("null direto difere de null normalizado pela fachada no despacho legado de outubro", async () => {
+    for (const competencia of periodos) {
+      expect(() => buildDeclaracaoPayload({ ...base, competencia, folhasSalario: null })).toThrow(TypeError);
+    }
     const transmitirDeclaracao = jest.fn(async () => ({ dados: { valoresDevidos: [{ codigoTributo: 1010, valor: 1 }] } }));
     const service = new PgdasSimulacaoService({ pgdasService: { transmitirDeclaracao } });
-    await service.simular({ ...base, competencia: "2026-11", folhasSalario: null });
+    await service.simular({ ...base, competencia: "2026-10", folhasSalario: null });
     expect(transmitirDeclaracao).toHaveBeenCalledTimes(1);
     expect(transmitirDeclaracao.mock.calls[0][0].declaracao.declaracao).not.toHaveProperty("folhasSalario");
     expect(transmitirDeclaracao.mock.calls[0][0].declaracao.indicadorTransmissao).toBe(false);
   });
-  test("simulação/transmissão em double preservam série e distinguem intenção", async () => {
+  test("simulação/transmissão legadas de outubro em double preservam série e distinguem intenção", async () => {
     const transmitirDeclaracao = jest.fn(async () => ({ dados: { valoresDevidos: [{ codigoTributo: 1010, valor: 1 }] } }));
     const service = new PgdasSimulacaoService({ pgdasService: { transmitirDeclaracao } });
-    const params = { ...base, competencia: "2026-11", folhasSalario: [{ pa: 202610, valor: 12.34 }] };
+    const params = { ...base, competencia: "2026-10", folhasSalario: [{ pa: 202609, valor: 12.34 }] };
     await service.simular(params);
     await service.transmitir(params);
     const payloads = transmitirDeclaracao.mock.calls.map(([p]) => p.declaracao);
     expect(payloads.map(p => p.indicadorTransmissao)).toEqual([false, true]);
     expect(payloads[0].declaracao).toEqual(payloads[1].declaracao);
-    expect(params.folhasSalario).toEqual([{ pa: 202610, valor: 12.34 }]);
+    expect(params.folhasSalario).toEqual([{ pa: 202609, valor: 12.34 }]);
+  });
+  test.each([
+    ['2026-11', 'FS12_INTEGRACAO_B33_PENDENTE'],
+    ['2026-12', 'FS12_INTEGRACAO_B33_PENDENTE'],
+    ['2027-01', 'FS12_HOMOLOGACAO_2027_PENDENTE'],
+  ])('%s bloqueia ambas intenções antes de normalizar folha ou chamar adaptador', async (competencia, code) => {
+    const transmitirDeclaracao = jest.fn();
+    const service = new PgdasSimulacaoService({ pgdasService: { transmitirDeclaracao } });
+    for (const folhasSalario of [null, [], [{ pa: 202610, valor: 12.34 }]]) {
+      const params = { ...base, competencia, folhasSalario };
+      const antes = JSON.stringify(params);
+      for (const metodo of ['simular', 'transmitir']) {
+        await expect(service[metodo](params)).rejects.toMatchObject({ code });
+      }
+      expect(JSON.stringify(params)).toBe(antes);
+    }
+    expect(transmitirDeclaracao).not.toHaveBeenCalled();
   });
   test("receita zero omite atividades, mas não remove folha fornecida ao builder", () => {
     const p = buildDeclaracaoPayload({ ...base, competencia: "2026-11", atividades: [],
