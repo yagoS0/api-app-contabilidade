@@ -60,5 +60,34 @@
     "Bloqueio B2 do modal preservado; não promete bloqueio global de caminhos legados.",
     "Rascunhos parciais não persistem; recarregar avisa descarte.",
     "Controlador escalated não é aprovação técnica automática. CI final e autorização humana continuam necessárias."
-  ]
+  ],
+  "integrationUpdate": {
+    "previousHead": "da65098586dcb0a577e9dfe7aa74872f75c7f429",
+    "main": "5753cce89bd0eaff968f30082ceae7837435db4b",
+    "mergeCommit": "bd69042791ca3beaa5ab83f3a5ab03e1925e07cb",
+    "method": "Merge não destrutivo da main na branch original, sem conflitos e sem force push. Preservados commits, arquivos locais ignorados e worktrees existentes.",
+    "preservation": "Os três documentos do PR294 são idênticos aos da main. Código, schema, migration, contratos HTTP, autorização, B1/B2, cálculos, Fator R, transmissão e workflows são idênticos ao head anterior. Proposta294 permanece histórica; autorização posterior da seção36 rege a implementação B3.1.",
+    "operationalImpact": "Nenhum novo impacto operacional. Somente reconciliação documental e este registro; nenhuma nova funcionalidade ou modificação de regra.",
+    "tests": [
+      "API852pass/53suítes/4skips conhecidos; os2PGcondicionais executados separadamente, outros2 são vulnerabilidade histórica275.",
+      "PostgreSQL16 descartável49pass/3suítes (B3.1, B3 e OperationsConsultas), zero skips; Prisma válido e214migrations sem pendências.",
+      "Governança88pass, arquitetura5pass, pilotoGuias24pass; diagnose5023→5023, zero novas; árvoreAPI da base5753 idêntica à baseline434.",
+      "Regressão web em lotes e CI hospedada do novo SHA: resultados definitivos registrados no PR295."
+    ],
+    "requiredChecks": [
+      "governance",
+      "accounting-regression",
+      "validate",
+      "usability-regression",
+      "whatsapp-regression",
+      "whatsapp-postgres",
+      "confirmation-postgres",
+      "lead-postgres",
+      "coleta-cbs-postgres"
+    ],
+    "review": "/root/integracao295_revisao: favorável à reconciliação, preservação integral comprovada por comparação Git; testes e CI executados pelo Principal.",
+    "controller": "Sem novo controlador: nenhuma alteração funcional nesta atualização. O escalated da implementação anterior permanece registrado; não se declara ready_for_human.",
+    "rollback": "Se necessário, reverter exclusivamente o commit de merge e este registro, preservando commits originais e revisões FS12. Nenhuma reversão de dados, exclusão ou force push.",
+    "restrictions": "Não integrar o PR, fazer deploy, migrar produção, chamar SERPRO ou iniciar B3.2 nesta execução. Proteções e Railway não alterados."
+  }
 }
