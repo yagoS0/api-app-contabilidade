@@ -1,0 +1,54 @@
+{
+  "summary": "PGDAS-2026-B3.3b.1: proposta de persistência e coordenação, sem alteração produtiva.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "base": "44f031ce1cbd7264ab94b3ba302db8f9353bae66",
+  "authorization": "https://github.com/yagoS0/api-app-contabilidade/pull/299#issuecomment-6983908185",
+  "operationalImpact": "Nenhum. Fiscal possui comando/revisão/cálculo e interpretação; infraestrutura conserva reserva/ledger técnico. Operações, lotes e scripts são consumidores descritos, sem mudança de autorização ou efeitos. Guias, Contabilidade, Comercial, Comunicação, web e portal preservados. R01/R02/R04-R06/R19/R20/R22 e seções 36/37 intactos. Schema/DDL somente propostos em documento; nenhuma migration nova ou backfill. Guardas B32, seleção null B33a, Fator R e payload inalterados.",
+  "tests": [
+    "Regressão existente: 546 testes / 35 suítes aprovados, zero falhas/ignorados, incluindo 62 PostgreSQL16 em banco descartável loopback 55489, somente schema integrado (215 migrations). Evidência privada b33b1-regression-final.json.",
+    "Governança: 40 testes do comando npm + 48 do run-jest-batches, todos aprovados; arquitetura: 5 aprovados.",
+    "Primeira invocação da regressão usou experimental-vm-modules incompatível com Jest/Babel do projeto e falhou; corrigida invocação sem alterar testes/código. Logs das duas execuções preservados.",
+    "Focal novo:15/15 aprovados após corrigir asserção de marcador por tentativa, sem alterar produção. Total561/36suítes,62PostgreSQL,zero falhas/ignorados finais. Diagnose5023→5023,zero novas violações. Cluster exclusivo encerrado e preservado.",
+    "CI hospedada pendente de publicação; resultado final e links serão registrados no PR sem presumir aprovação."
+  ],
+  "rollback": "Reverter apenas documento, teste de caracterização e este registro. Sem dado/schema/estado produtivo modificado. Preservar worktrees e banco descartável; não iniciar B3.3b.2.",
+  "limitations": [
+    "Nenhuma garantia integrada do coordenador futuro é declarada implementada. DDL documental não foi aplicado nem no banco descartável.",
+    "Controlador escalated: executor exit1/timeouttrue, deixou documento parcial. Principal concluiu e corrigiu os arquivos, sem alterar gates/permissões. Revisões independentes e CI registradas no PR. Sem ready_for_human."
+  ],
+  "controllerRun": "2026-11-18T17-20-37-160Z-efa69a96",
+  "controllerResult": "escalated_executor_timeout",
+  "humanDecisions": [
+    "Aprovar o schema proposto, vínculo de entrada e coordenação compartilhada antes de implementar qualquer migration.",
+    "Definir custódia/gestão de chave, retenção e capacidade interna restrita; sem ativação nesta entrega.",
+    "Homologação fiscal de seleção, fonte mensal e 2027 permanece pendente. Não liberar guardas ou iniciar B3.3b.2."
+  ],
+  "reviews": {
+    "fiscal": {
+      "reviewer": "/root/b33b1_fiscal",
+      "result": "Rodada2 favorável, sem achados bloqueantes. Inspeção de documento/teste/registro e JSONs; sem execução adicional ou DDL."
+    },
+    "dataSecurity": {
+      "reviewer": "/root/b33b1_dados",
+      "result": "Rodada2 favorável após FKs de entrada, cifra e coordenação de divergência T3a/T3b. Conferiu evidências locais; sem aplicar DDL ou executar testes novamente."
+    },
+    "reviewedDocumentSha256": "042dd8b4d8768c2ae1283c4d278212de526747597c195b503d6994d60f6a89d9",
+    "reviewedTestSha256": "bf35a9318247546c2f7a7dfb9a41b8f6e7a17ebb71ef6cce51566d605d653d7d",
+    "systemic": {
+      "result": "Favorável à preparação documental/caracterização. Conferiu três arquivos, evidências 561/36/62PG, governança88, arquitetura5 e diagnose0. DDL/concorrência futuros permanecem gates; CI deve ser conferida no SHA final. Sem DDL ou execução adicional.",
+      "reviewer": "/root/b33b1_sistemico"
+    }
+  }
+}
