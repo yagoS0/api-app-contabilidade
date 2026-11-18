@@ -1,0 +1,70 @@
+{
+  "summary": "PGDAS-2026-B3.3b: desenho e caracterização do coordenador fiscal; sem implementação produtiva.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "base": "0aa2d2a0fa682f056ba3ced1457be4fd5825dfa4",
+  "authorization": "https://github.com/yagoS0/api-app-contabilidade/pull/298#issuecomment-6964807882",
+  "operationalReferenceSha256": "4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113",
+  "operationalImpact": "Nenhum impacto operacional produtivo. Fiscal é dono do coordenador proposto, API/infraestrutura fornecem transporte e reservas técnicas. Operações/lotes/scripts são consumidores inventariados, com autorizações distintas preservadas. Guias e Contabilidade mantêm documentos/provisões/fechamento; commercial/communication/web/portal são alcance conservador transitivo, sem alteração de código, UI, mensagens, contratos ou dados. Preservadas R01/R02/R04-R06/R19/R20/R22 e seções36/37. FS12 permanece na Apuração; B1/B31/B32/B33a, Fator R, payload, schema/migrations e guardas intactos.",
+  "tests": [
+    "734 testes em44suítes aprovados,0falhas/ignorados finais:524/32 regressões B1-B33a eHTTP;119/8Operações/lotes;37/2cache/tarefas;39/1procedência/reabertura;15/1novo focal. JSONs .altan-governance/b33b-{regression,operations,cache-tasks,procedencia,focal-final}.json.",
+    "62PostgreSQL16 incluídos:43FS12 e19Operações. Banco descartável exclusivo loopback55488/altan_piloto_governance_test, fixtures sintéticas,215migrations existentes. Sem migration nova ou banco original modificado.",
+    "Governança88/88; arquitetura5/5; diagnose5023→5023,0acréscimos. Mesmo verificador na fonte base antes de alterações e candidata; produção permanece idêntica ao commitbase.",
+    "Focal inicial14passaram; executor acrescentou caso de política alterada durante autenticação (abortada_politica antes da rede) e isolamento de configuração; final15passaram. Primeira invocação de regressão pelo Principal não encontrou testes porcwdincorreto; corrigida para apps/api, sem passWithNoTests.",
+    "Base/candidata não alteram implementações: teste chama componentes reais atuais com Axios/auth/cache/ACL/ledger doubles explicitados. Double não comprova rollbackSQL, autorização real ou coordenador futuro; HTTP/PG existentes complementam somente garantias atuais.",
+    "CI hospedada será registrada no PR no SHA final. UI/UX não aplicável: diff exclusivamente documentação/teste, sem componente visual. Nenhuma chamada fiscal, mensagem ou transmissão real."
+  ],
+  "rollback": "Reverter somente documento, teste novo e este registro. Nenhuma alteração produtiva, dado, schema, migration, transporte ou estado a reverter. Preservar histórico, bloqueios e worktrees.",
+  "humanDecisions": [
+    "Revisar desenho e decidir identidade durável pré-calculoId e reserva reutilizável; eventual persistência adicional exige aprovação específica antes de migration.",
+    "Aprovar contrato restrito de custódia T3a após revogação e coordenação entre confirmação FS12 e despacho. T3b mantém snapshot/vínculo atômicos e não apaga custódia prévia.",
+    "Protocolo de seleção, fonte mensal oficial, vazio/omissão/reenvio/abertura e2027 permanecem pendentes. Minuta B33a não enviada. Sem liberação de despacho11/12 ou2027.",
+    "Implementação integral, merge, deploy, migração produtiva e atos externos não autorizados. Encerrar esta preparação para revisão humana."
+  ],
+  "controller": {
+    "runId": "2026-11-18T00-24-27-884Z-92a22f0a",
+    "result": "interrupted_by_principal_for_review_corrections",
+    "rawState": "testing",
+    "completed": [
+      "planner",
+      "executor",
+      "governance-engine"
+    ],
+    "incomplete": [
+      "api-regression e gates/revisores seguintes da execução automática"
+    ],
+    "reason": "Principal interrompeu exclusivamente processos desta rodada durante API regression para corrigir achados independentes: lote moderno/ACL legada, custódiaT3a separada de promoçãoT3b e escritorFS12 na linearização. Journal/lock/logs preservados; sem ready_for_human. Executor encontrou EPERM/lstat ao tentar Node/Jest; não foram ampliadas permissões nem alterados gates.",
+    "alternativeEvidence": "Principal executou734testes finais,88governança,5verificador e diagnose; revisores independentes Fiscal e dados/backend/segurança conferiram desenho e evidências. Parecer sistêmico e CI registrados no PR/entrega."
+  },
+  "reviews": {
+    "fiscal": {
+      "reviewer": "/root/b33b_fluxos",
+      "result": "Favorável após explicitar lote moderno/legado e custódia. Executou15focais, inspecionou524+119regressões/62PG. Não homologa protocolo nem libera despacho."
+    },
+    "dataSecurityArchitecture": {
+      "reviewer": "/root/b33b_dados",
+      "result": "Favorável após separarT3a/T3b e exigir participação do escritorFS12 emT2. Executou14focais anteriores; inspecionou524+119+37 e62PG. Teste final ampliado para15; revisorFiscal ePrincipal executaram versão final."
+    },
+    "systemic": {
+      "reviewer": "/root/b33b_sistemico",
+      "result": "Favorável para desenho e caracterização; conferiu 734/44, 62 PostgreSQL, 88 governança, 5 arquitetura e diagnose sem acréscimos. Ajustada delimitação entre execução do executor e publicação pelo Principal. CI e conclusão do controlador não presumidas."
+    }
+  },
+  "limitations": [
+    "Coordenador não implementado; revisão durante rede, identidade pré-cálculo e correlação causal integrada ainda exigem testes futuros. Matriz separa prova atual de requisito.",
+    "SerproChamada/acaoId/cache/HTTP200 não comprovam declaração ou uso de FS12. Simulaçãofalse pode ser cacheada, transmissão não.",
+    "Reserva incerta não expira para retry. Custódia não concluída não é recuperável presumidamente. Sem prova causal, conciliação permanece desconhecida.",
+    "Controlador interrompido, sem ready_for_human. CI não reclassifica a execução."
+  ]
+}
