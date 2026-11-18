@@ -87,7 +87,3 @@ export function validarCapacidadeFixture(capability, expected, serviceSecret, ma
   if (capability.serialized !== expectedCap.serialized || !marker || marker.key !== `serpro_dispatch:${expected.context.reservaId}` || marker.value?.reservaId !== expected.context.reservaId || marker.value?.companyId !== expected.context.portalClientId || typeof marker.value?.authorizedAt !== 'string' || !Number.isFinite(Date.parse(marker.value.authorizedAt))) fail();
   return { acao: 'custodiar_resposta_pgdas', autorizaNovoDespacho: false };
 }
-
-
-
-

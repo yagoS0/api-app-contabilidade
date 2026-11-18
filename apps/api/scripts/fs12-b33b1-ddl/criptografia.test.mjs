@@ -93,4 +93,3 @@ test('authentic capability replay is cryptographically valid; database uniquenes
   const c = capability();
   assert.deepEqual(validarCapacidadeFixture(c, expected, secret, marker), validarCapacidadeFixture(c, expected, secret, marker));
 });
-

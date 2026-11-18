@@ -86,4 +86,3 @@ test('SQL accepts structurally valid tampering; GCM authentication is an additio
     assert.throws(() => decifrarFixture(saved.corpoCifrado, q.context, saved.corpoHash, q.keys), /EVIDENCIA_INVALIDA/);
   } finally { await db.query('ROLLBACK'); await db.end(); }
 });
-

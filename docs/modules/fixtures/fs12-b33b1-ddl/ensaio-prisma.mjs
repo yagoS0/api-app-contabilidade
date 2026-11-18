@@ -32,4 +32,3 @@ process.stderr.write(result.stderr || '');
 if (readFileSync(principal, 'utf8') !== original) throw new Error('Principal schema changed');
 console.log('Principal unchanged SHA256:', createHash('sha256').update(original).digest('hex'));
 process.exitCode = result.status ?? 1;
-
