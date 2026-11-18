@@ -1,0 +1,92 @@
+// FRAGMENT ONLY: compose with the integrated schema using ensaio-prisma.mjs.
+// Never migrate/generate from this fixture. SQL checks, triggers and partial index
+// remain external invariants. Prisma validation does not prove their behavior.
+model Fs12Comando {
+  id String @id
+  tentativaId String @unique
+  portalClientId String
+  companyId String
+  cnpj String
+  competencia String
+  revisaoFs12 Int
+  intencao String
+  vinculoOrigemId String?
+  serieHash String
+  contextoHash String
+  politicaVersao String
+  chaveIdempotencia String
+  comandoHash String
+  hashVersao String
+  intencaoCongelada Json @map("intencao_congelada")
+  esperado Json
+  autorId String
+  origem String
+  criadoEm DateTime @default(now()) @db.Timestamp(3)
+  revisao ApuracaoFs12Revisao @relation("Fs12ComandoRevisao", fields: [portalClientId, companyId, competencia, revisaoFs12], references: [portalClientId, companyId, competencia, revisao], onDelete: Restrict, onUpdate: Restrict)
+  vinculoOrigem ApuracaoFs12Calculo? @relation("Fs12ComandoOrigem", fields: [vinculoOrigemId, portalClientId, companyId, competencia, revisaoFs12], references: [id, portalClientId, companyId, competencia, revisaoFs12], onDelete: Restrict, onUpdate: Restrict)
+  autor User @relation("Fs12ComandoAutor", fields: [autorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva Fs12ComandoReserva?
+  associacoes Fs12ComandoCalculo[]
+  @@unique([portalClientId, competencia, chaveIdempotencia])
+  @@unique([id, portalClientId, companyId, competencia, revisaoFs12, intencao])
+  @@index([vinculoOrigemId], map: "fs12_comando_origem_idx")
+  @@index([autorId], map: "fs12_comando_autor_idx")
+  @@map("fs12_comandos")
+}
+model Fs12ComandoReserva {
+  comandoId String @id
+  reservaId String @unique
+  assinatura String
+  envelopeCifrado Json
+  envelopeHash String
+  rota String
+  idSistema String
+  idServico String
+  registradoEm DateTime @default(now()) @db.Timestamp(3)
+  comando Fs12Comando @relation(fields: [comandoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva SerproChamada @relation("Fs12ReservaLedger", fields: [reservaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  respostas Fs12ComandoResposta[]
+  @@unique([comandoId, reservaId])
+  @@map("fs12_comando_reservas")
+}
+model Fs12ComandoResposta {
+  id String @id
+  comandoId String
+  reservaId String
+  marcadorKey String
+  httpStatus Int
+  corpoCifrado Json
+  corpoHash String
+  recebidoEm DateTime @db.Timestamp(3)
+  registradoEm DateTime @default(now()) @db.Timestamp(3)
+  custodianteId String
+  capacidadeId String
+  marcadorObservado Json
+  reserva Fs12ComandoReserva @relation(fields: [comandoId, reservaId], references: [comandoId, reservaId], onDelete: Restrict, onUpdate: Restrict)
+  marcador AppSetting @relation("Fs12RespostaMarcador", fields: [marcadorKey], references: [key], onDelete: Restrict, onUpdate: Restrict)
+  associacoes Fs12ComandoCalculo[]
+  @@unique([id, comandoId])
+  @@unique([comandoId, corpoHash, httpStatus])
+  @@index([marcadorKey], map: "fs12_resposta_marcador_idx")
+  @@map("fs12_comando_respostas")
+}
+model Fs12ComandoCalculo {
+  comandoId String @id
+  respostaId String
+  vinculoId String
+  portalClientId String
+  companyId String
+  competencia String
+  revisaoFs12 Int
+  intencao String
+  autorId String
+  registradoEm DateTime @default(now()) @db.Timestamp(3)
+  resposta Fs12ComandoResposta @relation(fields: [respostaId, comandoId], references: [id, comandoId], onDelete: Restrict, onUpdate: Restrict)
+  comando Fs12Comando @relation(fields: [comandoId, portalClientId, companyId, competencia, revisaoFs12, intencao], references: [id, portalClientId, companyId, competencia, revisaoFs12, intencao], onDelete: Restrict, onUpdate: Restrict)
+  vinculo ApuracaoFs12Calculo @relation("Fs12AssociacaoCalculo", fields: [vinculoId, portalClientId, companyId, competencia, revisaoFs12], references: [id, portalClientId, companyId, competencia, revisaoFs12], onDelete: Restrict, onUpdate: Restrict)
+  autor User @relation("Fs12AssociacaoAutor", fields: [autorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@index([vinculoId], map: "fs12_associacao_vinculo_idx")
+  @@index([autorId], map: "fs12_associacao_autor_idx")
+  @@index([respostaId, comandoId], map: "fs12_associacao_resposta_idx")
+  @@map("fs12_comando_calculos")
+}

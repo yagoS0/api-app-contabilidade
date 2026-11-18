@@ -1,0 +1,54 @@
+{
+  "summary": "B3.3b.1 validação de DDL exclusivamente PostgreSQL16 descartável; nenhuma implementação produtiva.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "documentation",
+    "fiscal",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "base": "86b386dbe66287a68913ffdb1bb7bae232a7c44b",
+  "authorization": "https://github.com/yagoS0/api-app-contabilidade/pull/300#issuecomment-6987432274",
+  "operationalImpact": "Nenhum. Fiscal possui comando/FS12/cálculo; infraestrutura preserva reserva e custódia. Apuração, Operações, lotes/scripts, Guias/Contabilidade e interfaces conservam contratos. R01/R02/R04-R06/R19/R20/R22 e seções36/37 intactos. Somente fixtures/testes/documentação. Nenhuma migration principal, payload, guarda B32, Fator R ou configuração produtiva modificada.",
+  "tests": [
+    "Regressões B1-B33b1:561/36 suítes, zero falhas/ignorados finais, incluindo62PostgreSQL16. .altan-governance/ddl-regression-final.json.",
+    "Constraints:42cenários(21original+21corretivo),43TAP com agregador, schemasUUID/rollback, logsddl-constraints-isolated.log.",
+    "Concorrência:11/11, duas conexões, PID exato/espera SQL observada, contador40001 e caso de usoB31 real envolvido em wrapper test-only. Falha inicial P2010/meta40001 caracterizada; repetição local explícita. Inclui nova conexão após marca sem resposta, sem alegar queda física.",
+    "Criptografia/capacidade/pa:69/69; custódiaSQL4/4, chaves sintéticas memória. Prisma5.22validate composição privada aprovado; schema principal preservado.",
+    "Governança88/88; arquitetura5/5; diagnose5023→5023, zero novas violações.",
+    "CI hospedada será registrada no PR no SHA final. Os workflows existentes não executam automaticamente o novo harness DDL; não há substituição silenciosa da evidência local.",
+    "Execução final conjunta sequencial:126 cenários novos/127 TAP incluindo agregador, zero falhas/ignorados. .altan-governance/ddl-all-final.log. Fragmento Prisma alinhado aos quatro índices corretivos; validate final aprovado.",
+    "Cluster exclusivo encerrado após confirmar caminho físico/porta55491/PID postgres; arquivos preservados. Nenhum cluster anterior alterado."
+  ],
+  "rollback": "Reverter somente fixtures/testes/docs/registro, sem estado produtivo. Preservar cluster e evidências locais. Não iniciar B3.3b.2. Futuro rollback de código deve preservar custódia e bloqueios.",
+  "humanDecisions": [
+    "Aprovar migration futura separadamente após revisão do candidato; fixture não autoriza schema produtivo.",
+    "Definir provedor/chaves/capacidade/retencao/recuperação e custódia acima16MiB.",
+    "Aprovar adaptação integrada de locks/contador e tradução restrita P2010/40001 antes do coordenador; homologação SERPRO permanece pendente."
+  ],
+  "limitations": [
+    "DDL e protocolo de ensaio não são coordenador integrado; ordemglobal de todos escritores/deadlocks produtivos não homologada.",
+    "CapabilityHMAC e chaves são exclusivamente sintéticas; owner/superuser não contidos; Prisma não representa checks/triggers/índiceparcial.",
+    "Falhas iniciais/correções de harness registradas no relatório e logs privados; nenhuma migração/schema produtivo foi alterado."
+  ],
+  "controllerRun": "2026-11-18T19-41-57-608Z-62f6e639",
+  "controllerResult": "escalated_after_planner_governance_configuration_scope",
+  "reviews": {
+    "dataSecurity": {
+      "result": "Rodada2 favorável sem bloqueantes. Índices Prisma/grants leitor delimitados; observou126cenários127TAP, sem reexecutar SQL.",
+      "reviewer": "/root/ddl_review_data_security"
+    },
+    "fiscal": {
+      "result": "Rodada2 favorável sem bloqueantes. Guardas e contratos preservados; revisão somente leitura da versão final.",
+      "reviewer": "/root/ddl_review_fiscal"
+    },
+    "architecture": {
+      "result": "Parecer sistêmico final favorável, sem bloqueantes, após conferir versão final e pareceres Fiscal/dados-segurança. Limites de locks globais, grants escritor e controlador escalated preservados.",
+      "reviewer": "/root/ddl_review_architecture"
+    },
+    "reviewedDocumentSha256": "fb0796b523ded77c745315695f55ed01a92ac7d3f00edb059c68fd6699c1f082",
+    "reviewedConcurrencySha256": "374d54726290972bb1cd8dddb6e592c88d8997e7a95cf5d85a58ea04e03d58a5"
+  }
+}
