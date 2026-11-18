@@ -1,0 +1,52 @@
+name: FS12 persistência PostgreSQL 16
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/prisma/**'
+      - 'apps/api/scripts/fs12-b33b1-ddl/**'
+      - 'docs/modules/fixtures/fs12-b33b1-ddl/**'
+      - 'apps/api/src/modules/fiscal/**'
+      - 'package*.json'
+      - 'apps/api/package.json'
+      - '.github/workflows/fs12-persistencia.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  migracao-fs12-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: altan_ddl_test
+          POSTGRES_PASSWORD: fixture_ci
+          POSTGRES_DB: altan_ddl_governance_test
+        ports: ['55492:5432']
+        options: >-
+          --health-cmd "pg_isready -U altan_ddl_test -d altan_ddl_governance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://altan_ddl_test:fixture_ci@127.0.0.1:55492/altan_ddl_governance_test
+      ALTAN_FS12_DDL_DATABASE_URL: postgresql://altan_ddl_test:fixture_ci@127.0.0.1:55492/altan_ddl_governance_test
+      ALTAN_FS12_DDL_PG_MODULE: ${{ github.workspace }}/.altan-governance/tools/node_modules/pg
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Preparar cliente SQL exclusivo dos ensaios
+        run: npm install --prefix .altan-governance/tools --no-save --ignore-scripts --no-audit --no-fund pg@8.16.3
+      - name: Validar, gerar e aplicar histórico e migração versionada
+        run: node apps/api/scripts/fs12-b33b1-ddl/migracao-versionada.mjs
+      - name: Validar SQL instalado, Prisma, concorrência, custódia e criptografia sintética
+        run: node --test --test-concurrency=1 apps/api/scripts/fs12-b33b1-ddl/*.test.mjs

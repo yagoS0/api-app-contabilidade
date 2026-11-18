@@ -1,0 +1,54 @@
+{
+  "summary": "B3.3b.1 migração aditiva versionada e modelos Prisma para identidade/custódia FS12, sem coordenador.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "base": "c248135c71939bc0a4292bf1b2b17c3407e562b8",
+  "authorization": "https://github.com/yagoS0/api-app-contabilidade/pull/301#issuecomment-6992482643",
+  "operationalImpact": "Nenhuma regra operacional alterada. Fiscal é dono de comando, reserva vinculada, resposta observada e associação ao cálculo. Infraestrutura representa esses fatos no Prisma; nenhum consumidor produtivo novo. Apuração, Operações, scripts/lotes, Guias, Contabilidade, Comercial, Comunicação, web e portal preservam contratos, autorização, escritas e efeitos. Guardas B3.2, seleção B3.3a, Fator R, payload, revisão, idempotência e bloqueio2027 intactos. Sem interface nova; revisão UI/UX não aplicável. DDL aplicado somente em dois bancos PG16 descartáveis exclusivos.",
+  "tests": [
+    "Prisma validate/generate aprovados; migração real215→216, histórico B31/B32 preservado, zero backfill, segundo deploy não reaplica. migration-upgrade-final.log.",
+    "153cenários focais/154TAP incluindo agregador:63constraints(original/corrected/installed),11concorrência,69crypto/PA,4custódia,5Prisma,1privilégios. Zero falhas/ignorados. migration-all-final.log.",
+    "Regressão561/36suítes, incluindo62PostgreSQL16; zero falhas/ignorados. migration-regression.json.",
+    "Governança88; arquitetura4; diagnose5023→5023zero novas violações; auditoria SQL aprovada. Comparação Prisma/catalogo semdriftFS12; diferenças legadas nãoaplicadas.",
+    "Falhas locais de execução corrigidas: caminho inicial de config Jest/auditoria, glob PowerShell e EPERM generate concorrente com Jest. Sem mudança de regra/teste para ocultar falha; reruns finais aprovados.",
+    "CI focal PG16 integrada; resultados hospedados serão registrados no PR no SHA final, sem presumir aprovação.",
+    "Gate de dados completo aprovado: validate, auditoria, migrate deploy sem pendências, DRE PostgreSQL e fluxo de caixa/balanço no banco sintético. data-gate.log."
+  ],
+  "rollback": "Reverter código antes de integração; futura reversão de aplicação preserva quatro tabelas e evidências. Não executar DROP/down migration, reset ou reprocessamento. Migração transacional; falha requer inspeção do histórico antes de qualquer resolução. Nenhuma produção alterada.",
+  "humanDecisions": [
+    "Autorizar integração e futura aplicação produtiva separadamente; avaliar janela/custo do índice B32 e backup.",
+    "Aprovar privilégio T3a: FOR SHARE exige UPDATE em coluna AppSetting; grant updatedAt é somente prova sintética, não política runtime.",
+    "Definir capacidade interna, chaves/KMS, rotação, acesso ao ciphertext, retenção e recuperação antes de consumidores reais.",
+    "Aprovar coordenador e tradução restrita P2010/meta.code40001 separadamente; nunca retry de chamadas externas."
+  ],
+  "controllerRun": "2026-11-18T21-46-29-951Z-c18979bf",
+  "controllerResult": "escalated_after_planner_governance_configuration_scope; principal conclui escopo autorizado com revisão independente; sem ready_for_human",
+  "reviews": {
+    "dataSecurity": {
+      "result": "Favorável ao diff sem bloqueantes, limites de grants/owner/custódia e índice documentados.",
+      "reviewer": "/root/migration_design_review"
+    },
+    "fiscal": {
+      "result": "Favorável sem bloqueantes; SQL equivalente e ausência de alterações fiscais/produtivas comprovadas.",
+      "reviewer": "/root/migration_fiscal_review"
+    },
+    "architecture": {
+      "result": "Parecer final favorável sem bloqueantes; observou upgrade215→216/repetição,154TAP,561regressões,88governança,4arquiteturais e diagnosezero. CI hospedada pendente no momento da revisão.",
+      "reviewer": "/root/migration_arch_review"
+    }
+  },
+  "migrationSha256": "e59dc77b54fe25d67bf9f5edfdd853899bfc52b8d60831531a08b3090f21e868"
+}

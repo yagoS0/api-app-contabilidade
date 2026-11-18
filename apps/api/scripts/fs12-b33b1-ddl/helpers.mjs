@@ -13,7 +13,7 @@ export async function connect() {
   if (!raw) throw Error('Explicit ALTAN_FS12_DDL_DATABASE_URL required');
   const url = new URL(raw);
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== '127.0.0.1'
-    || url.port !== '55491' || url.pathname !== '/altan_ddl_governance_test'
+    || !['55491', '55492'].includes(url.port) || url.pathname !== '/altan_ddl_governance_test'
     || url.username !== 'altan_ddl_test' || url.search || url.hash)
     throw Error('Only the dedicated B33b1 disposable destination is permitted');
   const db = new pg.Client({ connectionString: raw });
