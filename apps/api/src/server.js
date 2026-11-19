@@ -32,7 +32,6 @@ import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 import { runConferenciaAdnWorkerLoop } from "./workers/conferenciaAdnWorker.js";
 import { iniciarWorkerVarreduraNotasLocal, pararWorkerVarreduraNotasLocal } from "./workers/varreduraNotasLocalWorker.js";
-import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
 import { seedMapaContaTributoGlobal } from "./application/accounting/parcelamento/MapaContaTributoSeeds.js";
 import { seedDeparaAnexoGlobal } from "./application/notas/apuracao/DeparaAnexoSeeds.js";
@@ -155,10 +154,6 @@ if (!CERT_SECRET_KEY || CERT_SECRET_KEY.length < CERT_SECRET_KEY_MIN_LENGTH) {
 
 const servidor = app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
-  // Q5 backfill: cria AccountingEntry para Guides PROCESSED que ainda não têm.
-  backfillProvisionsFromExistingGuides({ logger: log }).catch((err) => {
-    log.warn({ err: err?.message || err }, "Backfill GuideToProvision falhou");
-  });
   // Q9 seeds: cria/atualiza templates globais de parcelamento (Simples, INSS, ...).
   seedParcelamentoFunctions({ logger: log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Seed de funções de parcelamento falhou");
