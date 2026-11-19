@@ -10599,6 +10599,9 @@ export function createMockApi({ delay = defaultDelay } = {}) {
         integracao: { situacao: 'PENDENTE', permiteNovoCalculo: false },
       } };
     },
+    async recuperarDocumentosPgdas() {
+      return { ok: false, message: 'Consulta oficial indisponível na demonstração. Nenhum documento foi recuperado.' };
+    },
     async getFechamento(companyId, competencia) {
       await delay(60);
       const pas = [];

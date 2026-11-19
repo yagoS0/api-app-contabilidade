@@ -54,6 +54,7 @@ function extratoFoiConsultado(extratoStatus, extratoConsultadoEm) {
  * @returns {{chave:string, rotulo:string, detalhe:string, tom:string, provada:boolean, origem:string}}
  */
 export function estadoEntregaPgdas({
+  origemTransmissao = null,
   estadoApuracao = null,
   numeroDeclaracaoPortal = null,
   numeroDeclaracaoRfb = null,
@@ -63,7 +64,7 @@ export function estadoEntregaPgdas({
   temPdfDaDeclaracao = false,
 } = {}) {
   // 1. Transmitida por AQUI, com o número que a RFB devolveu na transmissão.
-  if (estadoApuracao === "transmitida" && numeroDeclaracaoPortal) {
+  if (estadoApuracao === "transmitida" && numeroDeclaracaoPortal && origemTransmissao !== 'EXTERNA') {
     return {
       chave: "transmitida_pelo_portal",
       rotulo: "Entregue pelo portal",
@@ -73,20 +74,13 @@ export function estadoEntregaPgdas({
       origem: "portal",
     };
   }
-  // 2. Entregue FORA e CAPTURADA da Receita — a prova que já está no nosso banco.
-  //    Dois caminhos, os dois com procedência da RFB e nenhum deles nosso:
-  //      · o extrato trouxe o número da declaração daquele PA;
-  //      · a transmissão daqui parou no "PA já declarado" (estado vira "transmitida" SEM número —
-  //        quem entregou foi outro). Chamar isso de "entregue pelo portal" seria nos creditar de
-  //        um envio que não fizemos.
-  if (numeroDeclaracaoRfb || estadoApuracao === "transmitida") {
+  // O estado legado isolado não comprova a entrega nem identifica quem transmitiu.
+  if (numeroDeclaracaoRfb || (origemTransmissao === 'EXTERNA' && numeroDeclaracaoPortal)) {
     return {
       chave: "capturada_da_rfb",
-      rotulo: "Entregue fora do portal — capturada do extrato da Receita",
-      detalhe: numeroDeclaracaoRfb
-        ? `A Receita tem a declaração ${numeroDeclaracaoRfb} para esta competência`
-          + `${temPdfDaDeclaracao ? ", e o PDF está guardado aqui" : ""}. Não foi transmitida daqui.`
-        : "A Receita já tinha declaração para esta competência quando o portal consultou. Não foi transmitida daqui.",
+      rotulo: "Apuração realizada fora da Altan — confirmada na Receita",
+      detalhe: `A Receita tem a declaração ${numeroDeclaracaoRfb || numeroDeclaracaoPortal} para esta competência`
+        + `${temPdfDaDeclaracao ? ", e o PDF está guardado aqui" : ""}. Não foi transmitida daqui.`,
       tom: TOM_ENTREGA.ok,
       provada: true,
       origem: "rfb",
@@ -115,7 +109,7 @@ export function estadoEntregaPgdas({
     }
     return {
       chave: "declarada_fora",
-      rotulo: "Entregue fora do portal — declarado pelo contador",
+      rotulo: "Apuração realizada fora da Altan — verificação pendente",
       detalhe: "Registro feito aqui a partir da sua afirmação; a Receita não confirmou nada. "
         + "Buscar o extrato do Simples traz o número da declaração e transforma isto em comprovação.",
       tom: TOM_ENTREGA.declarado,
@@ -170,10 +164,26 @@ export const CORES_TOM = {
 /** Lê os fatos do payload do `getFechamento` sem espalhar o formato por três telas. */
 export function entregaPgdasDoFechamento(dados) {
   const e = dados?.entregaPgdas || {};
+  const t = dados?.fluxoPgdas?.transmissao;
+  if (t?.confirmada === true && t.numeroDeclaracao) {
+    const externa = t.origem === 'EXTERNA';
+    return {
+      chave: externa ? 'capturada_da_rfb' : 'transmitida_pelo_portal',
+      rotulo: externa ? 'Apuração realizada fora da Altan — confirmada na Receita' : 'Transmissão confirmada pela Receita',
+      detalhe: `Declaração ${t.numeroDeclaracao}.${externa ? ' Não foi transmitida daqui.' : ''}`,
+      tom: TOM_ENTREGA.ok, provada: true, origem: externa ? 'rfb' : (t.origem === 'ALTAN' ? 'portal' : 'nenhuma'),
+    };
+  }
+  if (t && t.confirmada !== true && (t.tentativaLocalIncerta === true || ['RESULTADO_INCERTO', 'INCERTA', 'EM_PROCESSAMENTO'].includes(t.estado))) {
+    return { chave: 'resultado_incerto', rotulo: 'Resultado fiscal não confirmado',
+      detalhe: 'Confira o envio antes de qualquer nova tentativa. Não há retransmissão automática.',
+      tom: TOM_ENTREGA.desconhecido, provada: false, origem: 'nenhuma' };
+  }
   return estadoEntregaPgdas({
+    origemTransmissao: dados?.snapshot?.simulacaoSerpro?._portalTransmissao?.origem || null,
     estadoApuracao: dados?.estado || dados?.snapshot?.estado || null,
-    numeroDeclaracaoPortal: dados?.snapshot?.numeroDeclaracao || null,
-    numeroDeclaracaoRfb: e.numeroDeclaracaoRfb || null,
+    numeroDeclaracaoPortal: t ? null : dados?.snapshot?.numeroDeclaracao || null,
+    numeroDeclaracaoRfb: t ? null : e.numeroDeclaracaoRfb || null,
     extratoStatus: e.extratoStatus || null,
     extratoConsultadoEm: e.extratoConsultadoEm || null,
     declaradaForaEm: e.declaradaForaEm || null,

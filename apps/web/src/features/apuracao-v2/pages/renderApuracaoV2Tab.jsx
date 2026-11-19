@@ -29,7 +29,7 @@ import { baseTabelaAnexo } from "../lib/baseTabelaAnexo";
 import { ComparacaoTributaria } from "../components/ComparacaoTributaria";
 import { TabelaAnexoReferencia } from "../components/TabelaAnexoReferencia";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
-import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
+import { FluxoPgdasPanel, rotuloDocumentoPgdas } from "../../apuracao/components/FluxoPgdasPanel";
 import { RelatorioFaturamentoPanel } from "../components/RelatorioFaturamentoPanel";
 import { estadoDaClassificacao, kpiDasApurado } from "../lib/relatorioFaturamento";
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
@@ -114,6 +114,9 @@ export function ApuracaoV2Tab({
   const [snap, setSnap] = useState(null);
   const [fechando, setFechando] = useState(null); // { retificar } → abre o FechamentoModal
   const [confirmarRetificacao, setConfirmarRetificacao] = useState(false);
+  const [confirmarDocumentos, setConfirmarDocumentos] = useState(null);
+  const [resultadoDocumentos, setResultadoDocumentos] = useState(null);
+  const recuperacaoEmCurso = useRef(false);
   const [motivoRetificacao, setMotivoRetificacao] = useState('');
   const [reabrindo, setReabrindo] = useState(false);
   const reaberturaEmCurso = useRef(false);
@@ -283,6 +286,26 @@ export function ApuracaoV2Tab({
     }
   }
 
+  async function recuperarDocumentos() {
+    if (recuperacaoEmCurso.current || confirmarDocumentos !== contexto) return;
+    recuperacaoEmCurso.current = true;
+    setExtratoLoading(true);
+    try {
+      const out = await api.recuperarDocumentosPgdas(companyId, competencia);
+      if (contextoAtual.current !== contexto) return;
+      const resultado = out?.result || out;
+      if (!resultado?.documentos) throw new Error(out?.message || 'Recuperação documental não confirmada.');
+      setResultadoDocumentos({ contexto, ...resultado.documentos, pendencias: resultado.pendencias, consultaOficial: resultado.consultaOficial });
+      setConfirmarDocumentos(null);
+      await carregarApuracao();
+    } catch (err) {
+      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || 'Falha ao recuperar documentos.');
+    } finally {
+      recuperacaoEmCurso.current = false;
+      if (contextoAtual.current === contexto) setExtratoLoading(false);
+    }
+  }
+
   async function buscarExtrato(atualizar = false) {
     setExtratoLoading(true);
     try {
@@ -291,6 +314,7 @@ export function ApuracaoV2Tab({
       if (out?.ok === false) throw new Error(out?.message || "Falha ao buscar extrato.");
       const r = out?.result || out;
       setExtrato(r || null);
+      await carregarApuracao();
     } catch (err) {
       if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Falha ao buscar extrato do Simples.");
@@ -304,12 +328,12 @@ export function ApuracaoV2Tab({
   async function abrirExtratoPdf(tipo) {
     try {
       const blob = await api.fetchPgdasPdfBlob?.(companyId, competencia, tipo);
-      if (!blob) return;
+      if (!blob || contextoAtual.current !== contexto) return;
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "O arquivo não está mais no armazenamento.");
+      if (contextoAtual.current === contexto) feedback?.notifyError?.(err?.message || "O arquivo não está mais no armazenamento.");
     }
   }
 
@@ -364,6 +388,10 @@ export function ApuracaoV2Tab({
   const cargaCalculada = !calculoDesatualizado && das.valor != null && Number.isFinite(baseCarga) && baseCarga > 0
     ? `${(Number(das.valor) / baseCarga * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—";
   const extDados = extrato?.dados || extrato?.circular || null;
+  // A projeção vigente substitui os IDs legados. Documentos antigos continuam no Histórico.
+  const documentosVigentes = fechDados?.fluxoPgdas
+    ? fechDados.fluxoPgdas.documentos?.extrato
+    : extrato?.files;
   const classificacao = estadoDaClassificacao({ pendencias, relatorio });
 
   return (
@@ -381,16 +409,19 @@ export function ApuracaoV2Tab({
             <span style={{ display: "grid", gap: 3, fontSize: "0.875rem", color: PANEL.muted }}>
               Competência
               <strong style={{ fontSize: "0.95rem", color: PANEL.text }}>{competencia}</strong>
-              <span style={{ fontSize: "0.8rem" }}><EstadoBadge estado={estado} />{extDados ? " · Extrato salvo" : ""}</span>
+              <span style={{ fontSize: "0.8rem" }}>{fechDados?.fluxoPgdas?.transmissao?.confirmada === true && !['transmitindo', 'erro_transmissao'].includes(estado)
+                ? `Estado local: ${{ calculada: 'calculada', fechada: 'fechada', aberta: 'aberta', transmitida: 'transmitida' }[estado] || estado || 'sem cálculo'}`
+                : <EstadoBadge estado={estado} />}{extDados ? " · Extrato salvo" : ""}</span>
             </span>
 
 
               {!extDados && <Button variant="secondary" onClick={() => buscarExtrato()} disabled={extratoLoading || fechLoading}>{extratoLoading ? "Buscando…" : "Buscar extrato"}</Button>}
               <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
-              {extrato?.files?.declaracaoFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>}
-              {extrato?.files?.reciboFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>}
+              <Button variant="secondary" onClick={() => setConfirmarDocumentos(contexto)} disabled={extratoLoading || fechLoading}>Recuperar DAS e extrato</Button>
+              {documentosVigentes?.declaracaoFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>}
+              {documentosVigentes?.reciboFileId && <Button variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>}
               <Button variant="secondary" onClick={() => setHistoricoAberto(true)} disabled={extratoLoading}>Histórico PGDAS-D</Button>
-              {historicoAberto && <HistoricoPgdas key={`${companyId}:${competencia}`} api={api} companyId={companyId} competencia={competencia} onClose={() => setHistoricoAberto(false)} onAtualizado={setExtrato} bloqueado={extratoLoading || ['transmitindo', 'erro_transmissao'].includes(estado)} />}
+              {historicoAberto && <HistoricoPgdas key={`${companyId}:${competencia}`} api={api} companyId={companyId} competencia={competencia} onClose={() => setHistoricoAberto(false)} onAtualizado={async value => { setExtrato(value); await carregarApuracao(); }} bloqueado={extratoLoading || ['transmitindo', 'erro_transmissao'].includes(estado)} />}
               <Button variant="secondary" onClick={() => setRelatorioAberto(true)}>Relatório de faturamento</Button>
             <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading || aguardandoReleitura || ['transmitindo', 'erro_transmissao'].includes(estado)}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
@@ -438,28 +469,8 @@ export function ApuracaoV2Tab({
               <Button variant="secondary" onClick={carregarApuracao} disabled={fechLoading}>Tentar de novo</Button>
             </div>
           )}
-          {/* ⚠ ESTA FAIXA É A TELA DOS "TRÊS MESES DEPOIS".
-              Uma competência fechada como EMPRESA ZERADA não passa pelo `estado` da apuração (não
-              há snapshot: 190 competências zeradas em produção, 190 sem snapshot), então a linha
-              "Estado: pendente" acima é tudo o que ela mostrava — indistinguível de um mês que
-              ninguém tocou, e mais ainda de um mês entregue. Aqui a competência diz o que é: zerada
-              do nosso lado, e ONDE está a declaração (entregue por aqui · entregue fora · devendo).
-              A regra é a mesma do modal, importada — não reescrita. */}
-          {fechDados?.semFaturamento && (() => {
-            const entrega = entregaPgdasDoFechamento(fechDados);
-            const { cor, fundo } = CORES_TOM[entrega.tom];
-            return (
-              <div style={{ padding: 10, background: fundo, border: `1px solid ${cor}`, borderRadius: 8, color: cor, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 3 }}>
-                <strong>
-                  Empresa zerada nesta competência
-                  {fechDados?.semFaturamentoEm ? ` (marcada em ${fmtDate(fechDados.semFaturamentoEm)})` : ""}
-                  {" · "}
-                  {entrega.provada ? "✓" : "⚠"} {entrega.rotulo}
-                </strong>
-                <span style={{ color: PANEL.muted }}>{entrega.detalhe}</span>
-              </div>
-            );
-          })()}
+          {fechDados?.semFaturamento && <p style={{ margin: 0 }}>Empresa zerada nesta competência{fechDados.semFaturamentoEm ? ` (marcada em ${fmtDate(fechDados.semFaturamentoEm)})` : ''}.</p>}
+          {fechDados && <FluxoPgdasPanel key={`fluxo:${companyId}:${competencia}`} api={api} dados={fechDados} companyId={companyId} competencia={competencia} razao={razao} onChanged={carregarApuracao} ocupado={fechLoading || extratoLoading} />}
           {/* ⚠ O TEXTO DIZIA "aba Cadastro", E ESSA ABA NÃO EXISTE MAIS COM ESSE NOME. A sub-aba
               foi renomeada para **Perfil fiscal** justamente porque "Cadastro" já era o grupo de
               abas da empresa E a tela de ficha (ver `SecaoTabs` acima) — o contador ia procurar na
@@ -544,6 +555,16 @@ export function ApuracaoV2Tab({
         <p>A declaração anterior permanece no histórico. Revise os valores antes de transmitir a retificadora.</p>
         <label style={{ display: 'grid', gap: 6 }}>Motivo<textarea value={motivoRetificacao} onChange={e => setMotivoRetificacao(e.target.value)} disabled={reabrindo} rows={3} maxLength={2000} /></label>
       </Modal>}
+      {resultadoDocumentos?.contexto === contexto && <p role="status">
+        DAS: {rotuloDocumentoPgdas(resultadoDocumentos.guia)} · Extrato: {rotuloDocumentoPgdas(resultadoDocumentos.extrato)}.
+        {resultadoDocumentos.guia?.reason || resultadoDocumentos.extrato?.reason || ''}
+        {resultadoDocumentos.consultaOficial === 'DECLARACAO_NAO_ENCONTRADA' && ' A consulta oficial não encontrou a declaração desta competência. Confira a situação fiscal; esta ação não transmite.'}
+        {(resultadoDocumentos.pendencias || []).map((p, i) => <span key={`${p.documento}-${i}`} style={{ display: 'block' }}>{p.documento === 'guia' ? 'DAS' : 'Extrato'}: {p.mensagem || 'Consulta inconclusiva; confira os documentos antes de repetir.'}</span>)}
+      </p>}
+      {confirmarDocumentos === contexto && <Modal titulo="Recuperar DAS e extrato" tamanho="sm" ocupado={extratoLoading} aoFechar={() => setConfirmarDocumentos(null)} rodape={<><Button variant="secondary" disabled={extratoLoading} onClick={() => setConfirmarDocumentos(null)}>Cancelar</Button><Button disabled={extratoLoading} onClick={recuperarDocumentos}>{extratoLoading ? 'Consultando…' : 'Confirmar consulta'}</Button></>}>
+        <p>{razao || 'Empresa'} · {competencia}</p>
+        <p>Os documentos faltantes serão consultados no SERPRO, com o custo aplicável. Esta ação não retransmite a declaração, não envia documentos ao cliente e não confirma pagamento.</p>
+      </Modal>}
       {/* Modal de fechamento reusado (calcular/fechar/transmitir/retificar). */}
       {fechando && api && (
         <FechamentoModal
@@ -554,7 +575,7 @@ export function ApuracaoV2Tab({
           competencia={competencia}
           retificar={fechando.retificar === true}
           onClose={() => setFechando(null)}
-           onChanged={async (mudanca) => { await carregarApuracao(); if (mudanca?.relatorioGerado) await carregarRelatorio(); else await gerarRelatorio(); }}
+           onChanged={async (mudanca) => { if (contextoAtual.current !== contexto) return; await carregarApuracao(); if (contextoAtual.current !== contexto) return; if (mudanca?.relatorioGerado) await carregarRelatorio(); else await gerarRelatorio(); }}
         />
       )}
 

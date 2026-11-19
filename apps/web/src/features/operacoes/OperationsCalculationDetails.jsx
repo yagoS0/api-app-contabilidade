@@ -36,6 +36,7 @@ export function CalculationEvidence({ details }) {
       <div><dt>Correspondência do extrato com esta revisão</dt><dd>A verificar</dd></div>
     </dl>
     <p>Valor zero salvo não significa dispensa de obrigação. Valor não disponível não equivale a zero.</p>
+    <p>O estado salvo não comprova uma transmissão atual. Na apuração da empresa, confira a origem e a evidência fiscal; DAS, extrato e pagamento são acompanhados separadamente. Recuperar documentos não retransmite a declaração.</p>
     <h3>Extratos salvos</h3>
     <p>Extrato sem vínculo comprovado com a revisão do cálculo. Número da declaração e valores iguais não comprovam correspondência. O retorno salvo pode pertencer à transmissão anterior quando o cálculo foi reaberto ou recalculado.</p>
     {history && <>

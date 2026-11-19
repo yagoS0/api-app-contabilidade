@@ -381,21 +381,33 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       const r = out.result || {};
+      const transmissao = r.transmissao || r.fluxoPgdas?.transmissao;
+      if (transmissao?.confirmada !== true || !transmissao.numeroDeclaracao) {
+        setResultado(null);
+        setShowTransmit(false);
+        onChanged?.();
+        throw new Error(r.jaDeclarado
+          ? 'PA já declarado — não retransmitido. Consulte a situação fiscal e os documentos na apuração da empresa para conferir a comprovação.'
+          : 'Resultado fiscal não confirmado. Confira o envio na apuração da empresa antes de qualquer nova tentativa.');
+      }
       const base = retificar
-        ? `Retificadora transmitida! Declaração ${r.numeroDeclaracao || "?"}`
-        : (r.jaDeclarado ? "PA já declarado — não retransmitido." : `Transmitida! Declaração ${r.numeroDeclaracao || "?"}`);
+        ? `Retificadora confirmada pela Receita. Declaração ${transmissao.numeroDeclaracao}`
+        : (transmissao.origem === 'EXTERNA'
+          ? `Apuração realizada fora da Altan — confirmada na Receita. Declaração ${transmissao.numeroDeclaracao}. Não retransmitida.`
+          : `Transmissão confirmada pela Receita. Declaração ${transmissao.numeroDeclaracao}`);
       // C12: a transmissão já traz extrato + guia DAS junto — avisa o que veio (ou o que faltou),
       // pra ninguém sair rodando "buscar extrato/guia" achando que ficou pendente.
       const pos = r.posTransmissao || null;
       const partes = [];
-      if (pos?.extrato?.ok) partes.push("extrato reconsultado");
-      else if (pos?.extrato?.skipped) partes.push("extrato não veio (rode a busca)");
+      if (pos?.extrato?.ok) partes.push("extrato disponível");
+      else partes.push("extrato pendente — use Recuperar DAS e extrato na apuração");
       if (pos?.guia?.guideId) {
         const v = pos.guia.valor != null
           ? ` (R$ ${Number(pos.guia.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })})`
           : "";
         partes.push(`guia DAS disponível${v}`);
-      } else if (pos?.guia?.skipped) partes.push("guia DAS não veio (rode a busca)");
+      } else if (pos?.guia?.estado === 'NAO_DEVIDO') partes.push('sem valor a recolher comprovado');
+      else partes.push("DAS pendente — recuperar documentos não retransmite a declaração");
       feedback?.notifySuccess?.(partes.length ? `${base} · ${partes.join(" · ")}` : base);
       setShowTransmit(false);
       onChanged?.();
