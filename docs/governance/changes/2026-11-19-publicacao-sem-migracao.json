@@ -1,0 +1,23 @@
+{
+  "summary": "Separar migração explícita do boot da API, com smoke Docker isolado e plano curto de publicação.",
+  "risk": "high",
+  "domains": ["api", "ci", "documentation", "portal", "web"],
+  "base": "b762c467137cb6cc1b29d816074d662dcdd87c1f",
+  "operationalImpact": "API/runtime é dono do comando; imagem Docker e consumidores web/portal preservam contratos. Remove somente migrate deploy de start:prod, preservando comando explícito, generate, seeds/backfill/workers. Não altera regras fiscais/contábeis, schema, migrations, FS12, autorização ou Railway. R01/R02/R19/R20 e seções36/37 preservadas; referência canonical/fallback SHA256 4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113.",
+  "tests": [
+    "Contrato local:2 aprovados; Docker ignorado localmente porque não instalado. CI exige ALTAN_TEST_DOCKER=1, build Dockerfile real, boot/restart sem DB e network none, healthz200.",
+    "PostgreSQL16 descartável exclusivo55494:215 migrations aplicadas e status up-to-date. Nenhuma execução em banco existente/produtivo.",
+    "FS12:77/77 em7suítes, incluindo HTTP,B31/B32 PostgreSQL,vínculo imutável,concorrência,rollback e bloqueios antes do transporte. Zero falhas/ignorados.",
+    "Governança88/88; verificador4/4; diagnose5021→5021,zero novas violações. Fonte API idêntica à main.",
+    "Checks hospedados e smoke Docker devem ser consultados no SHA final do PR; resultados locais não substituem CI."
+  ],
+  "rollback": "Retornar somente a imagem compatível com schema atual e boot sem migração. Não reintroduzir acoplamento por reversão cega; preservar dados/auditorias/reservas. Migração, restauração ou deploy requerem autorização específica. Plano em docs/publicacao-sem-migracao-20261119.md.",
+  "humanDecisions": ["Revisar PR/SHA/CI antes de integrar.", "Status produtivo, backup/restauração e autorização de migração/publicação permanecem gates separados. Não houve consulta produtiva."],
+  "controllerRun": "2026-11-19T18-13-48-835Z-84d1ab9e",
+  "controllerResult": "escalated: Governance/configuration changes require separate human-reviewed integration. Planejamento concluído, sem executor/ready_for_human; principal executa correção autorizada, com revisão independente de CI/runtime e Fiscal.",
+  "reviews": {
+    "runtime": "publicacao_runtime_review: favorável ao diff e plano,2testes locais executados/1Docker ignorado. Exige smoke hospedado no head final.",
+    "fiscal": "publicacao_fs12_review: favorável estático; compatibilidade depende de schema versionado aplicado. Healthcheck não prova FS12. Sem mudança em domínio ou transporte."
+  },
+  "limitations": ["Docker real validado exclusivamente em CI; nenhum Docker local disponível.", "Boot ainda possui seeds/backfill/workers; não é read-only.", "Estado produtivo e SHA implantado desconhecidos; IDsRailway não são commits.", "Nenhuma chamada fiscal, deploy, migração produtiva, merge, limpeza ou ativação de Auto Deploy."]
+}
