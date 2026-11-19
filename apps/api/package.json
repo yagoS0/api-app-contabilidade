@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node --openssl-legacy-provider src/server.js",
     "start": "node --openssl-legacy-provider src/server.js",
-    "start:prod": "npm run prisma:generate && npm run prisma:migrate:deploy && node --openssl-legacy-provider src/server.js",
+    "start:prod": "npm run prisma:generate && node --openssl-legacy-provider src/server.js",
     "reset-state": "node -e \"const fs=require('fs'); const paths=['./.state.json','./.processed.json','./state.json','./data/last-run.json','./data/sent-emails.jsonl']; for(const p of paths){ try{ fs.unlinkSync(p);}catch(e){} } console.log('State legado limpo (se existir)');\"",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",

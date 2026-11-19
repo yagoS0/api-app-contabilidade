@@ -6,6 +6,21 @@ on:
     branches: [main, dev]
 
 jobs:
+  api-boot-without-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build real API image
+        run: docker build -t altan-boot-test:ci .
+      - name: Verify boot, restart and healthcheck without database or external network
+        env:
+          ALTAN_TEST_DOCKER: '1'
+        run: node --test apps/api/scripts/start-prod-sem-migracao.test.mjs
+
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
