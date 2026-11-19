@@ -215,7 +215,8 @@ export function createOperationsBatchService({ db, tasks = createManualTaskServi
       const actual = copy(prepared.prova), expected = copy(proof.prova);
       // Somente o número comprovado pela transmissão ou pelo extrato desta claim pode evoluir.
       // Entrega externa manual e os demais elementos da prova permanecem comparados.
-      if (snapshot.estado === 'transmitida' && actual.entrega?.numeroDeclaracaoRfb !== expected.entrega?.numeroDeclaracaoRfb) {
+      if ((snapshot.estado === 'transmitida' || documentaryEvidence?.origem === 'CONSULTA_EXTERNA')
+        && actual.entrega?.numeroDeclaracaoRfb !== expected.entrega?.numeroDeclaracaoRfb) {
         const number = documentaryEvidence?.documento.numeroDeclaracao || snapshot.numeroDeclaracao;
         if (!number || actual.entrega?.numeroDeclaracaoRfb !== number
           || (expected.entrega?.numeroDeclaracaoRfb && expected.entrega.numeroDeclaracaoRfb !== number)) throw fail('Declaração divergente antes do despacho.');

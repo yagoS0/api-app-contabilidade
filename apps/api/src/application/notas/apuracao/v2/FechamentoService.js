@@ -1,5 +1,5 @@
 import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/serproCallContext.js";
-import { exigirDespachoPgdasFs12Permitido } from '../../../../modules/fiscal/public.js';
+import { exigirDespachoPgdasFs12Permitido, documentosPgdas } from '../../../../modules/fiscal/public.js';
 import { validarFs12ParaNovoCalculo, validarUsoFs12DoCalculo } from '../../../../composition/fs12DoCalculo.js';
 // Q15.5 — Orquestrador do fechamento de apuração (motor do FechamentoModal).
 //
@@ -730,6 +730,9 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   exigirRegimeSuportado(regimeCadastrado?.regimeApuracao);
   const anterior = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
   exigirEstadoLivre(anterior);
+  if (automatico && (await lerEntregaExternaPgdas({ portalClientId, competencia, strict: true }))?.transmitidaEm) {
+    throw new FechamentoError('PGDAS_APURACAO_EXTERNA', 'Apuração realizada fora da Altan. Consulte a declaração e recupere seus documentos.');
+  }
   if (anterior?.estado === 'transmitida') throw new FechamentoError('ESTADO_INVALIDO', 'Reabra a apuração para retificar antes de calcular novamente.');
   // B3.2: recuperar é leitura, não uma nova simulação. Não materializar RBT nem
   // consumir a revisão atual como prova retroativa de um cálculo legado.
@@ -1035,8 +1038,15 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
  */
 async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio = false, indiceExistente = null, atualizar = false, somenteDocumentosFaltantes = false }) {
   if (somenteDocumentosFaltantes) {
-    const { completarDocumentosOperacao } = await import('../../../operacoes/OperationsDocuments.js');
-    return completarDocumentosOperacao(prisma, { portalClientId, competencia, indiceExistente });
+    try {
+      const { completarDocumentosOperacao } = await import('../../../operacoes/OperationsDocuments.js');
+      return await completarDocumentosOperacao(prisma, { portalClientId, competencia, indiceExistente });
+    } catch {
+      // Falha documental posterior não desfaz nem reclassifica uma transmissão
+      // que já teve resposta comprovada e persistência concluída.
+      return { extrato: { ok: false, skipped: true, reason: 'Extrato pendente de consulta.' },
+        guia: { ok: false, skipped: true, reason: 'DAS pendente de consulta.' } };
+    }
   }
   if (atualizar && !contextoSerproAtual().reconsultarAposTransmissao) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true, reconsultarAposTransmissao: true }, () => sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio, indiceExistente, atualizar }));
   const out = { extrato: null, guia: null };
@@ -1048,7 +1058,8 @@ async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarRee
     const r = await syncPgdasByCompetencia({ portalClientId, competencia, indiceExistente, atualizar });
     guiaSincronizada = r?.guide;
     out.extrato = {
-      ok: true,
+      ok: documentosPgdas(r?.circular, r?.guide).extrato,
+      skipped: !documentosPgdas(r?.circular, r?.guide).extrato,
       receitaStatus: r?.circular?.receitaStatus ?? null,
       receitaBruta: r?.circular?.receitaBruta ?? null,
       dasTotal: r?.circular?.dasTotal ?? null,
@@ -1059,16 +1070,13 @@ async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarRee
 
   // (b) guia DAS: emite/atualiza o PDF e devolve os dados pra tela mostrar na hora.
   try {
-    try {
-      const { capturePgdasGuideForCompany } = await import("../../../fiscal/serpro/CaptureSerproGuidesService.js");
-      if (!guiaSincronizada) await capturePgdasGuideForCompany({ portalClientId, competencia, atualizar });
-    } catch (error) {
-      // Nunca liberar uma guia antiga para reenvio como se a retificação tivesse atualizado o PDF.
-      if (atualizar) throw error;
-    }
+    const { capturePgdasGuideForCompany } = await import("../../../fiscal/serpro/CaptureSerproGuidesService.js");
+    // Falha de captura não libera uma guia anterior como resultado desta consulta.
+    if (!guiaSincronizada) await capturePgdasGuideForCompany({ portalClientId, competencia, atualizar });
 
     const dasGuide = await prisma.guide.findFirst({
-      where: { portalClientId, competencia, tipo: "SIMPLES", source: "SERPRO", parcelamentoId: null },
+      where: { portalClientId, competencia, tipo: 'SIMPLES', source: 'SERPRO', parcelamentoId: null,
+        status: 'PROCESSED', pdfBytes: { not: null }, NOT: { pdfBytes: Buffer.alloc(0) } },
       orderBy: { updatedAt: "desc" },
       select: { id: true, status: true, valor: true, vencimento: true, emailStatus: true },
     });
@@ -1111,7 +1119,13 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   } catch (err) {
     const recusaConhecida = ['SERPRO_BUSINESS_ERROR', 'RECEITAS_ANTERIORES_NAO_CONVERGIU'].includes(err?.code);
     const incerto = envioIniciado && !recusaConhecida;
-    await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: calculoId, estado: 'transmitindo' }, data: { estado: incerto ? 'erro_transmissao' : snapshot.estado, erroMensagem: String(err?.message || 'Falha na transmissão') } });
+    await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: calculoId, estado: 'transmitindo' }, data: {
+      estado: incerto ? 'erro_transmissao' : snapshot.estado, erroMensagem: String(err?.message || 'Falha na transmissão'),
+      simulacaoSerpro: { ...snapshot.simulacaoSerpro, _portalTransmissao: { retificar,
+        resultado: incerto ? 'RESULTADO_INCERTO' : recusaConhecida ? 'ERRO_VALIDACAO' : 'ERRO_TECNICO',
+        codigo: err?.code || null, mensagens: err?.mensagens || [],
+      } },
+    } });
     if (incerto) throw new FechamentoError('TRANSMISSAO_RESULTADO_INCERTO', 'O envio foi iniciado, mas o resultado não pôde ser confirmado. Confira a entrega na Receita antes de repetir.', { cause: err });
     throw err;
   }
@@ -1156,14 +1170,15 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
   // Q55: em RETIFICAÇÃO, NÃO fazemos o short-circuit — o objetivo é justamente retransmitir.
   if (jaDeclarado && !retificar) {
     const updated = await prisma.apuracaoSnapshot.update({
-      where: { id: snapshot.id },
-      data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
+      where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: 'transmitindo' },
+      // O índice comprova uma declaração, não o uso deste cálculo.
+      data: { estado: snapshot.estado, simulacaoSerpro: snapshot.simulacaoSerpro },
     });
     // C12: mesmo sem retransmitir, traz extrato + guia — é justamente o caso em que o contador
     // mais precisava rodar a busca na mão (a declaração existe, mas a guia podia não estar aqui).
-    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, indiceExistente: indice, somenteDocumentosFaltantes });
+    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, indiceExistente: indice, somenteDocumentosFaltantes: true });
     return {
-      ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
+      ok: true, jaDeclarado: true, origem: 'EXTERNA', snapshot: updated, posTransmissao,
       mensagem: "PA já declarado — não retransmitido (evita retificadora acidental).",
     };
   }
@@ -1172,6 +1187,9 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
   // despacho continua bloqueado até o contrato SERPRO do B3.3, inclusive retificação.
   exigirDespachoPgdasFs12Permitido({ competencia });
   // 2. Transmite de fato
+  if ((await lerEntregaExternaPgdas({ portalClientId, competencia, strict: true }))?.transmitidaEm && !retificar) {
+    throw new FechamentoError('PGDAS_APURACAO_EXTERNA', 'Apuração realizada fora da Altan. Verificação oficial pendente; nenhuma nova declaração será enviada.');
+  }
   const sim = new PgdasSimulacaoService();
   let resultado;
   try {
@@ -1194,27 +1212,25 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
     );
     resultado = exec.resultado;
   } catch (err) {
-    // Q44: rede de segurança — se o SERPRO recusar por já existir declaração (pede Retificadora),
-    // a consulta-antes não pegou, mas o erro prova que já está declarado. Decisão do dono: só
-    // reconhecer, NÃO retransmitir (sem retificadora). Marca como já declarada em vez de erro.
+    // Uma recusa por duplicidade exige conciliação; não é recibo da tentativa local.
     if (erroIndicaJaDeclarado(err) && !retificar) {
-      const updated = await prisma.apuracaoSnapshot.update({
-        where: { id: snapshot.id },
-        data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
-      });
-      const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, atualizar: true, somenteDocumentosFaltantes });
-      return {
-        ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
-        mensagem: "PA já declarado na Receita — não retransmitido (para alterar, seria necessária uma retificadora).",
-      };
+      // Rejeição por duplicidade não identifica qual declaração foi entregue.
+      // Não atribuir o cálculo local nem marcar transmissão sem conciliação.
+      throw new FechamentoError('PGDAS_DECLARACAO_EXISTENTE_A_CONFERIR', 'A Receita informou declaração existente. Consulte os documentos antes de continuar.', { cause: err });
     }
     throw err;
   }
 
+  if (resultado?.indicadorTransmissao !== true || !resultado?.numeroDeclaracao || resultado?.desfecho?.confirmada !== true) {
+    throw new FechamentoError('PGDAS_TRANSMISSAO_NAO_COMPROVADA', 'Retorno sem declaração transmitida comprovada. Concilie a tentativa antes de repetir.');
+  }
   const updated = await prisma.apuracaoSnapshot.update({
-    where: { id: snapshot.id },
+    where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: 'transmitindo' },
     data: {
       estado: "transmitida",
+      simulacaoSerpro: { ...snapshot.simulacaoSerpro, _portalTransmissao: {
+        retificar, evidencia: resultado.desfecho.evidencia, resultado: 'TRANSMITIDA',
+      } },
       dasRetornadoSerpro: resultado.dasValor != null ? round2(resultado.dasValor) : null,
       numeroDeclaracao: resultado.numeroDeclaracao || null,
       transmitidoEm: new Date(),
@@ -1228,6 +1244,8 @@ async function transmitirSnapshotConfirmado({ portalClientId, competencia, userI
   return {
     ok: true,
     jaDeclarado: false,
+    transmissao: { estado: 'TRANSMITIDA', confirmada: true, origem: 'ALTAN',
+      numeroDeclaracao: resultado.numeroDeclaracao, evidencia: resultado.desfecho.evidencia },
     dasValor: resultado.dasValor,
     numeroDeclaracao: resultado.numeroDeclaracao,
     snapshot: updated,
@@ -1283,9 +1301,10 @@ export async function conferirTransmissaoFechamento({ portalClientId, competenci
   const cnpjs = await resolverCnpjs(portalClientId);
   const indice = await new SerproPgdasdService().consultarDeclaracaoIndice({ ...cnpjs, periodoApuracao: competencia }).catch(err => reconhecerAusenciaDeclaracao(err, competencia));
   if (!detectarDeclaracaoExistente(indice, competencia)) return { ok: true, confirmada: false, mensagem: 'A entrega ainda não consta no índice. O envio permanece bloqueado para evitar duplicidade. Confira o recibo no portal oficial antes de qualquer nova transmissão.' };
-  const update = await prisma.apuracaoSnapshot.updateMany({ where: { id: snapshot.id, idempotencyKey: snapshot.idempotencyKey, estado: 'erro_transmissao' }, data: { estado: 'transmitida', erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() } });
-  if (update.count !== 1) throw erroCalculoObsoleto();
-  return { ok: true, confirmada: true, mensagem: 'Declaração localizada na Receita. A competência foi marcada como transmitida, sem novo envio.' };
+  // O índice pode representar entrega externa posterior ao timeout. Sem resposta
+  // correlacionada à tentativa, conserva a incerteza e o bloqueio local.
+  return { ok: true, confirmada: false, declaracaoLocalizada: true,
+    mensagem: 'Declaração localizada na Receita, mas o índice não comprova qual cálculo foi utilizado. Recupere os documentos para conferência. A tentativa local permanece incerta, sem novo envio.' };
 }
 
 /** Contrato CONSDECLARACAO13: periodo mensal ou periodos anuais, com operacoes.

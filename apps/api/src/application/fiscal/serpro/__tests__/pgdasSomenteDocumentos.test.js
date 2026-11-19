@@ -24,6 +24,44 @@ import { markGuidePaidBySerpro } from "../../../guides/GuidePaymentStatusService
 import pdfParse from 'pdf-parse';
 beforeEach(() => jest.clearAllMocks());
 
+test('recuperação estrita conserva pagamento e não gera efeito contábil', async () => {
+ const autorizar = jest.fn(async () => {});
+ const r = await syncPgdasByCompetencia({ portalClientId: 'c', competencia: '2026-09', somenteDocumentos: true,
+   validacaoDocumental: { numeroDeclaracao: '123', autorizar } });
+ expect(r.circular.pgdasNumeroDeclaracao).toBe('123');
+ expect(autorizar).toHaveBeenCalled();
+ expect(prisma.companyMonthlyCircular.update.mock.calls.every(([a]) => !Object.hasOwn(a.data, 'dasPago') && !Object.hasOwn(a.data, 'dasStatus'))).toBe(true);
+ expect(generateEntriesFromCircular).not.toHaveBeenCalled();
+ expect(markGuidePaidBySerpro).not.toHaveBeenCalled();
+ expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+});
+
+test('declaração divergente é recusada antes dos arquivos e histórico', async () => {
+ await expect(syncPgdasByCompetencia({ portalClientId: 'c', competencia: '2026-09', somenteDocumentos: true,
+   validacaoDocumental: { numeroDeclaracao: 'OUTRA-DECLARACAO', autorizar: async () => {} } })).rejects.toMatchObject({ code: 'PGDAS_DECLARACAO_DIVERGENTE' });
+ expect(pdfParse).not.toHaveBeenCalled();
+ expect(prisma.appSetting.upsert).not.toHaveBeenCalled();
+ expect(prisma.companyMonthlyCircular.update.mock.calls.every(([a]) => !a.data.pgdasDeclaracaoFileId)).toBe(true);
+});
+
+test('cache de outra revisão não substitui a declaração solicitada', async () => {
+ prisma.companyMonthlyCircular.findUnique.mockResolvedValueOnce({ id: 'circ', serproSyncStatus: 'SUCCESS',
+   pgdasNumeroDeclaracao: 'ANTERIOR', pgdasDeclaracaoFileId: 'old-pdf', pgdasReciboFileId: 'old-rec' });
+ const r = await syncPgdasByCompetencia({ portalClientId: 'c', competencia: '2026-09', somenteDocumentos: true,
+   validacaoDocumental: { numeroDeclaracao: '123', autorizar: async () => {} } });
+ expect(r.reutilizado).not.toBe(true);
+ expect(r.circular.pgdasNumeroDeclaracao).toBe('123');
+ expect(SerproHttpClient).toHaveBeenCalled();
+});
+
+test('autorização revogada não reutiliza cache, consulta provedor ou grava circular', async () => {
+ await expect(syncPgdasByCompetencia({ portalClientId: 'c', competencia: '2026-09', somenteDocumentos: true,
+   validacaoDocumental: { numeroDeclaracao: '123', autorizar: async () => { throw Object.assign(new Error('Acesso revogado'), { status: 403 }); } } })).rejects.toMatchObject({ status: 403 });
+ expect(prisma.companyMonthlyCircular.findUnique).not.toHaveBeenCalled();
+ expect(prisma.companyMonthlyCircular.upsert).not.toHaveBeenCalled();
+ expect(SerproHttpClient).not.toHaveBeenCalled();
+});
+
 test.each([
  ['PDF sem valores extraíveis', false],
  ['Receita Bruta Informada: R$ 0,00', false],

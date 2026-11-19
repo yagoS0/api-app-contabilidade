@@ -1,3 +1,4 @@
+import { validarExtratoDocumentalPgdas } from '../../../modules/fiscal/publicPgdas.js';
 import { randomUUID } from "node:crypto";
 import { registrarVersaoPgdas, hashDocumentoPgdas } from "./PgdasHistoricoService.js";
 import { SerproProcurationService } from "./SerproProcurationService.js";
@@ -540,8 +541,8 @@ async function findOrCreateCircular({ portalClientId, competencia }) {
   });
 }
 
-export async function syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar = false, indiceExistente = null, somenteDocumentos = false }) {
-  if (atualizar && !contextoSerproAtual().atualizar) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar, indiceExistente, somenteDocumentos }));
+export async function syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar = false, indiceExistente = null, somenteDocumentos = false, validacaoDocumental = null }) {
+  if (atualizar && !contextoSerproAtual().atualizar) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar, indiceExistente, somenteDocumentos, validacaoDocumental }));
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const competenciaStorage = normalizeCompetencia(competencia);
   const competenciaAaaamm = validateCompetenciaAaaamm(normalizeCompetenciaAaaamm(competencia));
@@ -572,13 +573,15 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     throw err;
   }
 
+  if (validacaoDocumental) await validacaoDocumental.autorizar();
+
   // Ler antes de marcar RUNNING: o upsert apagaria o estado que permite reutilização.
   const salva = await prisma.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: company.id, competencia: competenciaStorage } } });
 
-  if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "NOT_FOUND" && !salva.dasNumeroDocumento && Date.now() - new Date(salva.serproLastSyncAt).getTime() < 60 * 60 * 1000) {
+  if ((!validacaoDocumental || salva?.pgdasNumeroDeclaracao === validacaoDocumental.numeroDeclaracao) && !atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "NOT_FOUND" && !salva.dasNumeroDocumento && Date.now() - new Date(salva.serproLastSyncAt).getTime() < 60 * 60 * 1000) {
     return { company, circular: salva, guide: null, reutilizado: true, accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex };
   }
-  if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasNumeroDeclaracao && salva.pgdasDeclaracaoFileId && salva.pgdasReciboFileId) {
+  if ((!validacaoDocumental || salva?.pgdasNumeroDeclaracao === validacaoDocumental.numeroDeclaracao) && !atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasNumeroDeclaracao && salva.pgdasDeclaracaoFileId && salva.pgdasReciboFileId) {
     const guide = await prisma.guide.findFirst({ where: whereDasSalvo(company.id, competenciaStorage), orderBy: { updatedAt: "desc" } });
     { // O extrato completo basta para contabilizar; falta de PDF da guia não autoriza nova consulta paga.
       const accounting = somenteDocumentos
@@ -589,6 +592,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         files: { declaracaoFileId: salva.pgdasDeclaracaoFileId, reciboFileId: salva.pgdasReciboFileId } };
     }
   }
+  if (validacaoDocumental) await validacaoDocumental.autorizar();
   const circular = await findOrCreateCircular({ portalClientId: company.id, competencia: competenciaStorage });
 
   try {
@@ -623,6 +627,10 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     );
 
     const dados = parseSerproDados(response);
+    if (validacaoDocumental) {
+      validarExtratoDocumentalPgdas(dados, { ...validacaoDocumental, cnpj: company.cnpj, competencia: competenciaStorage }, response);
+      await validacaoDocumental.autorizar();
+    }
 
     if (dados?.notFound) {
       const updated = await prisma.companyMonthlyCircular.update({
@@ -630,9 +638,9 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         data: {
           receitaStatus: "NOT_FOUND",
           dasNumeroDocumento: dasIndex?.numeroDocumento || null,
-          dasPago: dasIndex?.dasPago ?? null,
+          ...(validacaoDocumental ? {} : { dasPago: dasIndex?.dasPago ?? null }),
           dasDataEmissao: dasIndex?.dataHoraEmissaoDas ? new Date(dasIndex.dataHoraEmissaoDas) : null,
-          dasStatus: dasIndex?.numeroDocumento ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : "NOT_FOUND",
+          ...(validacaoDocumental ? {} : { dasStatus: dasIndex?.numeroDocumento ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : "NOT_FOUND" }),
           serproSyncStatus: "NOT_FOUND",
           serproLastSyncAt: new Date(),
           serproLastError: null,
@@ -745,7 +753,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         receitaVendasComST,
         dasTotal,
         dasNumeroDocumento: dasIndex?.numeroDocumento || null,
-        dasPago: dasIndex?.dasPago ?? null,
+        ...(validacaoDocumental ? {} : { dasPago: dasIndex?.dasPago ?? null }),
         dasDataEmissao: dasIndex?.dataHoraEmissaoDas ? new Date(dasIndex.dataHoraEmissaoDas) : null,
         pgdasNumeroDeclaracao: dados.numeroDeclaracao ? String(dados.numeroDeclaracao) : null,
         pgdasDeclaracaoFileId: declaracaoFile.id,
@@ -753,7 +761,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         pgdasReciboFileId: reciboFile?.id || null,
         pgdasReciboFileUrl: reciboFile?.url || null,
         receitaStatus: receitaBruta ? "SUCCESS" : "NOT_FOUND",
-        dasStatus: dasIndex?.numeroDocumento ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : dasTotal ? "SUCCESS" : "NOT_FOUND",
+        ...(validacaoDocumental ? {} : { dasStatus: dasIndex?.numeroDocumento ? (dasIndex.dasPago ? "SUCCESS_PAID" : "SUCCESS_OPEN") : dasTotal ? "SUCCESS" : "NOT_FOUND" }),
         serproSyncStatus: "SUCCESS",
         serproLastSyncAt: new Date(),
         serproLastError: null,
@@ -871,6 +879,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       },
     };
   } catch (error) {
+    if (validacaoDocumental) await validacaoDocumental.autorizar();
     await prisma.companyMonthlyCircular.update({
       where: { id: circular.id },
       data: {

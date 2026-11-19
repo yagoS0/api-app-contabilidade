@@ -6,6 +6,9 @@ test("declaração zerada completa dispensa guia", () => {
 test("imposto desconhecido não equivale a zero", () => {
   expect(documentosPgdas({ ...circular, dasTotal: null }, null).das).toBe(false);
 });
+test.each(['', ' ', false, true, 'inválido'])("valor inválido %j não dispensa DAS", dasTotal => {
+  expect(documentosPgdas({ ...circular, dasTotal }, null).das).toBe(false);
+});
 test("PDF da guia ausente não encerra captura", () => {
   expect(documentosPgdas({ ...circular, dasTotal: 10 }, { id: "g" }).das).toBe(false);
 });

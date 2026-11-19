@@ -301,7 +301,8 @@ test('snapshot automático íntegro percorre recuperação, confirmação e tran
   expect(confirmed.snapshot).toMatchObject({ estado: 'fechada', idempotencyKey: calculoId });
   expect(fixture.snapshot).toMatchObject({ estado: 'fechada', fechadaPor: 'contador-ficticio' });
   mockIndice.mockResolvedValue({ dados: [] });
-  mockTransmitir.mockResolvedValue({ dasValor: 6, numeroDeclaracao: 'DECLARACAO-FICTICIA' });
+  mockTransmitir.mockResolvedValue({ dasValor: 6, numeroDeclaracao: 'DECLARACAO-FICTICIA', indicadorTransmissao: true,
+    desfecho: { confirmada: true, evidencia: { origem: 'ALTAN', numeroDeclaracao: 'DECLARACAO-FICTICIA' } } });
   const delivered = await transmitirFechamento({ ...args, calculoId, userId: 'contador-ficticio', somenteDocumentosFaltantes: true });
   expect(delivered).toMatchObject({ ok: true, numeroDeclaracao: 'DECLARACAO-FICTICIA', snapshot: { estado: 'transmitida', idempotencyKey: calculoId } });
   expect(mockIndice).toHaveBeenCalledTimes(1);

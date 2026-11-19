@@ -45,6 +45,8 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
   });
   const prisma = {
       portalClient: model(),
+      entregaObrigacaoArquivo: model(),
+      guide: model(),
       portalInvoice: model(),
       apuracaoSnapshot: model(),
       cadastroFiscal: model(),
@@ -122,7 +124,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   prisma.apuracaoSnapshot.updateMany.mockResolvedValue({count: 1});
   mockIndice.mockResolvedValue({dados: []});
-  mockTransmitir.mockResolvedValue({dasValor: 812, numeroDeclaracao: "D1"});
+  mockTransmitir.mockResolvedValue({dasValor: 812, numeroDeclaracao: "D1", indicadorTransmissao: true,
+    desfecho: { confirmada: true, evidencia: { origem: 'ALTAN', numeroDeclaracao: 'D1' } } });
   prisma.portalClient.findUnique.mockResolvedValue({
     id: PORTAL_ID, razao: "EMPRESA TESTE LTDA", cnpj: "34627370000175", municipio: "São Paulo", uf: "SP",
   });
@@ -370,16 +373,60 @@ describe('Vínculo entre simulação e fechamento', () => {
   });
 });
 
+describe('Resultados fiscais e autoria da declaração', () => {
+  it('falha de leitura documental posterior não muda transmissão comprovada para incerta', async () => {
+    const { calculoId } = await simulacaoSalva();
+    prisma.guide.findFirst.mockRejectedValueOnce(new Error('SYNTHETIC_DOCUMENT_READ_FAILURE'));
+    const out = await transmitirFechamento({ ...BASE, calculoId, somenteDocumentosFaltantes: true });
+    expect(out).toMatchObject({ ok: true, transmissao: { confirmada: true }, snapshot: { estado: 'transmitida' },
+      posTransmissao: { extrato: { ok: false }, guia: { ok: false } } });
+    expect(prisma.apuracaoSnapshot.updateMany.mock.calls.some(([a]) => a.data.estado === 'erro_transmissao')).toBe(false);
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  });
+  it('índice externo não atribui a declaração ao cálculo local nem retransmite', async () => {
+    const { snapshot, calculoId } = await simulacaoSalva();
+    mockIndice.mockResolvedValue({ dados: { declaracoes: [{ numeroDeclaracao: 'EXTERNA-FIXTURE' }] } });
+    const out = await transmitirFechamento({ ...BASE, calculoId });
+    expect(out).toMatchObject({ ok: true, jaDeclarado: true, origem: 'EXTERNA', snapshot: { estado: snapshot.estado } });
+    expect(mockTransmitir).not.toHaveBeenCalled();
+    const write = prisma.apuracaoSnapshot.update.mock.calls.at(-1)[0];
+    expect(write.where).toMatchObject({ idempotencyKey: calculoId, estado: 'transmitindo' });
+    expect(write.data).not.toHaveProperty('numeroDeclaracao');
+    expect(write.data).not.toHaveProperty('transmitidoEm');
+    expect(write.data.simulacaoSerpro).toEqual(snapshot.simulacaoSerpro);
+  });
+  it.each([{ numeroDeclaracao: null }, { indicadorTransmissao: false }, { desfecho: { confirmada: false } }])('resposta não comprovada permanece incerta: %j', async alteracao => {
+    const { calculoId } = await simulacaoSalva();
+    mockTransmitir.mockResolvedValueOnce({ numeroDeclaracao: 'D1', indicadorTransmissao: true, desfecho: { confirmada: true }, ...alteracao });
+    await expect(transmitirFechamento({ ...BASE, calculoId })).rejects.toMatchObject({ code: 'TRANSMISSAO_RESULTADO_INCERTO' });
+    expect(prisma.apuracaoSnapshot.updateMany.mock.calls.at(-1)[0].data.estado).toBe('erro_transmissao');
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+  });
+  it('resposta comprovada e falha na gravação não repetem transmissão', async () => {
+    const { calculoId } = await simulacaoSalva();
+    prisma.apuracaoSnapshot.update.mockRejectedValueOnce(new Error('SYNTHETIC_PERSISTENCE_FAILURE'));
+    await expect(transmitirFechamento({ ...BASE, calculoId })).rejects.toMatchObject({ code: 'TRANSMISSAO_RESULTADO_INCERTO' });
+    expect(mockTransmitir).toHaveBeenCalledTimes(1);
+    expect(prisma.apuracaoSnapshot.updateMany.mock.calls.at(-1)[0].data.estado).toBe('erro_transmissao');
+  });
+  it('marca externa manual impede despacho sem se tornar prova oficial', async () => {
+    const { calculoId } = await simulacaoSalva();
+    prisma.entregaObrigacaoArquivo.findUnique.mockResolvedValueOnce({ transmitidaEm: new Date() });
+    await expect(transmitirFechamento({ ...BASE, calculoId })).rejects.toMatchObject({ code: 'PGDAS_APURACAO_EXTERNA' });
+    expect(mockTransmitir).not.toHaveBeenCalled();
+  });
+});
+
 describe('Conferência explícita de transmissão incerta',()=>{
  it('índice vazio mantém bloqueio e não transmite',async()=>{
   const {snapshot}=await simulacaoSalva();prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'erro_transmissao'});
   expect(await conferirTransmissaoFechamento(BASE)).toMatchObject({ok:true,confirmada:false});
   expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();expect(mockTransmitir).not.toHaveBeenCalled();
  });
- it('declaração localizada recupera estado sem repetir envio',async()=>{
+ it('índice localizado não prova autoria do cálculo nem libera tentativa incerta',async()=>{
   const {snapshot}=await simulacaoSalva();prisma.apuracaoSnapshot.findUnique.mockResolvedValue({...snapshot,estado:'erro_transmissao'});mockIndice.mockResolvedValue({dados:{declaracoes:[{numeroDeclaracao:'D1'}]}});
-  expect(await conferirTransmissaoFechamento(BASE)).toMatchObject({ok:true,confirmada:true});
-  expect(prisma.apuracaoSnapshot.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({estado:'erro_transmissao'}),data:expect.objectContaining({estado:'transmitida'})}));
+  expect(await conferirTransmissaoFechamento(BASE)).toMatchObject({ok:true,confirmada:false,declaracaoLocalizada:true});
+  expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
   expect(mockTransmitir).not.toHaveBeenCalled();
  });
 });

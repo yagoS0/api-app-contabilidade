@@ -15,6 +15,10 @@ const canonical = value => Array.isArray(value) ? value.map(canonical) : value &
 // mantendo arrays ordenados e todos os campos, inclusive ids documentais.
 const proofHash = value => createHash('sha256').update(JSON.stringify(canonical(value ?? null))).digest('hex');
 const documentalFail = () => Object.assign(fail('A declaração ou sua evidência mudou. Confira os documentos antes de continuar.'), { code: 'AUTOMACAO_EMPRESA_VERIFICACAO_INDISPONIVEL' });
+// Continuidade da consulta documental não comprova que o cálculo local foi enviado.
+const estadoCompativelComDocumento = (snapshot, evidence) => snapshot?.estado === 'transmitida'
+  || (evidence?.origem === 'CONSULTA_EXTERNA' && !snapshot?.numeroDeclaracao
+    && ['calculada', 'fechada'].includes(evidence.estadoCalculo) && snapshot?.estado === evidence.estadoCalculo);
 export function identidadeDocumental(circular) {
   return { id: circular?.id || null, portalClientId: circular?.portalClientId || null,
     competencia: circular?.competencia || null, numeroDeclaracao: circular?.pgdasNumeroDeclaracao || null,
@@ -31,7 +35,7 @@ export async function conferirEvolucaoDocumental(db, { companyId, competencia, r
   const snapshot = await db.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: companyId, competencia } } });
   if (saved.status !== 'RUNNING' || saved.companyId !== companyId || saved.competencia !== competencia
     || evidence.releaseId !== releaseId || evidence.calculoId !== calculoId || evidence.proofHash !== proofHash(calculationProof)
-    || snapshot?.estado !== 'transmitida' || snapshot.idempotencyKey !== calculoId
+    || !estadoCompativelComDocumento(snapshot, evidence) || snapshot.idempotencyKey !== calculoId
     || proofHash(snapshot.simulacaoSerpro?._portalCalculo) !== evidence.proofHash
     || (snapshot.numeroDeclaracao && snapshot.numeroDeclaracao !== evidence.documento.numeroDeclaracao)
     || evidence.cnpj !== digits(portal?.cnpj) || !documentosPgdas(circular, null).extrato
@@ -75,7 +79,7 @@ export async function executarOperacao(db, args, deps = {}) {
     const calculation = await tx.apuracaoSnapshot?.findUnique({ where: { portalClientId_competencia: { portalClientId: companyId, competencia } } });
     const value = { companyId, competencia, userId: String(userId), status: 'RUNNING', startedAt: new Date().toISOString() };
     await tx.appSetting.create({ data: { key, value } });
-    return { key, value, releaseId: state.releaseId, calculationProofHash: proofHash(calculation?.simulacaoSerpro?._portalCalculo), calculoId: current.calculation.calculoId, guardArgs, declaracaoComprovada: Boolean(circular?.pgdasNumeroDeclaracao) };
+    return { key, value, releaseId: state.releaseId, estadoCalculo: calculation?.estado, calculationProofHash: proofHash(calculation?.simulacaoSerpro?._portalCalculo), calculoId: current.calculation.calculoId, guardArgs, declaracaoComprovada: Boolean(circular?.pgdasNumeroDeclaracao) };
   }, { isolationLevel: 'Serializable', timeout: 20000 });
   const registrarEvolucaoDocumental = ({ before, result }) => db.$transaction(async tx => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`operations:v1:${companyId}:${competencia}`}))::text`;
@@ -85,8 +89,9 @@ export async function executarOperacao(db, args, deps = {}) {
     const circular = await tx.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: companyId, competencia } } });
     const portal = await tx.portalClient.findUnique({ where: { id: companyId } });
     const document = identidadeDocumental(circular), returned = identidadeDocumental(result?.circular);
+    const procedencia = snapshot?.estado === 'transmitida' ? {} : { origem: 'CONSULTA_EXTERNA', estadoCalculo: claim.estadoCalculo };
     if (saved?.status !== 'RUNNING' || state?.status !== 'RELEASED' || state.releaseId !== claim.releaseId || state.contextHash !== claim.guardArgs.contextHash
-      || snapshot?.idempotencyKey !== claim.calculoId || snapshot.estado !== 'transmitida'
+      || snapshot?.idempotencyKey !== claim.calculoId || !estadoCompativelComDocumento(snapshot, procedencia)
       || proofHash(snapshot.simulacaoSerpro?._portalCalculo) !== claim.calculationProofHash
       || result?.company?.id !== companyId || !digits(portal?.cnpj) || digits(result.company.cnpj) !== digits(portal.cnpj)
       || document.portalClientId !== companyId || document.competencia !== competencia || !documentosPgdas(circular, null).extrato
@@ -94,7 +99,7 @@ export async function executarOperacao(db, args, deps = {}) {
       || result?.files?.declaracaoFileId !== document.declaracaoFileId || result?.files?.reciboFileId !== document.reciboFileId
       || (before.id && before.id !== document.id) || (before.numeroDeclaracao && before.numeroDeclaracao !== document.numeroDeclaracao)
       || (snapshot.numeroDeclaracao && snapshot.numeroDeclaracao !== document.numeroDeclaracao)) throw documentalFail();
-    const evidence = { releaseId: claim.releaseId, calculoId: claim.calculoId, proofHash: proofHash(snapshot.simulacaoSerpro?._portalCalculo),
+    const evidence = { ...procedencia, releaseId: claim.releaseId, calculoId: claim.calculoId, proofHash: proofHash(snapshot.simulacaoSerpro?._portalCalculo),
       cnpj: digits(portal.cnpj), before, documento: document, recordedAt: new Date().toISOString() };
     if (saved.evolucaoDocumental) {
       if (proofHash(saved.evolucaoDocumental.documento) !== proofHash(document)) throw documentalFail();
