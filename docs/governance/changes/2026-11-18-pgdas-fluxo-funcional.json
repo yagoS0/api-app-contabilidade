@@ -5,6 +5,7 @@
   "base": "c248135c71939bc0a4292bf1b2b17c3407e562b8",
   "operationalImpact": "Fiscal interpreta evidências; Guias conserva persistência documental; Operações preserva continuidade com prova externa separada do cálculo. Interface mostra estados independentes e recuperação explícita. Sem novos comandos contábeis ou de comunicação, schema, migração, papéis, cálculo monetário ou alteração de Fator R. Aplica R01/R02/R04-R06/R19/R20/R22 e seções36/37. Guardas FS12 B3.2, PA11/12/2026 e 2027 preservadas. Referência operacional compartilhada preservada, SHA256 4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113.",
   "tests": [
+    "CI inicial:4 workflows aprovados; CIgeral detectou fixture legada de transmissão sem idDeclaracao. Fixture atualizada com identidade sintética e assert de intenção; novo negativo semid exige resultado incerto semretry. Nenhum código produtivo flexibilizado. Focal35/35,2suítes (sobreposição com consolidada); revisão Fiscal independente favorável antes do novoSHA.",
     "Base Git:41 suítes/657 testes aprovados, incluindo PostgreSQL16 descartável; baseline-completa.json privado.",
     "Candidata final API:58 suítes/873 aprovados,98 PostgreSQL16,42 snapshots; zero falhas/ignorados. api-final-validada.json privado. Fixtures sintéticas e transporte falso.",
     "Interface:44 suítes/509 aprovados,zero falhas/ignorados; web-final.json. Build web aprovado. Doze capturas1440/390, sem overflow/controles externos; teclado Tab/Escape. Sem alegar leitor de tela.",

@@ -46,15 +46,21 @@ describe("PGDAS-2026-A — builder existente, sem validação remota", () => {
     expect(transmitirDeclaracao.mock.calls[0][0].declaracao.indicadorTransmissao).toBe(false);
   });
   test("simulação/transmissão legadas de outubro em double preservam série e distinguem intenção", async () => {
-    const transmitirDeclaracao = jest.fn(async () => ({ dados: { valoresDevidos: [{ codigoTributo: 1010, valor: 1 }] } }));
+    const transmitirDeclaracao = jest.fn(async () => ({ dados: { idDeclaracao: "00000000202610001", valoresDevidos: [{ codigoTributo: 1010, valor: 1 }] } }));
     const service = new PgdasSimulacaoService({ pgdasService: { transmitirDeclaracao } });
     const params = { ...base, competencia: "2026-10", folhasSalario: [{ pa: 202609, valor: 12.34 }] };
-    await service.simular(params);
-    await service.transmitir(params);
+    expect((await service.simular(params)).desfecho).toMatchObject({ estado: 'SIMULACAO_CONCLUIDA', confirmada: false });
+    expect((await service.transmitir(params)).desfecho).toMatchObject({ estado: 'TRANSMITIDA', confirmada: true });
     const payloads = transmitirDeclaracao.mock.calls.map(([p]) => p.declaracao);
     expect(payloads.map(p => p.indicadorTransmissao)).toEqual([false, true]);
     expect(payloads[0].declaracao).toEqual(payloads[1].declaracao);
     expect(params.folhasSalario).toEqual([{ pa: 202609, valor: 12.34 }]);
+  });
+  test("retorno legado sem declaração identificada não comprova transmissão nem é repetido", async () => {
+    const transmitirDeclaracao = jest.fn(async () => ({ dados: { valoresDevidos: [{ codigoTributo: 1010, valor: 1 }] } }));
+    const service = new PgdasSimulacaoService({ pgdasService: { transmitirDeclaracao } });
+    await expect(service.transmitir({ ...base, competencia: '2026-10' })).rejects.toMatchObject({ code: 'PGDAS_TRANSMISSAO_NAO_COMPROVADA' });
+    expect(transmitirDeclaracao).toHaveBeenCalledTimes(1);
   });
   test.each([
     ['2026-11', 'FS12_INTEGRACAO_B33_PENDENTE'],
