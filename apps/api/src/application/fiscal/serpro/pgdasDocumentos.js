@@ -1,10 +1,5 @@
 // Evidência local por competência. Guia sem PDF não encerra a captura.
-export function documentosPgdas(circular, guide) {
-  const declaracao = Boolean(circular?.pgdasNumeroDeclaracao);
-  const extrato = declaracao && Boolean(circular?.pgdasDeclaracaoFileId && circular?.pgdasReciboFileId);
-  const semDas = extrato && circular?.dasTotal != null && Number(circular.dasTotal) === 0 && !circular.dasNumeroDocumento;
-  return { declaracao, extrato, das: Boolean(guide?.pdfBytes?.length) || semDas };
-}
+export { documentosPgdas } from '../../../modules/fiscal/publicPgdas.js';
 
 export function procuracaoPermitePgdas(procuracao) {
   return procuracao?.status === "ATIVA" && (procuracao.systems || []).some((s) => {

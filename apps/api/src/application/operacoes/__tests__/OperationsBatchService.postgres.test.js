@@ -214,7 +214,8 @@ test.each(['existing-declaration', 'changed-declaration-after-extract'])('Postgr
     if (service === 'CONSDECLARACAO13') return { status: 200, data: { dados: JSON.stringify([{ numeroDeclaracao: `existing-${portal.id}` }]) } };
     if (service === 'CONSULTIMADECREC14') {
       const snapshot = await pg.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: portal.id, competencia: pa } } });
-      expect(snapshot.estado).toBe('transmitida'); expect(snapshot.numeroDeclaracao).toBeNull();
+      // Índice externo não comprova que o cálculo local foi transmitido.
+      expect(snapshot.estado).toBe('calculada'); expect(snapshot.numeroDeclaracao).toBeNull();
       if (mode === 'changed-declaration-after-extract') mockAuthenticate.mockImplementationOnce(async () => {
         await pg.companyMonthlyCircular.update({ where: { portalClientId_competencia: { portalClientId: portal.id, competencia: pa } }, data: { pgdasNumeroDeclaracao: 'other-declaration' } });
         return { accessToken: 'synthetic', jwtToken: 'synthetic' };

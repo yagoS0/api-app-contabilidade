@@ -219,6 +219,37 @@ test('releitura JSONB da evidência não depende da ordem das propriedades e pre
 });
 
 
+test.each(['reaberta', 'erro_transmissao', 'transmitindo'])('consulta externa recusa continuidade documental após cálculo mudar para %s', async estadoAlterado => {
+  const { db, values, args, deps, transmit } = setup();
+  const proof = { calculoId: 'calc', prova: 'original' };
+  const snapshot = { idempotencyKey: 'calc', estado: 'calculada', numeroDeclaracao: null, simulacaoSerpro: { _portalCalculo: proof } };
+  db.apuracaoSnapshot = { findUnique: jest.fn(async () => snapshot) };
+  const circular = { id: 'circle', portalClientId: 'a', competencia: '2026-09', pgdasNumeroDeclaracao: 'external-declaration', pgdasDeclaracaoFileId: 'file-d', pgdasReciboFileId: 'file-r' };
+  values.set('operations:v1:a:2026-09', { status: 'RELEASED', releaseId: 'release', contextHash: 'fiscal' });
+  const capture = jest.fn();
+  transmit.mockImplementation(async () => {
+    db.companyMonthlyCircular.findUnique.mockResolvedValue(circular);
+    const record = { before: { id: null, numeroDeclaracao: null }, result: {
+      company: { id: 'a', cnpj: '123' }, circular, dados: { numeroDeclaracao: 'external-declaration' },
+      files: { declaracaoFileId: 'file-d', reciboFileId: 'file-r' },
+    } };
+    await contextoSerproAtual().registrarEvolucaoDocumental(record);
+    const input = { companyId: 'a', competencia: '2026-09', releaseId: 'release', calculoId: 'calc', calculationProof: proof };
+    await expect(conferirEvolucaoDocumental(db, input)).resolves.toMatchObject({ origem: 'CONSULTA_EXTERNA', estadoCalculo: 'calculada' });
+    snapshot.estado = estadoAlterado;
+    await expect(contextoSerproAtual().registrarEvolucaoDocumental(record)).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICACAO_INDISPONIVEL' });
+    await conferirEvolucaoDocumental(db, input);
+    await capture();
+    return { ok: true };
+  });
+  await expect(executarOperacao(db, args, deps)).rejects.toMatchObject({ code: 'AUTOMACAO_EMPRESA_VERIFICACAO_INDISPONIVEL' });
+  expect(capture).not.toHaveBeenCalled();
+  expect(snapshot).toMatchObject({ estado: estadoAlterado, numeroDeclaracao: null, simulacaoSerpro: { _portalCalculo: proof } });
+  expect(values.get('operations_execution:a:2026-09:release')).toMatchObject({ status: 'ATTENTION', evolucaoDocumental: { origem: 'CONSULTA_EXTERNA', estadoCalculo: 'calculada' } });
+  await expect(executarOperacao(db, args, deps)).rejects.toThrow('já teve uma tentativa');
+  expect(transmit).toHaveBeenCalledTimes(1);
+});
+
 test.each(['antes','pre-despacho'])('regime alterado %s impede transmissão de cálculo legado sem tentativa manual', async momento=>{
  const {db,transmit,args,deps}=setup();const change=()=>db.regimeHistorico.findMany.mockResolvedValue([{regime:'LUCRO_PRESUMIDO',vigenciaInicio:new Date('2020-01-01')}]);
  const fiscal=jest.fn();if(momento==='antes')change();else transmit.mockImplementation(async args=>{change();await args.antesDeTransmitir();fiscal();return{ok:true};});

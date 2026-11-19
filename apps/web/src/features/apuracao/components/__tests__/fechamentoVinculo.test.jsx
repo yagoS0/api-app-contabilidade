@@ -72,6 +72,37 @@ it.each([undefined,{}])('resposta de cadastro não confirmada não inicia formul
 
 const recuperavel = (folhaMensal12 = []) => ({calculoId:'salvo-validado',dasValor:12,rbt12:2400,formulario:{atividades:[{...atividade,valorInterno:200}],folhaMensal12,regimeApuracao:'COMPETENCIA'}});
 const dadosRecuperados = (extra={}) => ({dados:{atividades:[atividade],regimeApuracao:'COMPETENCIA',folhaMensal12:[{pa:'2026-05',valor:999}],faturamento:{total:200},cadastroCompleto:true,calculoRecuperavel:recuperavel(),...extra}});
+async function confirmarTransmissao() {
+ await screen.findByText(/Cálculo salvo recuperado/);
+ fireEvent.click(screen.getByRole('button',{name:/Apurar\/Transmitir/}));
+ fireEvent.change(screen.getByRole('textbox',{name:'Competência para confirmar'}),{target:{value:'2026-06'}});
+ fireEvent.click(screen.getByRole('button',{name:'Confirmar',exact:true}));
+}
+it.each([
+ {ok:true,result:{numeroDeclaracao:'antiga'}},
+ {ok:true,result:{transmissao:{confirmada:false,estado:'RESULTADO_INCERTO'}}},
+ {ok:true,result:{transmissao:{confirmada:false,estado:'SIMULACAO_CONCLUIDA'}}},
+])('não transforma sucesso técnico ou simulação em transmissão comprovada (%j)',async(out)=>{
+ const {api,props}=montar({getFechamento:jest.fn(async()=>dadosRecuperados()),transmitirFechamento:jest.fn(async()=>out)});
+ await confirmarTransmissao();
+ await screen.findByText(/Resultado fiscal não confirmado/);
+ expect(props.feedback.notifySuccess).not.toHaveBeenCalled();
+ expect(screen.getByRole('button',{name:/Apurar\/Transmitir/})).toBeDisabled();
+ expect(api.transmitirFechamento).toHaveBeenCalledTimes(1);
+});
+it('confirmação fiscal sobrevive à falta documental sem inventar DAS',async()=>{
+ const {props}=montar({getFechamento:jest.fn(async()=>dadosRecuperados()),transmitirFechamento:jest.fn(async()=>({ok:true,result:{transmissao:{confirmada:true,estado:'TRANSMITIDA',origem:'ALTAN',numeroDeclaracao:'oficial-2'},posTransmissao:{extrato:{ok:false},guia:{ok:false}}}}))});
+ await confirmarTransmissao();
+ await waitFor(()=>expect(props.feedback.notifySuccess).toHaveBeenCalledWith(expect.stringContaining('Transmissão confirmada pela Receita')));
+ expect(props.feedback.notifySuccess.mock.calls[0][0]).toContain('DAS pendente');
+ expect(props.feedback.notifySuccess.mock.calls[0][0]).toContain('extrato pendente');
+});
+it('declaração externa comprovada não vira envio efetuado pela Altan',async()=>{
+ const {props}=montar({getFechamento:jest.fn(async()=>dadosRecuperados()),transmitirFechamento:jest.fn(async()=>({ok:true,result:{jaDeclarado:true,transmissao:{confirmada:true,estado:'TRANSMITIDA',origem:'EXTERNA',numeroDeclaracao:'externa-3'}}}))});
+ await confirmarTransmissao();
+ await waitFor(()=>expect(props.feedback.notifySuccess).toHaveBeenCalledWith(expect.stringContaining('Apuração realizada fora da Altan')));
+ expect(props.feedback.notifySuccess.mock.calls[0][0]).toContain('Não retransmitida');
+});
 it('reabre cálculo validado sem nova consulta e salva inputs exatos inclusive folha vazia',async()=>{
  const {api}=montar({getFechamento:jest.fn(async()=>dadosRecuperados())});
  await screen.findByText(/Cálculo salvo recuperado/);

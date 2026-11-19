@@ -1,3 +1,4 @@
+import { validarDasDocumentalPgdas } from '../../../modules/fiscal/publicPgdas.js';
 import { contabilizarDasCapturadoComLegado } from "../../../composition/contabilidadeDasCapturado.js";
 import { persistirDocumentoDasComGuias } from "../../../composition/persistenciaDocumentoDas.js";
 import { interpretarRespostaDasComPdf } from "../../../composition/interpretacaoRespostaDas.js";
@@ -71,9 +72,10 @@ export async function capturePgdasGuideForCompany({
   emailStatusOverride, // "PRESERVE" | "PENDING" | undefined (default = comportamento legado)
   atualizar = false,
   somenteDocumentos = false,
+  validacaoDocumental = null,
 }) {
   if ((atualizar || existingGuideId || dataConsolidacao) && !contextoSerproAtual().atualizar) {
-    return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => capturePgdasGuideForCompany({ portalClientId, competencia, contratanteCnpj, existingGuideId, serviceId, dataConsolidacao, emailStatusOverride, atualizar, somenteDocumentos }));
+    return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => capturePgdasGuideForCompany({ portalClientId, competencia, contratanteCnpj, existingGuideId, serviceId, dataConsolidacao, emailStatusOverride, atualizar, somenteDocumentos, validacaoDocumental }));
   }
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
@@ -98,10 +100,11 @@ export async function capturePgdasGuideForCompany({
     throw err;
   }
 
-  if (!contextoSerproAtual().atualizar) {
+  if (!contextoSerproAtual().atualizar && !validacaoDocumental) {
     const salva = await reutilizarGuia({ portalClientId: normalizedCompanyId, competencia: normalizedCompetencia, tipo: "SIMPLES" });
     if (salva) return { ...salva, company: portalClient };
   }
+  if (validacaoDocumental) await validacaoDocumental.autorizar();
   const runtime = await getResolvedSerproCredentials();
   const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
   if (!procuradorCnpj || procuradorCnpj.length !== 14) {
@@ -135,6 +138,13 @@ export async function capturePgdasGuideForCompany({
     contribuinteCnpj: portalClient.cnpj,
     competencia: normalizedCompetencia,
   });
+
+  if (validacaoDocumental) {
+    validarDasDocumentalPgdas(response, mapped, { ...validacaoDocumental, cnpj: portalClient.cnpj, competencia: normalizedCompetencia });
+    await validacaoDocumental.autorizar();
+    // Identidade recebida da consulta oficial autenticada, nunca do corpo HTTP.
+    mapped.pgdasNumeroDeclaracao = validacaoDocumental.numeroDeclaracao;
+  }
 
   const sourceFileId = buildGuideSourceFileId({
     cnpj: portalClient.cnpj,

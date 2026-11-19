@@ -21,6 +21,7 @@
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { SerproPgdasdService } from "./SerproPgdasdService.js";
 import { exigirDespachoPgdasFs12Permitido } from '../../../modules/fiscal/publicFs12.js';
+import { classificarResultadoPgdas } from '../../../modules/fiscal/publicPgdas.js';
 
 function onlyDigits(v) { return String(v || "").replace(/\D+/g, ""); }
 // pa é NUMBER no payload (AAAAMM). "2021-01" → 202101
@@ -266,7 +267,11 @@ export class PgdasSimulacaoService {
       declaracao,
     });
 
+    const desfecho = classificarResultadoPgdas(raw, { ...opts, competencia });
+    if (!['TRANSMITIDA', 'SIMULACAO_CONCLUIDA'].includes(desfecho.estado)) {
+      throw new PgdasSimulacaoError(desfecho.code, desfecho.mensagem, { desfecho, mensagens: desfecho.mensagens });
+    }
     const parsed = parseRetornoSimulacao(raw);
-    return { ...parsed, indicadorTransmissao: opts.indicadorTransmissao, payloadEnviado: declaracao };
+    return { ...parsed, desfecho, indicadorTransmissao: opts.indicadorTransmissao, payloadEnviado: declaracao };
   }
 }

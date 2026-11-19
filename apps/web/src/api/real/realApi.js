@@ -2872,6 +2872,11 @@ export function createRealApi() {
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);
     },
+    async recuperarDocumentosPgdas(companyId, competencia) {
+      return background.request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/documentos`, {
+        method: 'POST', body: JSON.stringify({ confirmCompetencia: competencia }),
+      });
+    },
     async getFs12Confirmacoes(companyId, competencia) {
       return request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/fs12/confirmacoes`);
     },

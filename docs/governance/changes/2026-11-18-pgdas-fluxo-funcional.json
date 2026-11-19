@@ -1,0 +1,50 @@
+{
+  "summary": "Fluxo PGDAS-D: distinguir prova de transmissão, simulação, resultado incerto e origem externa; recuperar DAS/extrato explicitamente sem retransmissão; ensaio FS12 confirmado com transporte falso.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "base": "c248135c71939bc0a4292bf1b2b17c3407e562b8",
+  "operationalImpact": "Fiscal interpreta evidências; Guias conserva persistência documental; Operações preserva continuidade com prova externa separada do cálculo. Interface mostra estados independentes e recuperação explícita. Sem novos comandos contábeis ou de comunicação, schema, migração, papéis, cálculo monetário ou alteração de Fator R. Aplica R01/R02/R04-R06/R19/R20/R22 e seções36/37. Guardas FS12 B3.2, PA11/12/2026 e 2027 preservadas. Referência operacional compartilhada preservada, SHA256 4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113. F01: número/índice não atribui autoria; ALTAN exige evidência causal correlacionada. Declaração localizada, afirmação manual e tentativa incerta separados; somente projeção e apresentação alteradas.",
+  "tests": [
+    "CI inicial:4 workflows aprovados; CIgeral detectou fixture legada de transmissão sem idDeclaracao. Fixture atualizada com identidade sintética e assert de intenção; novo negativo semid exige resultado incerto semretry. Nenhum código produtivo flexibilizado. Focal35/35,2suítes (sobreposição com consolidada); revisão Fiscal independente favorável antes do novoSHA.",
+    "Base Git:41 suítes/657 testes aprovados, incluindo PostgreSQL16 descartável; baseline-completa.json privado.",
+    "Candidata final API:58 suítes/873 aprovados,98 PostgreSQL16,42 snapshots; zero falhas/ignorados. api-final-validada.json privado. Fixtures sintéticas e transporte falso.",
+    "Interface:44 suítes/509 aprovados,zero falhas/ignorados; web-final.json. Build web aprovado. Doze capturas1440/390, sem overflow/controles externos; teclado Tab/Escape. Sem alegar leitor de tela.",
+    "Governança88/88; arquitetura4/4; diagnose5023→5021,zero novas violações. Controle permanece diagnose.",
+    "Concorrência documental:12 disputas com duas conexões/transações,primeiro ator/instante preservados,replay e rollback. Corrigida corridaP2002 do upsert emulado com INSERT ON CONFLICT DO NOTHING,sem catch em transação abortada.",
+    "CI aditiva no piloto inclui HTTP,FS12,documentos,Operações/PostgreSQL e interface. Resultado hospedado deve ser consultado no SHA final do PR; testes locais não o substituem.",
+    "F01: 61 API focais;93 integração/regressão com PostgreSQL16 descartável;523 interface;40 governança;4 verificador. Zero falhas/ignorados. Diagnose5023→5021,zero novas.12 capturas1440/390,teclado,sem overflow. CI deve corresponder ao head final."
+  ],
+  "rollback": "Reverter commits deste PR após revisão, sem excluir evidências, snapshots ou registros AppSetting; preservar reservas incertas. Não há rollback de schema. Reversão pode restaurar limitações legadas de prova/apresentação; não executar retransmissão automática.",
+  "humanDecisions": [
+    "Revisar PR em rascunho e SHA/checks finais antes de qualquer integração ou publicação.",
+    "Homologação oficial dos meses FS12 e2027 permanece necessária; preparação simulada não libera despacho.",
+    "Coordenador durável e custódia completa permanecem entregas separadas; PR302 não é dependência desta entrega."
+  ],
+  "controllerRun": "2026-11-19T00-32-03-997Z-861e740d",
+  "controllerResult": "interrompido_pelo_principal_na_fase_testing_apos_executor_parcial_e_EPERM; sem ready_for_human; evidencias alternativas registradas",
+  "reviews": {
+    "fiscalSecurity": "pgdas_review_fiscal_security: favorável restrito após ajustes documentais; revisão estática independente.",
+    "uiArchitecture": "pgdas_review_ui_arch: favorável após proteção de contexto assíncrono e PDFs; revisão complementar favorável de concorrência, testes negativos e CI.",
+    "operationsSystem": "pgdas_review_operations_system: favorável no código produtivo. Foi autor de3negativos/adiçãoCI, revisados independentemente por UI/arquitetura. Consultou evidência57testes; não declarou execução própria.",
+    "f01": "f01_fiscal_review e f01_ui_review: favoráveis após correlação causal e incerteza nos consumidores legados. UI inspecionou2capturas; redundância do aviso não bloqueante."
+  },
+  "limitations": [
+    "AppSetting garante imutabilidade somente pela operação da aplicação, não custódia contra administrador.",
+    "Concorrência do append testada no isolamento padrão; Serializable pode exigir tratamento local de conflito, nunca retry externo.",
+    "Resultado incerto continua sem retransmissão automática; índice oficial não prova vínculo causal com cálculo local.",
+    "Sem chamadas fiscais reais, merge, deploy, alteração de Railway ou limpeza de worktrees/clusters anteriores."
+  ],
+  "f01Controller": "2026-11-19T13-26-26-733Z-a0ca8d9f: interrompido pelo principal na fase testing após executor e EPERM; logs preservados; sem ready_for_human. Revisões/testes alternativos reais registrados."
+}

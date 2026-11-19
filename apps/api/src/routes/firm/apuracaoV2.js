@@ -2,6 +2,7 @@
 // Mount: /firm/companies/:companyId/{cadastro-fiscal,produtos-servicos,pendencias,classificar-v2}
 
 import { Router } from "express";
+import { recuperarDocumentosDaApuracao, consultarDocumentosDaApuracao } from '../../composition/fluxoPgdas.js';
 import { consultarSerieFs12DaApuracao, confirmarSerieFs12DaApuracao } from '../../composition/fs12DaApuracao.js';
 import { consultarVinculoFs12DoCalculo } from '../../composition/fs12DoCalculo.js';
 import { consultarFs12DoFechamento } from '../../composition/consultaFs12.js';
@@ -711,15 +712,36 @@ export function createApuracaoV2Router({ log } = {}) {
       const competencia = String(req.params.competencia);
       try {
         const dados = await getDadosFechamento({ portalClientId, competencia });
-        return res.json({ ok: true, dados });
+        const fluxoPgdas = await consultarDocumentosDaApuracao({ portalClientId, competencia }, { auth: req.auth });
+        res.set('Cache-Control', 'no-store');
+        return res.json({ ok: true, dados: { ...dados, fluxoPgdas } });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha getDadosFechamento");
-        return bad(res, err?.code === "PORTAL_NOT_FOUND" ? 404 : 500, err?.code || "fechamento_get_failed", err?.message || "Erro");
+        const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 500 ? err.status : err?.code === 'PORTAL_NOT_FOUND' ? 404 : 500;
+        return bad(res, status, status < 500 ? err.code : 'fechamento_get_failed', status < 500 ? err.message : 'Não foi possível consultar a apuração e suas evidências.');
       }
     }
   );
 
-  // Camada 2 (Robustez): confere a contagem de NFS-e da competência contra o ADN (scan read-only) e
+  // Recuperação documental explícita, independente de cálculo/transmissão.
+  router.post('/fechamento/:competencia/documentos',
+    requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }),
+    backgroundRoute('apuracao-documentos', async (req, res) => {
+      try {
+        const result = await comContextoSerpro({ origem: 'fechamento:documentos', userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
+          () => recuperarDocumentosDaApuracao({ portalClientId: String(req.params.companyId),
+            competencia: String(req.params.competencia), userId: req.auth?.user?.id,
+            confirmCompetencia: req.body?.confirmCompetencia }, { auth: req.auth }));
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 500
+          ? err.status : err?.code === 'PGDAS_CONSULTA_NAO_CONFIRMADA' ? 400 : 503;
+        return bad(res, status, status < 500 ? err.code : 'PGDAS_DOCUMENTOS_INDISPONIVEIS',
+          status < 500 ? err.message : 'Não foi possível recuperar os documentos. Confira as pendências antes de consultar novamente.');
+      }
+    }, 'Recuperar DAS e extrato sem retransmitir'));
+
+  // Camada 2: confere a contagem de NFS-e contra o ADN e
   // grava o resultado no snapshot. Divergência → salvarFechamento trava. Sob demanda (hit no ADN).
   router.post(
     "/fechamento/:competencia/conferencia",

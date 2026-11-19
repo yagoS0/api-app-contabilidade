@@ -9,7 +9,7 @@ const NUM_PORTAL = "22222222202601001";
 
 describe("estadoEntregaPgdas — as origens não se equivalem", () => {
   test("transmitida por AQUI, com número: entregue pelo portal, provada", () => {
-    const r = estadoEntregaPgdas({ estadoApuracao: "transmitida", numeroDeclaracaoPortal: NUM_PORTAL });
+    const r = estadoEntregaPgdas({ origemTransmissao: "ALTAN", estadoApuracao: "transmitida", numeroDeclaracaoPortal: NUM_PORTAL });
     expect(r.chave).toBe("transmitida_pelo_portal");
     expect(r.tom).toBe(TOM_ENTREGA.ok);
     expect(r.provada).toBe(true);
@@ -17,16 +17,16 @@ describe("estadoEntregaPgdas — as origens não se equivalem", () => {
     expect(r.detalhe).toContain(NUM_PORTAL);
   });
 
-  test("número capturado do extrato: entregue FORA, provado pela RFB", () => {
+  test("número capturado do extrato: existência comprovada, autoria desconhecida", () => {
     const r = estadoEntregaPgdas({
       estadoApuracao: "aberta", numeroDeclaracaoRfb: NUM_RFB,
       extratoStatus: "SUCCESS", extratoConsultadoEm: "2026-07-10T00:00:00.000Z",
     });
-    expect(r.chave).toBe("capturada_da_rfb");
+    expect(r.chave).toBe("declaracao_localizada");
     expect(r.tom).toBe(TOM_ENTREGA.ok);
     expect(r.provada).toBe(true);
     expect(r.origem).toBe("rfb");
-    expect(r.rotulo).toMatch(/fora do portal/i);
+    expect(r.rotulo).toMatch(/origem da transmissão não comprovada/i);
     expect(r.rotulo).not.toMatch(/pelo portal$/);
   });
 
@@ -43,7 +43,8 @@ describe("estadoEntregaPgdas — as origens não se equivalem", () => {
     // `transmitirFechamento` marca "transmitida" no short-circuit do PA já declarado, e ali
     // `numeroDeclaracao` fica null — quem entregou foi outro.
     const r = estadoEntregaPgdas({ estadoApuracao: "transmitida", numeroDeclaracaoPortal: null });
-    expect(r.chave).toBe("capturada_da_rfb");
+    expect(r.chave).toBe("sem_informacao");
+    expect(r.provada).toBe(false);
     expect(r.rotulo).not.toMatch(/^Entregue pelo portal/);
   });
 
@@ -53,7 +54,7 @@ describe("estadoEntregaPgdas — as origens não se equivalem", () => {
     expect(r.tom).toBe(TOM_ENTREGA.declarado);
     expect(r.provada).toBe(false);
     expect(r.origem).toBe("contador");
-    expect(r.rotulo).toMatch(/declarado pelo contador/i);
+    expect(r.rotulo).toMatch(/verificação pendente/i);
     expect(r.detalhe).toMatch(/extrato/i);
   });
 
@@ -101,7 +102,7 @@ describe("estadoEntregaPgdas — as origens não se equivalem", () => {
 
   test("os cinco estados têm chave, rótulo e tom coerentes entre si", () => {
     const casos = [
-      { estadoApuracao: "transmitida", numeroDeclaracaoPortal: NUM_PORTAL },
+      { origemTransmissao: "ALTAN", estadoApuracao: "transmitida", numeroDeclaracaoPortal: NUM_PORTAL },
       { numeroDeclaracaoRfb: NUM_RFB },
       { declaradaForaEm: "2026-08-10T00:00:00.000Z" },
       {},
@@ -142,7 +143,7 @@ describe("entregaPgdasDoFechamento — lê o payload real do getFechamento", () 
         extratoStatus: "SUCCESS", extratoConsultadoEm: "2026-07-10T00:00:00.000Z",
       },
     });
-    expect(r.chave).toBe("capturada_da_rfb");
+    expect(r.chave).toBe("declaracao_localizada");
     expect(r.provada).toBe(true);
   });
 
@@ -151,14 +152,14 @@ describe("entregaPgdasDoFechamento — lê o payload real do getFechamento", () 
     expect(entregaPgdasDoFechamento({}).chave).toBe("sem_informacao");
   });
 
-  test("o número do snapshot é lido do snapshot, não do bloco da RFB", () => {
+  test("snapshot histórico isolado não comprova transmissão", () => {
     const r = entregaPgdasDoFechamento({
       estado: "transmitida",
       snapshot: { estado: "transmitida", numeroDeclaracao: NUM_PORTAL },
       entregaPgdas: {},
     });
-    expect(r.chave).toBe("transmitida_pelo_portal");
-    expect(r.detalhe).toContain(NUM_PORTAL);
+    expect(r.chave).toBe("sem_informacao");
+    expect(r.provada).toBe(false);
   });
 });
 
@@ -170,4 +171,33 @@ test.each(["ERROR", "RUNNING", "INCOMPLETE", "SUCCESS"])("%s sem evidência não
 });
 test("falha posterior não apaga entrega comprovada", () => {
   expect(estadoEntregaPgdas({ numeroDeclaracaoRfb: "123", extratoStatus: "ERROR" }).provada).toBe(true);
+});
+
+test.each([null, undefined, 'DESCONHECIDA', 'EXTERNA'])('F01: procedência %s não comprova autoria', origem => {
+  const r = entregaPgdasDoFechamento({ fluxoPgdas: { transmissao: { confirmada: true, origem, numeroDeclaracao: NUM_RFB } } });
+  expect(r.rotulo).toBe('Declaração localizada na Receita — origem da transmissão não comprovada');
+  expect(r.chave).toBe('declaracao_localizada');
+  expect(r.provada).toBe(true); // existência, não autoria
+  expect(r.detalhe).not.toMatch(/transmitida daqui|Não foi transmitida daqui/);
+});
+test('F01: autoria Altan vem da projeção causal do servidor', () => {
+  expect(entregaPgdasDoFechamento({ fluxoPgdas: { transmissao: { confirmada: true, origem: 'ALTAN', numeroDeclaracao: NUM_PORTAL } } }).rotulo).toBe('Transmitida pela Altan');
+});
+test('F01: afirmação externa com índice permanece identificada como afirmação', () => {
+  const r = entregaPgdasDoFechamento({ fluxoPgdas: { transmissao: { confirmada: true, origem: 'DESCONHECIDA', numeroDeclaracao: NUM_RFB, declaradaExternaManualmente: true } } });
+  expect(r.detalhe).toContain('O contador informou entrega externa');
+  expect(r.rotulo).toContain('origem da transmissão não comprovada');
+});
+
+test.each(['erro_transmissao', 'transmitindo'])('F01: helper legado preserva %s com declaração localizada', estadoApuracao => {
+  const r = estadoEntregaPgdas({ estadoApuracao, numeroDeclaracaoRfb: NUM_RFB });
+  expect(r.chave).toBe('declaracao_localizada'); // lista não substitui pelo rótulo antigo capturada_da_rfb
+  expect(r.detalhe).toContain('resultado incerto');
+  expect(r.detalhe).toContain('nem autoriza retransmissão');
+  expect(r.provada).toBe(true);
+});
+test.each(['erro_transmissao', 'transmitindo'])('F01: consumidor sem alerta próprio preserva %s', estado => {
+  const r = entregaPgdasDoFechamento({ estado, fluxoPgdas: { transmissao: { confirmada: true, origem: 'DESCONHECIDA', numeroDeclaracao: NUM_RFB } } });
+  expect(r.detalhe).toContain('resultado incerto');
+  expect(r.rotulo).toContain('origem da transmissão não comprovada');
 });

@@ -154,3 +154,36 @@ jobs:
           src/routes/firm/__tests__/fs12B32.http.test.js
           src/routes/firm/__tests__/fs12B32.postgres.test.js
           src/application/fiscal/serpro/__tests__/fs12B32Transporte.test.js
+
+      - name: Validar fluxo PGDAS com transporte falso e PostgreSQL 16
+        env:
+          NODE_ENV: test
+          ALTAN_TESTE_POSTGRES: '1'
+          DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+          ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://piloto:fixture_ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/altan_piloto_governance_test
+        run: >-
+          npm test -w @contabilidade/api -- --passWithNoTests=false --runInBand --forceExit --runTestsByPath
+          src/modules/fiscal/application/__tests__/prepararCalculoPgdas.test.js
+          src/modules/fiscal/application/__tests__/prepararCalculoPgdas.postgres.test.js
+          src/modules/fiscal/application/__tests__/recuperarDocumentosPgdas.test.js
+          src/modules/fiscal/domain/__tests__/evidenciaDocumentalPgdas.test.js
+          src/modules/fiscal/infrastructure/prisma/__tests__/estadoDocumentalPgdas.test.js
+          src/application/fiscal/serpro/__tests__/pgdasFluxoFuncional.test.js
+          src/application/fiscal/serpro/__tests__/pgdasDocumentos.test.js
+          src/application/fiscal/serpro/__tests__/pgdasSomenteDocumentos.test.js
+          src/application/fiscal/serpro/__tests__/capturePgdasDocumentalEstrito.test.js
+          src/application/notas/apuracao/v2/__tests__/procedenciaDas.test.js
+          src/application/notas/apuracao/v2/__tests__/recuperacaoFechamento.test.js
+          src/application/operacoes/__tests__/pgdasFluxoFuncional.test.js
+          src/application/operacoes/__tests__/OperationsExecution.test.js
+          src/application/operacoes/__tests__/OperationsBatchService.postgres.test.js
+          src/routes/firm/__tests__/pgdasFluxoFuncional.http.test.js
+          src/routes/firm/__tests__/pgdasFluxoFuncional.postgres.test.js
+
+      - name: Validar interface documental PGDAS sem rede externa
+        run: >-
+          npm test -w @contabilidade/web -- --runInBand --runTestsByPath
+          src/features/apuracao/components/__tests__/fluxoPgdas.test.jsx
+          src/features/apuracao-v2/pages/__tests__/fluxoDocumental.test.jsx
+          src/features/apuracao/components/__tests__/fechamentoVinculo.test.jsx
+          src/features/apuracao/lib/__tests__/entregaPgdas.test.js

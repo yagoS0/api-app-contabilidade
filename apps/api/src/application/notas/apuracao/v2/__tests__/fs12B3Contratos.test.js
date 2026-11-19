@@ -104,7 +104,8 @@ beforeEach(() => {
   montarAtividadesDefault.mockResolvedValue({ atividades: formulario.atividades, semMapeamento: [] });
   mockIndice.mockResolvedValue({ dados: [] });
   mockSimular.mockResolvedValue({ dasValor: 6, raw: {} });
-  mockTransmitir.mockResolvedValue({ dasValor: 6, numeroDeclaracao: 'FICTICIA-B3' });
+  mockTransmitir.mockResolvedValue({ dasValor: 6, numeroDeclaracao: 'FICTICIA-B3', indicadorTransmissao: true,
+    desfecho: { confirmada: true, evidencia: { origem: 'ALTAN', numeroDeclaracao: 'FICTICIA-B3' } } });
 });
 
 describe('B3 — fronteira manual atual: lacunas não são critérios tributários aprovados', () => {

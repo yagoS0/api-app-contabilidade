@@ -49,6 +49,7 @@ export async function persistirDocumentoDas({
       sistema: "PGDASD",
       servico: resolvedServiceId,
       numeroDocumento: mapped.numeroDocumento,
+      ...(mapped.pgdasNumeroDeclaracao ? { pgdasNumeroDeclaracao: mapped.pgdasNumeroDeclaracao } : {}),
       contratanteCnpj: procuradorCnpj,
       contribuinteCnpj: portalClient.cnpj,
       referencia: normalizedCompetencia,
