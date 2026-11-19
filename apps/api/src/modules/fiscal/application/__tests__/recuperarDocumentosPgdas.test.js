@@ -16,7 +16,7 @@ test('negação ocorre antes de ler ou consultar', async () => {
 });
 test('recupera documentos depois da prova oficial sem calcular ou transmitir', async () => {
   const { portas } = fixture(); const out = await recuperarDocumentosPgdas(entrada, portas);
-  expect(out.completos).toBe(true); expect(out.origem).toBe('EXTERNA'); expect(out.numeroDeclaracao).toBe('oficial');
+  expect(out.completos).toBe(true); expect(out.origem).toBe('DESCONHECIDA'); expect(out.numeroDeclaracao).toBe('oficial');
 });
 test('falha documental preserva confirmação oficial e impede outro despacho', async () => {
   const { portas } = fixture(); portas.recuperarExtrato.mockRejectedValue(new Error('falha'));
@@ -40,7 +40,7 @@ test('prova persistida precede documentos e sobrevive à reabertura após falha'
   await recuperarDocumentosPgdas(entrada, portas);
   expect(portas.registrarConsulta).toHaveBeenCalledWith(expect.objectContaining({ numeroDeclaracao: 'oficial', cnpj: estado.company.cnpj }));
   const reaberto = await consultarDocumentosPgdas(entrada, portas);
-  expect(reaberto.transmissao.confirmada).toBe(true); expect(reaberto.origem).toBe('EXTERNA'); expect(reaberto.partial).toBe(true);
+  expect(reaberto.transmissao.confirmada).toBe(true); expect(reaberto.origem).toBe('DESCONHECIDA'); expect(reaberto.partial).toBe(true);
 });
 test('falha ao persistir evidência impede próximo despacho', async () => {
   const { portas } = fixture(); portas.registrarConsulta.mockRejectedValue(new Error('db'));

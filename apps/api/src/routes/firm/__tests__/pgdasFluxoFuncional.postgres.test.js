@@ -41,9 +41,9 @@ suite('documentos PGDAS: PostgreSQL16, ACL real e evidência durável sintética
 
   test('prova sobrevive à falha documental e reabertura sem criar cálculo, guia ou contabilização', async () => {
     const f = await fixture(); const result = await recuperarDocumentosPgdas(f.entrada, f.portas);
-    expect(result).toMatchObject({ origem: 'EXTERNA', partial: true, transmissao: { confirmada: true } });
+    expect(result).toMatchObject({ origem: 'DESCONHECIDA', partial: true, transmissao: { confirmada: true } });
     expect(f.portas.recuperarGuia).not.toHaveBeenCalled();
-    expect(await consultarDocumentosPgdas(f.entrada, f.portas)).toMatchObject({ origem: 'EXTERNA', partial: true, numeroDeclaracao: f.registro.numeroDeclaracao });
+    expect(await consultarDocumentosPgdas(f.entrada, f.portas)).toMatchObject({ origem: 'DESCONHECIDA', partial: true, numeroDeclaracao: f.registro.numeroDeclaracao });
     expect(await db.apuracaoSnapshot.count({ where: { portalClientId: f.portal.id } })).toBe(0);
     expect(await db.guide.count({ where: { portalClientId: f.portal.id } })).toBe(0);
     expect(await db.companyMonthlyCircular.count({ where: { portalClientId: f.portal.id } })).toBe(0);

@@ -71,3 +71,51 @@ test('sem número DAS, apenas vínculo documental explícito permite PDF corrent
   state.guide.extracted.pgdasNumeroDeclaracao = 'nova';
   expect(projetarEstadoDocumentalPgdas(state).documentos.guia.estado).toBe('DISPONIVEL');
 });
+
+describe('F01 — existência não atribui autoria', () => {
+  const causal = () => ({
+    company: { id: 'p1', cnpj: '12345678000199' },
+    circular: { competencia: '2026-10', pgdasNumeroDeclaracao: '1' },
+    snapshot: { portalClientId: 'p1', competencia: '2026-10', estado: 'transmitida', numeroDeclaracao: '1', idempotencyKey: 'calculo-1',
+      simulacaoSerpro: {
+        _portalCalculo: { portalClientId: 'p1', contribuinteCnpj: '12345678000199', competencia: '2026-10', calculoId: 'calculo-1' },
+        _portalTransmissao: { resultado: 'TRANSMITIDA', evidencia: { origem: 'ALTAN', contribuinteCnpj: '12345678000199', competencia: '2026-10', numeroDeclaracao: '1' } },
+      } },
+  });
+  test.each([
+    { circular: { pgdasNumeroDeclaracao: '1' } },
+    { circular: { pgdasNumeroDeclaracao: '1', pgdasDeclaracaoFileId: 'd', pgdasReciboFileId: 'r' } },
+    { consulta: { numeroDeclaracao: '1' } },
+    { consulta: { numeroDeclaracao: '1' }, entregaExterna: { transmitidaEm: '2026-11-01' } },
+  ])('número documental sem prova causal conserva origem desconhecida: %j', dados => {
+    const r = projetarEstadoDocumentalPgdas(dados);
+    expect(r.origem).toBe('DESCONHECIDA');
+    expect(r.transmissao).toMatchObject({ confirmada: true, origem: 'DESCONHECIDA', numeroDeclaracao: '1', declaradaExternaManualmente: Boolean(dados.entregaExterna) });
+  });
+  test('prova correlacionada identifica Altan', () => {
+    expect(projetarEstadoDocumentalPgdas(causal()).origem).toBe('ALTAN');
+  });
+  test.each(['empresa', 'cnpj', 'cnpjCalculo', 'pa', 'calculo', 'numero', 'resultado'])('correlação divergente %s não atribui autoria', campo => {
+    const dados = causal();
+    if (campo === 'empresa') dados.snapshot.portalClientId = 'outra';
+    if (campo === 'cnpj') dados.company.cnpj = '99999999000199';
+    if (campo === 'cnpjCalculo') dados.snapshot.simulacaoSerpro._portalCalculo.contribuinteCnpj = '99999999000199';
+    if (campo === 'pa') dados.snapshot.simulacaoSerpro._portalCalculo.competencia = '2026-09';
+    if (campo === 'calculo') dados.snapshot.idempotencyKey = 'anterior';
+    if (campo === 'numero') dados.snapshot.numeroDeclaracao = 'anterior';
+    if (campo === 'resultado') dados.snapshot.simulacaoSerpro._portalTransmissao.resultado = 'RESULTADO_INCERTO';
+    expect(projetarEstadoDocumentalPgdas(dados).origem).toBe('DESCONHECIDA');
+  });
+  test('declaração localizada não resolve tentativa incerta', () => {
+    const r = projetarEstadoDocumentalPgdas({ consulta: { numeroDeclaracao: '1' }, snapshot: { estado: 'erro_transmissao' } });
+    expect(r.transmissao).toMatchObject({ confirmada: true, origem: 'DESCONHECIDA', tentativaLocalIncerta: true });
+  });
+  test('reabertura conserva documento sem atribuir a declaração à revisão nova', () => {
+    const dados = causal(); dados.snapshot.estado = 'aberta'; dados.snapshot.idempotencyKey = 'reaberta:nova';
+    expect(projetarEstadoDocumentalPgdas(dados)).toMatchObject({ numeroDeclaracao: '1', origem: 'DESCONHECIDA' });
+  });
+  test('transmitindo não perde incerteza quando o índice já localiza declaração', () => {
+    expect(projetarEstadoDocumentalPgdas({ consulta: { numeroDeclaracao: '1' }, snapshot: { estado: 'transmitindo' } }).transmissao)
+      .toMatchObject({ confirmada: true, origem: 'DESCONHECIDA', tentativaLocalIncerta: true });
+  });
+});

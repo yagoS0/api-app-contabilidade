@@ -20,7 +20,7 @@ it('reabertura lê prova e pendências persistidas sem atos externos', async () 
   const { api } = montar();
   await screen.findByText('DAS: obtenção pendente');
   expect(screen.getByText('Extrato: disponível')).toBeInTheDocument();
-  expect(screen.getByText(/fora da Altan — confirmada na Receita/)).toBeInTheDocument();
+  expect(screen.getByText(/Declaração localizada na Receita — origem da transmissão não comprovada/)).toBeInTheDocument();
   expect(api.recuperarDocumentosPgdas).not.toHaveBeenCalled();
   expect(api.syncPgdasCircular).not.toHaveBeenCalled();
 });
@@ -35,7 +35,7 @@ it('recuperação é explícita, preserva confirmação fiscal e mostra falha do
   await waitFor(() => expect(api.getFechamento).toHaveBeenCalledTimes(2));
   expect(api.recuperarDocumentosPgdas).toHaveBeenCalledWith('empresa-A', '2026-10');
   expect(props.feedback.notifyError).not.toHaveBeenCalled();
-  expect(screen.getByText(/fora da Altan — confirmada na Receita/)).toBeInTheDocument();
+  expect(screen.getByText(/Declaração localizada na Receita — origem da transmissão não comprovada/)).toBeInTheDocument();
 });
 it('recuperação tardia da empresa anterior não aparece na nova empresa', async () => {
   let resolver;

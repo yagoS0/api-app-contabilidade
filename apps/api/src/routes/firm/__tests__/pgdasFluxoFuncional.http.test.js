@@ -105,14 +105,14 @@ test('empresa inexistente não retorna documentos de outro contexto', async () =
 test('recuperação e recarga preservam origem externa sem atribuir cálculo local; corpo não troca empresa/ator', async () => {
   const before = { ...mockState.snapshot };
   const r = await request(app()).post(`${base}/documentos`).send({ confirmCompetencia: '2026-11', portalClientId: 'outra', userId: 'forjado', competencia: '2027-01' }).expect(200);
-  expect(r.body.result).toMatchObject({ origem: 'EXTERNA', completos: true, partial: false,
+  expect(r.body.result).toMatchObject({ origem: 'DESCONHECIDA', completos: true, partial: false,
     documentos: { extrato: { estado: 'DISPONIVEL' }, guia: { estado: 'DISPONIVEL' } }, pagamento: { estado: 'NAO_CONFIRMADO' } });
   expect(mockIndice).toHaveBeenCalledWith({ contratanteCnpj: '00000000000200', contribuinteCnpj: '00000000000100', periodoApuracao: '2026-11' });
   expect(mockExtrato).toHaveBeenCalledWith(expect.objectContaining({ portalClientId: 'p', competencia: '2026-11', somenteDocumentos: true,
     validacaoDocumental: expect.objectContaining({ numeroDeclaracao: 'EXTERNA-FICTICIA' }) }));
   expect(mockState.snapshot).toEqual(before);
   const reopened = await request(app()).get(base).expect(200);
-  expect(reopened.body.dados.fluxoPgdas).toMatchObject({ origem: 'EXTERNA', completos: true });
+  expect(reopened.body.dados.fluxoPgdas).toMatchObject({ origem: 'DESCONHECIDA', completos: true });
   await request(app()).post(`${base}/documentos`).send({ confirmCompetencia: '2026-11' }).expect(200);
   expect(mockIndice).toHaveBeenCalledTimes(1); expect(mockExtrato).toHaveBeenCalledTimes(1); expect(mockGuia).toHaveBeenCalledTimes(1);
 });
@@ -127,7 +127,7 @@ test('falha extrato interrompe DAS; falha DAS mantém declaração e extrato com
   const first = await request(app()).post(`${base}/documentos`).send({ confirmCompetencia: '2026-11' }).expect(200);
   expect(first.body.result.partial).toBe(true); expect(mockGuia).not.toHaveBeenCalled();
   const reopened = await request(app()).get(base).expect(200);
-  expect(reopened.body.dados.fluxoPgdas).toMatchObject({ origem: 'EXTERNA', partial: true, transmissao: { confirmada: true }, documentos: { extrato: { ok: false }, guia: { ok: false } } });
+  expect(reopened.body.dados.fluxoPgdas).toMatchObject({ origem: 'DESCONHECIDA', partial: true, transmissao: { confirmada: true }, documentos: { extrato: { ok: false }, guia: { ok: false } } });
   mockGuia.mockRejectedValueOnce(Object.assign(Error('synthetic missing DAS'), { code: 'SERPRO_PGDASD_PDF_NOT_FOUND' }));
   const second = await request(app()).post(`${base}/documentos`).send({ confirmCompetencia: '2026-11' }).expect(200);
   expect(second.body.result).toMatchObject({ partial: true, transmissao: { confirmada: true }, documentos: { extrato: { ok: true }, guia: { ok: false } } });

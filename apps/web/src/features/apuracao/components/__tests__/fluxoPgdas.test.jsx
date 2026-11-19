@@ -13,7 +13,7 @@ const montar = (extra = {}) => {
 };
 it('mostra documentos persistidos independentemente da transmissão e pagamento na reabertura', () => {
   montar({ dados: { fluxoPgdas: fluxo } });
-  expect(screen.getByText(/fora da Altan — confirmada na Receita/)).toBeInTheDocument();
+  expect(screen.getByText(/origem da transmissão não comprovada/)).toBeInTheDocument();
   expect(screen.getByText('DAS: disponível')).toBeInTheDocument();
   expect(screen.getByText('Extrato: obtenção pendente')).toBeInTheDocument();
   expect(screen.getByText('Pagamento: não confirmado')).toBeInTheDocument();
@@ -52,7 +52,7 @@ it('resultado incerto não libera afirmação externa nem inventa prova históri
 });
 it('declaração externa não apaga tentativa local incerta', () => {
   montar({ dados: { fluxoPgdas: { ...fluxo, transmissao: { ...fluxo.transmissao, tentativaLocalIncerta: true } } } });
-  expect(screen.getByText(/fora da Altan — confirmada na Receita/)).toBeInTheDocument();
+  expect(screen.getByText(/origem da transmissão não comprovada/)).toBeInTheDocument();
   expect(screen.getByRole('alert')).toHaveTextContent('não comprova o resultado dessa tentativa nem autoriza retransmissão');
 });
 it('resposta de outra empresa não atualiza a leitura atual', async () => {
@@ -93,4 +93,22 @@ it('registro aceito depois da troca de key não executa callback da empresa ante
   await act(async () => resolver({ ok: true }));
   expect(onChanged).not.toHaveBeenCalled();
   expect(api.registrarEntregaPgdasExterna).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])('F01: origem desconhecida preserva existência e alerta incerto=%s', tentativaLocalIncerta => {
+  montar({ dados: { fluxoPgdas: { ...fluxo, transmissao: { ...fluxo.transmissao, origem: 'DESCONHECIDA', tentativaLocalIncerta } } } });
+  expect(screen.getByText('Declaração localizada na Receita — origem da transmissão não comprovada')).toBeInTheDocument();
+  expect(screen.queryByText('Transmitida pela Altan')).toBeNull();
+  expect(screen.getByText('DAS: disponível')).toBeInTheDocument();
+  if (tentativaLocalIncerta) expect(screen.getByRole('alert')).toHaveTextContent('nem autoriza retransmissão');
+  else expect(screen.queryByRole('alert')).toBeNull();
+});
+it('F01: snapshot histórico isolado não comprova transmissão', () => {
+  montar({ dados: { estado: 'transmitida', snapshot: { estado: 'transmitida', numeroDeclaracao: 'antiga' } } });
+  expect(screen.queryByText('Transmitida pela Altan')).toBeNull();
+  expect(screen.getByText(/Entrega desconhecida/)).toBeInTheDocument();
+});
+it('F01: prova causal projetada identifica Altan', () => {
+  montar({ dados: { fluxoPgdas: { ...fluxo, transmissao: { ...fluxo.transmissao, origem: 'ALTAN' } } } });
+  expect(screen.getByText('Transmitida pela Altan')).toBeInTheDocument();
 });

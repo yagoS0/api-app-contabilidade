@@ -97,10 +97,23 @@ export function validarDasDocumentalPgdas(raw, mapped, contexto) {
 
 export function projetarEstadoDocumentalPgdas({ company, circular, guide, snapshot, entregaExterna, consulta } = {}) {
   const evidAltan = snapshot?.simulacaoSerpro?._portalTransmissao?.evidencia;
-  const numeroDeclaracao = numero(consulta?.numeroDeclaracao) || numero(circular?.pgdasNumeroDeclaracao) || (evidAltan?.origem === 'ALTAN' ? numero(evidAltan.numeroDeclaracao) : null);
+  const calculo = snapshot?.simulacaoSerpro?._portalCalculo;
+  // Número, PDF e índice não demonstram autoria. Correlacionar o resultado
+  // ao snapshot/cálculo reservado, empresa, competência e declaração.
+  const evidenciaCorrelacionada = Boolean(evidAltan?.origem === 'ALTAN'
+    && snapshot?.simulacaoSerpro?._portalTransmissao?.resultado === 'TRANSMITIDA'
+    && company?.id && snapshot?.portalClientId === company.id && calculo?.portalClientId === company.id
+    && digits(company.cnpj).length === 14 && digits(evidAltan.contribuinteCnpj) === digits(company.cnpj)
+    && digits(calculo?.contribuinteCnpj) === digits(company.cnpj)
+    && snapshot?.competencia && evidAltan.competencia === snapshot.competencia && calculo?.competencia === snapshot.competencia
+    && (!circular?.competencia || circular.competencia === snapshot.competencia)
+    && (!consulta?.competencia || consulta.competencia === snapshot.competencia)
+    && calculo?.calculoId && calculo.calculoId === snapshot.idempotencyKey
+    && numero(evidAltan.numeroDeclaracao) && numero(evidAltan.numeroDeclaracao) === numero(snapshot.numeroDeclaracao));
+  const numeroDeclaracao = numero(consulta?.numeroDeclaracao) || numero(circular?.pgdasNumeroDeclaracao) || (evidenciaCorrelacionada ? numero(evidAltan.numeroDeclaracao) : null);
   const numeroHistorico = snapshot?.estado === 'transmitida' ? numero(snapshot.numeroDeclaracao) : null;
-  const causalAltan = numeroDeclaracao && evidAltan?.origem === 'ALTAN' && evidAltan.numeroDeclaracao === numeroDeclaracao;
-  const origem = numeroDeclaracao ? (causalAltan ? 'ALTAN' : consulta?.numeroDeclaracao ? 'EXTERNA' : null) : null;
+  const causalAltan = evidenciaCorrelacionada && numero(evidAltan.numeroDeclaracao) === numeroDeclaracao;
+  const origem = numeroDeclaracao ? (causalAltan ? 'ALTAN' : 'DESCONHECIDA') : null;
   const mesmaDeclaracao = numeroDeclaracao && numero(circular?.pgdasNumeroDeclaracao) === numeroDeclaracao;
   const extratoOk = Boolean(mesmaDeclaracao && circular?.pgdasDeclaracaoFileId && circular?.pgdasReciboFileId);
   const total = circular?.dasTotal;
@@ -116,7 +129,7 @@ export function projetarEstadoDocumentalPgdas({ company, circular, guide, snapsh
   return { ok: true, numeroDeclaracao, origem, completos: documentos.extrato.ok && documentos.guia.ok,
     partial: !numeroDeclaracao || !documentos.extrato.ok || !documentos.guia.ok,
     transmissao: { numeroHistorico, declaradaExternaManualmente: Boolean(entregaExterna?.transmitidaEm), confirmada: Boolean(numeroDeclaracao), estado: numeroDeclaracao ? 'CONFIRMADA' : 'VERIFICACAO_PENDENTE', numeroDeclaracao, origem,
-      tentativaLocalIncerta: snapshot?.estado === 'erro_transmissao' },
+      tentativaLocalIncerta: ['erro_transmissao', 'transmitindo'].includes(snapshot?.estado) },
     documentos, pagamento: { estado: guiaOk && guide?.paymentStatus === 'PAID' ? 'PAGO_REGISTRADO' : 'NAO_CONFIRMADO', origem: guiaOk ? guide?.paymentStatusSource || null : null, confirmadoEm: guiaOk ? guide?.paymentConfirmedAt || guide?.clienteConfirmouEm || null : null } };
 }
 

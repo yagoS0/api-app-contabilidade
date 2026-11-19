@@ -1,30 +1,5 @@
-// ONDE ESTÁ A DECLARAÇÃO DO PGDAS-D DESTA COMPETÊNCIA — uma leitura só, para todas as telas.
-//
-// ⚠ POR QUE ISTO EXISTE, E POR QUE É A PERGUNTA MAIS PERIGOSA DESTE MÓDULO
-// A empresa sem faturamento também declara o PGDAS-D, zerado. Pelo PORTAL isso nunca saiu (a RFB
-// recusava o formato que enviávamos), e o dono confirmou que as declarações **existem e foram
-// entregues à mão**, no gov.br. Ou seja: o portal não estava impedindo entrega nenhuma — estava
-// exibindo pendência que não existe, em ~190 competências.
-//
-// ⚠ PROCEDÊNCIA É A DISTINÇÃO, E ELA JÁ FOI PERDIDA UMA VEZ NESTE PROJETO (o RBT12 que não pode
-// ser gravado como "veio da simulação" porque o número é nosso). São TRÊS origens, e elas não se
-// equivalem:
-//
-//   · CAPTURADA DA RFB      — o extrato trouxe o número da declaração. Prova, e não é nossa.
-//                             Medido: 15 zeradas já estão gravadas assim, entregues à mão.
-//   · TRANSMITIDA POR NÓS   — o portal enviou e a RFB devolveu o número. Prova.
-//   · AFIRMADA PELO CONTADOR— ele diz que entregou, sem extrato. É palavra, não prova.
-//
-// ⚠ E EXISTE UM QUARTO ESTADO QUE NÃO PODE SE PARECER COM "ESTÁ DEVENDO": **não sabemos**. Se
-// ninguém consultou o extrato daquela competência, ausência de número não é ausência de entrega —
-// é ausência de consulta. (Medido: 20 de 102 circulares com marca de PGDAS-D perderam o PDF do
-// `metadata`; o número da declaração, que é COLUNA (`pgdasNumeroDeclaracao`), sobreviveu — por isso
-// a leitura se ancora nele, nunca no PDF.) Vermelho fica reservado para o único caso em que a
-// Receita FOI perguntada e respondeu que não há declaração.
-//
-// ⚠ Nada aqui transmite coisa alguma, e nenhum estado daqui autoriza transmitir. Fechar a
-// competência como zerada resolve o mês DO NOSSO LADO; a obrigação perante a Receita é outra
-// pergunta, e é justamente a que estas cinco respostas separam.
+// Existência, autoria da transmissão e afirmação manual são fatos distintos.
+// Índice/PDF não atribuem autoria. Nenhum estado desta apresentação autoriza despacho.
 
 /**
  * Verde = provado (por quem quer que seja). Neutro = afirmado pelo contador. Âmbar = falta
@@ -45,7 +20,7 @@ function extratoFoiConsultado(extratoStatus, extratoConsultadoEm) {
 /**
  * @param {object} f fatos crus (nenhum veredito) — vêm do `getDadosFechamento`
  * @param {string|null} f.estadoApuracao   `ApuracaoSnapshot.estado` desta competência
- * @param {string|null} f.numeroDeclaracaoPortal  `ApuracaoSnapshot.numeroDeclaracao` (o que NÓS transmitimos)
+ * @param {string|null} f.numeroDeclaracaoPortal  `ApuracaoSnapshot.numeroDeclaracao` (histórico; não prova autoria isoladamente)
  * @param {string|null} f.numeroDeclaracaoRfb     `CompanyMonthlyCircular.pgdasNumeroDeclaracao` (o que a RFB devolveu no extrato)
  * @param {string|null} f.extratoStatus           `CompanyMonthlyCircular.serproSyncStatus`
  * @param {string|Date|null} f.extratoConsultadoEm `serproLastSyncAt`
@@ -54,6 +29,7 @@ function extratoFoiConsultado(extratoStatus, extratoConsultadoEm) {
  * @returns {{chave:string, rotulo:string, detalhe:string, tom:string, provada:boolean, origem:string}}
  */
 export function estadoEntregaPgdas({
+  tentativaLocalIncerta = false,
   origemTransmissao = null,
   estadoApuracao = null,
   numeroDeclaracaoPortal = null,
@@ -63,12 +39,14 @@ export function estadoEntregaPgdas({
   declaradaForaEm = null,
   temPdfDaDeclaracao = false,
 } = {}) {
+  const incerto = tentativaLocalIncerta || ['erro_transmissao', 'transmitindo'].includes(estadoApuracao);
+  const ressalva = incerto ? ' Há uma tentativa local com resultado incerto. A declaração localizada não comprova o resultado dessa tentativa nem autoriza retransmissão.' : '';
   // 1. Transmitida por AQUI, com o número que a RFB devolveu na transmissão.
-  if (estadoApuracao === "transmitida" && numeroDeclaracaoPortal && origemTransmissao !== 'EXTERNA') {
+  if (estadoApuracao === "transmitida" && numeroDeclaracaoPortal && origemTransmissao === 'ALTAN') {
     return {
       chave: "transmitida_pelo_portal",
-      rotulo: "Entregue pelo portal",
-      detalhe: `Declaração ${numeroDeclaracaoPortal}, transmitida daqui.`,
+      rotulo: "Transmitida pela Altan",
+      detalhe: `Declaração ${numeroDeclaracaoPortal}, transmitida daqui.` + ressalva,
       tom: TOM_ENTREGA.ok,
       provada: true,
       origem: "portal",
@@ -77,15 +55,19 @@ export function estadoEntregaPgdas({
   // O estado legado isolado não comprova a entrega nem identifica quem transmitiu.
   if (numeroDeclaracaoRfb || (origemTransmissao === 'EXTERNA' && numeroDeclaracaoPortal)) {
     return {
-      chave: "capturada_da_rfb",
-      rotulo: "Apuração realizada fora da Altan — confirmada na Receita",
+      chave: "declaracao_localizada",
+      rotulo: "Declaração localizada na Receita — origem da transmissão não comprovada",
       detalhe: `A Receita tem a declaração ${numeroDeclaracaoRfb || numeroDeclaracaoPortal} para esta competência`
-        + `${temPdfDaDeclaracao ? ", e o PDF está guardado aqui" : ""}. Não foi transmitida daqui.`,
+        + `${temPdfDaDeclaracao ? ", e o PDF está guardado aqui" : ""}. A consulta não comprova quem transmitiu.`
+        + (declaradaForaEm ? " O contador informou entrega externa." : "") + ressalva,
       tom: TOM_ENTREGA.ok,
       provada: true,
       origem: "rfb",
     };
   }
+  if (incerto) return { chave: 'resultado_incerto', rotulo: 'Resultado fiscal não confirmado',
+    detalhe: 'Confira o envio antes de qualquer nova tentativa. Não há retransmissão automática.',
+    tom: TOM_ENTREGA.desconhecido, provada: false, origem: 'nenhuma' };
   // 3. O contador AFIRMA que entregou fora.
   if (declaradaForaEm) {
     // ⚠ EVIDÊNCIA CONTRA A AFIRMAÇÃO. Se o extrato foi consultado DEPOIS do registro e a Receita
@@ -165,22 +147,28 @@ export const CORES_TOM = {
 export function entregaPgdasDoFechamento(dados) {
   const e = dados?.entregaPgdas || {};
   const t = dados?.fluxoPgdas?.transmissao;
+  const incerto = t?.tentativaLocalIncerta === true || ['RESULTADO_INCERTO', 'INCERTA', 'EM_PROCESSAMENTO'].includes(t?.estado)
+    || ['erro_transmissao', 'transmitindo'].includes(dados?.estado || dados?.snapshot?.estado);
   if (t?.confirmada === true && t.numeroDeclaracao) {
-    const externa = t.origem === 'EXTERNA';
+    const altan = t.origem === 'ALTAN';
     return {
-      chave: externa ? 'capturada_da_rfb' : 'transmitida_pelo_portal',
-      rotulo: externa ? 'Apuração realizada fora da Altan — confirmada na Receita' : 'Transmissão confirmada pela Receita',
-      detalhe: `Declaração ${t.numeroDeclaracao}.${externa ? ' Não foi transmitida daqui.' : ''}`,
-      tom: TOM_ENTREGA.ok, provada: true, origem: externa ? 'rfb' : (t.origem === 'ALTAN' ? 'portal' : 'nenhuma'),
+      chave: altan ? 'transmitida_pelo_portal' : 'declaracao_localizada',
+      rotulo: altan ? 'Transmitida pela Altan' : 'Declaração localizada na Receita — origem da transmissão não comprovada',
+      detalhe: `Declaração ${t.numeroDeclaracao}.` + (!altan && t.declaradaExternaManualmente
+        ? ' O contador informou entrega externa; a consulta confirma a existência, não a autoria da transmissão.' : '')
+        + (incerto ? ' Há uma tentativa local com resultado incerto. A declaração localizada não comprova o resultado dessa tentativa nem autoriza retransmissão.' : ''),
+      // provada refere-se à existência, não à autoria nem à tentativa incerta.
+      tom: TOM_ENTREGA.ok, provada: true, origem: altan ? 'portal' : 'rfb',
     };
   }
-  if (t && t.confirmada !== true && (t.tentativaLocalIncerta === true || ['RESULTADO_INCERTO', 'INCERTA', 'EM_PROCESSAMENTO'].includes(t.estado))) {
+  if (t && incerto) {
     return { chave: 'resultado_incerto', rotulo: 'Resultado fiscal não confirmado',
       detalhe: 'Confira o envio antes de qualquer nova tentativa. Não há retransmissão automática.',
       tom: TOM_ENTREGA.desconhecido, provada: false, origem: 'nenhuma' };
   }
   return estadoEntregaPgdas({
-    origemTransmissao: dados?.snapshot?.simulacaoSerpro?._portalTransmissao?.origem || null,
+    // Autoria local vem da projeção validada no servidor, nunca do snapshot legado.
+    origemTransmissao: null,
     estadoApuracao: dados?.estado || dados?.snapshot?.estado || null,
     numeroDeclaracaoPortal: t ? null : dados?.snapshot?.numeroDeclaracao || null,
     numeroDeclaracaoRfb: t ? null : e.numeroDeclaracaoRfb || null,

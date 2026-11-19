@@ -13,7 +13,7 @@ Base remota confirmada: `c248135c71939bc0a4292bf1b2b17c3407e562b8`. Branch exclu
 | Apuração → cálculo | Mantém motor, Fator R, anexos e contratos históricos. A preparação FS12 autentica, lê a revisão confirmada, aplica a política e revalida contexto. Ainda não composta no despacho produtivo afetado. |
 | Conferência → transmissão | Preserva identidade do cálculo, reserva exclusiva e guardas existentes. Só uma resposta de transmissão identificada produz confirmação local. |
 | Transmissão → documentos | A evidência da transmissão sobrevive à indisponibilidade do DAS ou extrato. A recuperação explícita é independente de transmitir. |
-| Apuração externa | Marcação manual não é prova. Consulta oficial identificada produz evidência externa sem associar a declaração ao cálculo local. |
+| Apuração externa | Marcação manual não é prova. Consulta oficial identificada prova a existência da declaração, não sua autoria nem associação ao cálculo local. |
 | Reabertura → acompanhamento | GET recompõe os fatos persistidos; não consulta provedor nem escreve. Tentativa local incerta continua distinta de declaração localizada externamente. |
 | Operações | Preserva os três containers, indicadores, seleção e contratos existentes. Orientação remete à Apuração para consulta documental; não cria transmissão ou cálculo externo artificial. |
 
@@ -94,3 +94,20 @@ Antes de integrar: revisar o SHA final, todos os workflows, revisões independen
 - Registros legados sem prova causal mantêm origem desconhecida; não há backfill nem atribuição retroativa.
 - Reservas incertas, fechamento contábil e política de recuperação continuam podendo impedir recuperação automática. A ação explícita não é bypass.
 - Captura legada mantém riscos previamente documentados, inclusive deduplicação e recuperação contábil; esta entrega não reescreve esses mecanismos.
+
+## Revisão F01 — procedência (19/11/2026)
+
+Atende ao [achado da coordenação](https://github.com/yagoS0/api-app-contabilidade/pull/303#issuecomment-7010265663), sobre o head `ff0b93a0563d92ef81a68e30df1c01d34e5e1dda`.
+
+- Número histórico isolado não comprova transmissão pela Altan. A projeção exige resultado de transmissão identificado, origem ALTAN e correlação de empresa, CNPJ, competência, cálculo/revisão e número. Divergência ou reabertura com outra identidade mantém autoria desconhecida, sem backfill.
+- Índice oficial, circular e PDFs não provam autoria externa. Apresentação: “Declaração localizada na Receita — origem da transmissão não comprovada”. A afirmação manual do contador é mostrada separadamente.
+- Tentativa local incerta ou em processamento permanece explícita mesmo com declaração localizada; não autoriza retransmissão. O helper legado também conserva a ressalva para consumidores sem alerta próprio.
+- Somente dois arquivos produtivos foram alterados: projeção pura Fiscal e helper de apresentação. Nenhuma mudança em cálculo, payload FS12, guardas, banco, consulta/escrita ou transporte SERPRO.
+
+Validação F01: 61 testes focais API (domínio/aplicação/HTTP); 93 de integração/regressão, incluindo PostgreSQL 16 descartável; 523 de interface; 40 de governança; 4 do verificador. Zero falhas/ignorados. Diagnose: 5023 na base, 5021 na candidata, zero novas violações. Os totais focais não devem ser somados aos da entrega anterior como testes distintos.
+
+Doze capturas sintéticas 1440/390, sem overflow ou controles fora da tela; Tab/Escape validados. Evidências locais em `test-evidence/pgdas-f01`. Revisões independentes Fiscal e UI/arquitetura favoráveis; inspeção visual independente em duas capturas. Ressalva menor: aviso incerto repetido no detalhe e alerta, necessário para consumidores diferentes. Não foi ensaiado leitor de tela.
+
+Controlador F01: `2026-11-19T13-26-26-733Z-a0ca8d9f`; executor concluiu edição, mas testes encontraram EPERM no ambiente. Principal interrompeu na fase testing para resolver achados e executar as evidências alternativas acima. Estado/logs preservados, sem `ready_for_human`. Não há certificação automática de aprovação humana. CI hospedada deve ser conferida no SHA final do PR.
+
+Impacto operacional: esclarece procedência e aplica R01/R02/R19/R20/R22; não modifica regra fiscal nem as seções 36/37. Rollback específico: reverter somente o commit F01 após avaliação humana; isso restaura a ambiguidade de procedência, não exige alteração de dados e nunca autoriza redespacho.
