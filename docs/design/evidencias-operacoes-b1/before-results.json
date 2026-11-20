@@ -1,0 +1,574 @@
+[
+  {
+    "name": "1440",
+    "metrics": [
+      {
+        "label": "Calculado 2/4 empresas",
+        "text": "Calculado\n2/4"
+      },
+      {
+        "label": "Confirmado 2/4 empresas",
+        "text": "Confirmado\n2/4"
+      },
+      {
+        "label": "Transmitido 1/4 empresas",
+        "text": "Transmitido\n1/4"
+      },
+      {
+        "label": "Disponível 2/4 empresas",
+        "text": "Disponível\n2/4\n1 a verificar"
+      },
+      {
+        "label": "Enviado 1/4 empresas",
+        "text": "Enviado\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Pago 1/4 empresas",
+        "text": "Pago\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Receitas 0/4 empresas",
+        "text": "Receitas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Provisões 0/4 empresas",
+        "text": "Provisões\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Folha/Pró-labore 0/4 empresas",
+        "text": "Folha/Pró-labore\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Despesas 0/4 empresas",
+        "text": "Despesas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Pagamentos 0/4 empresas",
+        "text": "Pagamentos\n0/4\n4 a verificar"
+      }
+    ],
+    "geometry": {
+      "viewport": 1440,
+      "scroll": 1425,
+      "overflow": false,
+      "sections": [
+        {
+          "name": "Apuração",
+          "width": 416.828125
+        },
+        {
+          "name": "Guias",
+          "width": 416.828125
+        },
+        {
+          "name": "Contabilização",
+          "width": 416.84375
+        }
+      ]
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodes": [
+            {
+              "target": [
+                "h3"
+              ],
+              "summary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"Calculado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Confirmado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Transmitido 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Disponível 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Enviado 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Pago 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "count": 1
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "count": 3
+        }
+      ]
+    },
+    "keyboard": {
+      "opened": 1,
+      "returned": true
+    },
+    "nextPeriod": "‹\nNovembro de 2026\n›\n↻",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "name": "390",
+    "metrics": [
+      {
+        "label": "Calculado 2/4 empresas",
+        "text": "Calculado\n2/4"
+      },
+      {
+        "label": "Confirmado 2/4 empresas",
+        "text": "Confirmado\n2/4"
+      },
+      {
+        "label": "Transmitido 1/4 empresas",
+        "text": "Transmitido\n1/4"
+      },
+      {
+        "label": "Disponível 2/4 empresas",
+        "text": "Disponível\n2/4\n1 a verificar"
+      },
+      {
+        "label": "Enviado 1/4 empresas",
+        "text": "Enviado\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Pago 1/4 empresas",
+        "text": "Pago\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Receitas 0/4 empresas",
+        "text": "Receitas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Provisões 0/4 empresas",
+        "text": "Provisões\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Folha/Pró-labore 0/4 empresas",
+        "text": "Folha/Pró-labore\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Despesas 0/4 empresas",
+        "text": "Despesas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Pagamentos 0/4 empresas",
+        "text": "Pagamentos\n0/4\n4 a verificar"
+      }
+    ],
+    "geometry": {
+      "viewport": 390,
+      "scroll": 375,
+      "overflow": false,
+      "sections": [
+        {
+          "name": "Apuração",
+          "width": 337.5
+        },
+        {
+          "name": "Guias",
+          "width": 337.5
+        },
+        {
+          "name": "Contabilização",
+          "width": 337.5
+        }
+      ]
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodes": [
+            {
+              "target": [
+                "h3"
+              ],
+              "summary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"Calculado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Confirmado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Transmitido 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Disponível 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Enviado 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Pago 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "count": 1
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "count": 3
+        }
+      ]
+    },
+    "keyboard": {
+      "opened": 1,
+      "returned": true
+    },
+    "nextPeriod": "‹\nNovembro de 2026\n›\n↻",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "name": "360",
+    "metrics": [
+      {
+        "label": "Calculado 2/4 empresas",
+        "text": "Calculado\n2/4"
+      },
+      {
+        "label": "Confirmado 2/4 empresas",
+        "text": "Confirmado\n2/4"
+      },
+      {
+        "label": "Transmitido 1/4 empresas",
+        "text": "Transmitido\n1/4"
+      },
+      {
+        "label": "Disponível 2/4 empresas",
+        "text": "Disponível\n2/4\n1 a verificar"
+      },
+      {
+        "label": "Enviado 1/4 empresas",
+        "text": "Enviado\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Pago 1/4 empresas",
+        "text": "Pago\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Receitas 0/4 empresas",
+        "text": "Receitas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Provisões 0/4 empresas",
+        "text": "Provisões\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Folha/Pró-labore 0/4 empresas",
+        "text": "Folha/Pró-labore\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Despesas 0/4 empresas",
+        "text": "Despesas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Pagamentos 0/4 empresas",
+        "text": "Pagamentos\n0/4\n4 a verificar"
+      }
+    ],
+    "geometry": {
+      "viewport": 360,
+      "scroll": 345,
+      "overflow": false,
+      "sections": [
+        {
+          "name": "Apuração",
+          "width": 310.5
+        },
+        {
+          "name": "Guias",
+          "width": 310.5
+        },
+        {
+          "name": "Contabilização",
+          "width": 310.5
+        }
+      ]
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodes": [
+            {
+              "target": [
+                "h3"
+              ],
+              "summary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"Calculado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Confirmado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Transmitido 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Disponível 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Enviado 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Pago 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "count": 1
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "count": 3
+        }
+      ]
+    },
+    "keyboard": {
+      "opened": 1,
+      "returned": true
+    },
+    "nextPeriod": "‹\nNovembro de 2026\n›\n↻",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "name": "reflow-200",
+    "metrics": [
+      {
+        "label": "Calculado 2/4 empresas",
+        "text": "Calculado\n2/4"
+      },
+      {
+        "label": "Confirmado 2/4 empresas",
+        "text": "Confirmado\n2/4"
+      },
+      {
+        "label": "Transmitido 1/4 empresas",
+        "text": "Transmitido\n1/4"
+      },
+      {
+        "label": "Disponível 2/4 empresas",
+        "text": "Disponível\n2/4\n1 a verificar"
+      },
+      {
+        "label": "Enviado 1/4 empresas",
+        "text": "Enviado\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Pago 1/4 empresas",
+        "text": "Pago\n1/4\n1 a verificar"
+      },
+      {
+        "label": "Receitas 0/4 empresas",
+        "text": "Receitas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Provisões 0/4 empresas",
+        "text": "Provisões\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Folha/Pró-labore 0/4 empresas",
+        "text": "Folha/Pró-labore\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Despesas 0/4 empresas",
+        "text": "Despesas\n0/4\n4 a verificar"
+      },
+      {
+        "label": "Pagamentos 0/4 empresas",
+        "text": "Pagamentos\n0/4\n4 a verificar"
+      }
+    ],
+    "geometry": {
+      "viewport": 720,
+      "scroll": 705,
+      "overflow": false,
+      "sections": [
+        {
+          "name": "Apuração",
+          "width": 634.5
+        },
+        {
+          "name": "Guias",
+          "width": 634.5
+        },
+        {
+          "name": "Contabilização",
+          "width": 634.5
+        }
+      ]
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodes": [
+            {
+              "target": [
+                "h3"
+              ],
+              "summary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"Calculado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Confirmado 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Transmitido 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Disponível 2/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Enviado 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Pago 1/4 empresas\"]"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "count": 1
+        },
+        {
+          "id": "label-content-name-mismatch",
+          "count": 3
+        }
+      ]
+    },
+    "keyboard": {
+      "opened": 1,
+      "returned": true
+    },
+    "nextPeriod": "‹\nNovembro de 2026\n›\n↻",
+    "errors": [],
+    "blocked": []
+  }
+]

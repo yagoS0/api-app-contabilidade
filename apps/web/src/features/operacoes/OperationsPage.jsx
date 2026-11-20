@@ -139,26 +139,32 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
   return <section className="operacoes" aria-label="Operações">
     <div className="operacoes-cabecalho"><CompetenciaCarteira competencia={competencia} onChange={onChangeCompetencia} onRefresh={refresh} loading={loading} disabled={busy || approvalBusy} /></div>
     {error && <p role="alert">{error} Os indicadores ficam indisponíveis até a atualização.</p>}
-    <div className="operacoes-layout">
+    <div className="operacoes-layout operacoes-resumo-b">
       <div className="operacoes-etapas-pizzas">
         <section className="operacoes-etapa operacoes-apuracao" aria-label="Apuração">
-          <button className="operacoes-titulo" aria-label="Apuração" onClick={() => show('apurar','Apuração','all')} disabled={unavailable}>Apuração</button>
+          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Apuração" onClick={() => show('apurar','Apuração','all')} disabled={unavailable}>Apuração</button></h2>
+          <div className="operacoes-etapa-indicadores">
           {[['calculado','Calculado'],['confirmado','Confirmado'],['transmitido','Transmitido']].map(([key,label]) => {
             const warnings = summary.items.filter(r => key === 'confirmado' ? r.operation?.status === 'INVALIDATED' : key === 'transmitido' && r.operation?.execution && r.operation.execution.status !== 'DONE');
             return <div className="operacoes-status-com-aviso" key={key}><Progress label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable || (key === 'confirmado' && (evidence.loading || Boolean(evidence.error)))} onClick={() => { if (key === 'confirmado' || key === 'calculado' && api?.getCompanyOperation) { setApprovalStage(key); setApprovalRows(null); setApprovalOpen(true); } else show(key,label); }} />
               {key === 'calculado' ? <OperationsAlerts api={api} compact /> : !unavailable && warnings.length > 0 && <button type="button" className="operacoes-aviso-etapa operacoes-erro" aria-label={`Avisos de ${label}: ${warnings.length} empresas`} onClick={() => show(key,`Avisos de ${label}`,'warnings')}>⚠ {warnings.length}</button>}
             </div>;
           })}
+          </div>
           {evidence.error && <p className="operacoes-feedback-compact" role={api?.getOperationEvidence ? "alert" : "status"}>{evidence.error} <Button size="sm" variant="secondary" onClick={evidence.reload}>Atualizar conferências</Button></p>}
         </section>
         <section className="operacoes-etapa operacoes-guias" aria-label="Guias">
-          <button className="operacoes-titulo" aria-label={`Erros de envio de guias ${unavailable ? '—' : errorCompanies.length}`} onClick={() => open('erros')} disabled={unavailable}>Guias {errorCompanies.length > 0 && <span className="operacoes-erro">⚠ {errorCompanies.length}</span>}</button>
+          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label={`Erros de envio de guias ${unavailable ? '—' : errorCompanies.length}`} onClick={() => open('erros')} disabled={unavailable}>Guias {errorCompanies.length > 0 && <span className="operacoes-erro">⚠ {errorCompanies.length}</span>}</button></h2>
+          <div className="operacoes-etapa-indicadores">
           {[['disponivel','Disponível'],['enviado','Enviado'],['pago','Pago']].map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable || manualUnavailable} onClick={() => show(key,label)} />)}
+          </div>
           {manualInss.error && <p role="alert">{manualInss.error} <Button size="sm" variant="secondary" onClick={manualInss.reload}>Conferir INSS manual</Button></p>}
         </section>
         <section className="operacoes-etapa operacoes-contabilizacao" aria-label="Contabilização">
-          <button className="operacoes-titulo" aria-label="Contabilização" onClick={() => show('contabilizacao','Contabilização','all')} disabled={unavailable}>Contabilização</button>
+          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Contabilização" onClick={() => show('contabilizacao','Contabilização','all')} disabled={unavailable}>Contabilização</button></h2>
+          <div className="operacoes-etapa-indicadores">
           {CHECKLIST_OPERACOES.map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable} />)}
+          </div>
         </section>
         <div className="operacoes-quatro-pizzas">{[['parcelas','Parcelamento'],['fiscal','Situação fiscal'],['certificado','Certificado'],['procuracao','Procuração']].map(([key,title]) => <Pizza key={key} title={title} groups={distribution[key]} unavailable={unavailable} onSelect={group => setChart({ key, group, competencia })} />)}</div>
       </div>

@@ -1,0 +1,6 @@
+const initial = [
+ {companyId:'demo-a',razao:'Aurora Comércio — exemplo sintético',regimeTributario:'SIMPLES',apuracao:{competencia:'2026-10',estado:'transmitida'},guideCompliance:{competencia:'2026-10',das:{required:true,state:'enviada',ok:true,guideId:'synthetic-guide-a',paymentStatus:'PAID'},inss:{required:false,state:'na',ok:true}}},
+ {companyId:'demo-b',razao:'Bosque Tecnologia — exemplo sintético',regimeTributario:'SIMPLES',apuracao:{competencia:'2026-10',estado:'calculada'},guideCompliance:{competencia:'2026-10',das:{required:true,state:'gerada',ok:true,guideId:'synthetic-guide-b'},inss:{required:false,state:'na',ok:true}}},
+ {companyId:'demo-c',razao:'Horizonte Serviços — exemplo sintético',regimeTributario:'SIMPLES',apuracao:{competencia:'2026-10',estado:'aberta'},guideCompliance:{competencia:'2026-10',das:{required:true,state:'missing',ok:false},inss:{required:false,state:'na',ok:true}}},
+ {companyId:'demo-d',razao:'Lagoa Participações — exemplo sintético',empresaZerada:true,regimeTributario:'SIMPLES',apuracao:{competencia:'2026-10',estado:'aberta'},guideCompliance:null}
+];
