@@ -1,0 +1,44 @@
+{
+  "summary": "Retirar backfill contábil automático do boot e manter execução supervisionada com proteção de fechamento.",
+  "risk": "high",
+  "base": "981b09e9287a6f29de8a06b0abcbb3eed53c48cc",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "guides",
+    "operations",
+    "portal",
+    "web",
+    "documentation",
+    "fiscal"
+  ],
+  "operationalImpact": "Contabilidade é dona do comando e das escritas; API/runtime deixa de acioná-lo no boot/restart. R03-R06/R19/R20/R26 e regra Guia salva após fechamento preservadas: mês fechado ou pendência explícita exige tratamento próprio, nunca bypass no backfill. Operação manual exige PortalClient/competência, prévia padrão sem escrita e --execute supervisionado. Revalida guia/revisão/ausência de lançamentos dentro de Serializable com fence canônico e mesmo tx para fechamento e gerador. Protege também o mês da data contábil legada. Erro interrompe sem retry; commits anteriores por guia são informados no progresso. Guias/Fiscal/Operações e consumidores comerciais, comunicação, web e portal conservam contratos HTTP, DTOs, permissões, FS12, documentos e transporte. Demais seeds/workers e gerador compartilhado não mudam. Sem schema/migração. Referência canonical/fallback SHA256 4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113.",
+  "tests": [
+    "Regressão contábil/parcelamentos/guardas FS12/procedência:711 aprovados em52suítes.",
+    "Governança88/88; diagnose5021→5019, zero acréscimos.",
+    "Smoke local3 aprovados,2Docker não executados por indisponibilidade local; CI exige Docker real boot/restart com e sem PostgreSQL16, redeisolada, controle positivo da guia elegível e zero provisões apósboot/restart.",
+    "Focais:25/25 (17unitários e8PostgreSQL16), incluindo duas conexões/ordens de fechamento, revisão em milissegundos, replay, isolamento, ausência de reescrita e rollback. Banco descartável novo porta55519;215migrações somente nesse banco sintético.",
+    "Frontend Apuração/FS12/procedência:538 testes em47suítes aprovados (530 em44suítes;8em3suítes reexecutadas após corrigir resolução local de @faker-js/faker). Nenhuma mudança frontend/contratoHTTP."
+  ],
+  "rollback": "Reverter somente o comando supervisionado se necessário, mantendo a remoção do backfill do boot. Não retornar automaticamente à imagem que provisiona no boot. Nenhuma reversão deste código corrige lançamentos existentes; intervenção contábil exige autorização separada. Deploy e merge exigem decisão específica.",
+  "humanDecisions": [
+    "Revisar SHA/CI antes do merge e autorizar separadamente publicaçãoAPI/frontend.",
+    "Auditoria privada somente leitura dos lançamentos produtivos entregue ao proprietário; nenhuma correção contábil neste PR.",
+    "Comando de backfill não deve ser executado em produção sem autorização específica de escopo."
+  ],
+  "controllerRun": "2026-11-19T22-35-00-157Z-e7adc2dc",
+  "controllerResult": "escalated: Governance/configuration changes require separate human-reviewed integration. Planejador concluído; execução pelo principal com agentes e revisão independente. Sem ready_for_human do controlador.",
+  "reviews": {
+    "accountingArchitecture": "revisao_backfill: favorável sem defeito impeditivo no diff; fence canônico/Serializable/mesmo tx/releitura e proteção dos dois períodos corretos. Auditoria produtiva separada não autoriza correções. CI Docker pendente de comprovação.",
+    "runtimeCi": "smoke_boot implementou smoke e validou sintaxe/3contratos locais; segunda revisão interrompida pelo principal sem parecer final. Principal revisou Dockerfile, rede Docker interna, fixture/controle positivo/rollback e inclusão explícita dos25testes focais no jobPiloto. revisao_backfill revisou independentemente também o smoke e emitiu parecer favorável; aprovação real depende CI noSHA final."
+  },
+  "limitations": [
+    "Boot preserva demais seeds/workers; não é somente leitura.",
+    "Nenhum dado fiscal real, credencial ou relatório individual no PR.",
+    "Auditoria causal individual do backfill legado não existe; logs/timestamps são evidência correlacional.",
+    "Frontend requer smoke autenticado de leitura após publicaçãoAPI autorizada; nenhuma sessão/credencial foi fabricada."
+  ]
+}

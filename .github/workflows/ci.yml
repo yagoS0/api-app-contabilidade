@@ -16,7 +16,9 @@ jobs:
           node-version: 20
       - name: Build real API image
         run: docker build -t altan-boot-test:ci .
-      - name: Verify boot, restart and healthcheck without database or external network
+      - name: Prepare disposable PostgreSQL 16 image
+        run: docker pull postgres:16
+      - name: Verify boot and restart without migration or automatic provisions
         env:
           ALTAN_TEST_DOCKER: '1'
         run: node --test apps/api/scripts/start-prod-sem-migracao.test.mjs
