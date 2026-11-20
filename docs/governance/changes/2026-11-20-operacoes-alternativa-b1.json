@@ -1,0 +1,27 @@
+{
+  "summary": "B1: composição principal da Alternativa B em OperationsPage, preservando indicadores e ações existentes.",
+  "operationalImpact": "Sem alteração de regras operacionais. Operações/apresentação coordena os mesmos leitores e projeções; consumidores Empresas, Apuração, Guias e Contabilização, modais, filtros e competência permanecem compatíveis. Nenhuma mudança em API, autorização, dados, cálculo, FS12, transmissão, pagamentos, provisões, fechamento, workers ou comunicação. Portal é dependência transitiva do mapa, sem alteração direta.",
+  "risk": "high",
+  "domains": [
+    "operations",
+    "web",
+    "portal",
+    "documentation",
+    "governance"
+  ],
+  "tests": [
+    "Caracterização anterior: 183 testes aprovados em oito suítes. Dois testes adicionais da página real passaram na base e candidata: mesmas leituras por competência, ausência de comandos e resposta tardia descartada.",
+    "Governança: 88 testes aprovados. Verificador arquitetural: 5 testes aprovados; diagnose 5019→5019, zero acréscimos. API e verificador não alterados. Revisão do frontend complementa o escopo do diagnose.",
+    "Build completo web aprovado após disponibilizar as dependências já instaladas do workspace; sem alteração de package.json/lockfile. Avisos existentes de chunks grandes/imports mistos permanecem. Resultados finais de regressão, visual e CI serão registrados no PR.",
+    "Regressão final Operações/Apuração/carteira: 993 testes em 80 suítes aprovados, zero ignorados. Build final aprovado. Paridade visual das 11 métricas com fixture mista; desktop1440, mobile390/360, reflow e zoom nativo200%; zero overflow/JS/rede externa, foco8/8. Seis achados axe preexistentes preservados e explicitados."
+  ],
+  "rollback": "Reverter somente este commit de apresentação, testes e evidências. Sem migração ou restauração de dados. Não autoriza deploy ou limpeza de worktrees.",
+  "humanDecisions": [
+    "Proprietário autorizou B1 e PR em rascunho. Não autorizou merge, deploy, alterações fiscais, API/banco/Railway ou B2–B5."
+  ],
+  "limitations": [
+    "Controlador 2026-11-20T15-14-50-805Z-2984aff2: executor relatou EPERM nos testes; principal validou. Governança passou 88 testes; rodada interrompida pelo principal durante api-regression para incorporar revisão visual. Sem ready_for_human; gate interrompido não é aprovado.",
+    "Aprovação visual humana e CI hospedada são condições separadas. Capturas sintéticas não homologam produção."
+  ],
+  "finalReview": "Pareceres independentes favoráveis de Operações (b1_contract_tests), UI/UX (b1_instruction_review) e arquitetura/backend (b1_architecture_review), sobre JSX acce9731bcf906d129441dc8fe213e8108bcb544dd50ba892a30953003e12c91 e CSS ce8ea096f4b84aad3fe655c89d6c735c46dfb9dc0f83f2779af69dbdf5ec4409. Não autorizam integração/publicação. CI hospedada no SHA final é registrada no PR."
+}
