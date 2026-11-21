@@ -1,0 +1,56 @@
+{
+  "method": "Chrome settings 200% in dedicated synthetic profile; not user browser",
+  "metrics": {
+    "layoutViewport": {
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 1409,
+      "clientHeight": 905
+    },
+    "visualViewport": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 1424,
+      "clientHeight": 905,
+      "scale": 1,
+      "zoom": 2
+    },
+    "contentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 1409,
+      "height": 5025
+    },
+    "cssLayoutViewport": {
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 704,
+      "clientHeight": 452
+    },
+    "cssVisualViewport": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "pageX": 0,
+      "pageY": 0,
+      "clientWidth": 712,
+      "clientHeight": 452.5,
+      "scale": 1,
+      "zoom": 2
+    },
+    "cssContentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 704,
+      "height": 2512
+    }
+  },
+  "geometry": {
+    "innerWidth": 712,
+    "outerWidth": 1440,
+    "dpr": 2,
+    "scroll": 704
+  },
+  "verified": true
+}

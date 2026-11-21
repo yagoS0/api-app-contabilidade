@@ -458,3 +458,83 @@
 
 .operacoes-avisos-scroll-hint { display:none; }
 @media(max-width:760px) { .operacoes-avisos-scroll-hint { display:block; color:var(--text-muted); font-size:.85rem; } }
+
+/* B1: main composition only. Modal content and operational contracts stay shared. */
+.operacoes .operacoes-resumo-b .operacoes-etapa {
+  min-height:0;
+  padding:var(--space-4);
+  background:var(--bg-surface);
+}
+.operacoes-resumo-b .operacoes-etapa-cabecalho {
+  margin:0 0 var(--space-3);
+  font-size:1rem;
+  font-weight:600;
+}
+.operacoes .operacoes-resumo-b .operacoes-titulo {
+  margin:0;
+  padding:var(--space-2);
+  border-radius:var(--radius);
+  font-weight:600;
+}
+.operacoes-resumo-b .operacoes-etapa-indicadores {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:var(--space-2);
+}
+.operacoes-resumo-b .operacoes-apuracao .operacoes-etapa-indicadores {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.operacoes-resumo-b .operacoes-apuracao .operacoes-status-com-aviso:last-child {
+  grid-column:1 / -1;
+}
+.operacoes-resumo-b .operacoes-apuracao .operacoes-status-com-aviso {
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--bg-subtle);
+  padding:var(--space-2);
+}
+.operacoes .operacoes-resumo-b .operacoes-apuracao .operacoes-progress {
+  box-sizing:border-box;
+  min-width:0;
+  min-height:108px;
+  margin:0;
+  padding:var(--space-2);
+  gap:var(--space-2);
+  border:0;
+  border-radius:var(--radius);
+  background:transparent;
+  line-height:1.4;
+}
+.operacoes-resumo-b .operacoes-progress-label { align-self:center; font-weight:500; }
+.operacoes-resumo-b .operacoes-progress > strong { font-size:1.125rem; font-weight:600; align-self:center; }
+.operacoes-resumo-b .operacoes-apuracao .operacoes-progress { grid-template-columns:minmax(0,1fr); }
+.operacoes-resumo-b .operacoes-apuracao .operacoes-progress > strong { justify-self:start; font-size:1.5rem; }
+.operacoes .operacoes-resumo-b .operacoes-contabilizacao .operacoes-progress {
+  min-height:52px;
+  padding:var(--space-2) 0;
+  gap:var(--space-1);
+}
+.operacoes .operacoes-resumo-b .operacoes-contabilizacao .operacoes-progress small {
+  font-size:.8rem;
+  line-height:1.4;
+}
+.operacoes-resumo-b .operacoes-status-com-aviso { min-width:0; gap:var(--space-1); }
+.operacoes .operacoes-resumo-b button.operacoes-progress:hover:not(:disabled) {
+  background:var(--bg-surface);
+}
+.operacoes-resumo-b .operacoes-apuracao .operacoes-status-com-aviso:focus-within { border-color:var(--border-focus); }
+.operacoes-resumo-b .operacoes-feedback-compact { margin-top:var(--space-3); }
+.operacoes-resumo-b .operacoes-grafico-legenda button { overflow-wrap:anywhere; }
+@media(max-width:760px) {
+  .operacoes .operacoes-resumo-b .operacoes-etapa { padding:var(--space-3); }
+  .operacoes .operacoes-resumo-b .operacoes-rotinas-contadores { grid-template-columns:minmax(0,1fr); }
+  .operacoes .operacoes-resumo-b .operacoes-rotinas-contadores > button.operacoes-quadro {
+    flex-direction:row;
+    padding:var(--space-2);
+    gap:var(--space-3);
+  }
+}
+@media(max-width:420px) {
+  .operacoes-resumo-b .operacoes-quatro-pizzas { grid-template-columns:minmax(0,1fr); }
+  .operacoes-resumo-b .operacoes-grafico-corpo { flex-direction:row; align-items:center; }
+}
