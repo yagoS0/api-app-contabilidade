@@ -1,9 +1,9 @@
-// Ato Conjunto RFB/CGIBS 4/2026, art. 1º, III e §1º.
-// Fontes e limites: docs/nfse-correcoes-prioritarias-2026-10-10.md.
+// Ato Conjunto RFB/CGIBS 4/2026, art. 1º, III e §1º, alterado pelo Ato 7/2026.
+// Fontes e limites: docs/nfse-calendario-ibscbs-p01-20261122.md.
 // Não consulta rede nem confunde aceitação do XML com dispensa de obrigação.
-export const VERSAO_OBRIGACAO_IBSCBS = 'ato-4-2026-revisao-2026-10-10';
+export const VERSAO_OBRIGACAO_IBSCBS = 'ato-7-2026-revisao-2026-11-22';
 export const CATEGORIAS_IBSCBS = ['SERVICO_ISS', 'PLATAFORMA_DIGITAL'];
-const DEZEMBRO = new Set(['0103', '0105', '0109', '1601']);
+const SUBITENS_MARCO_2027 = new Set(['0103', '0105', '0109', '1601']);
 
 function diaCivil(entrada) {
   const texto = entrada instanceof Date && !Number.isNaN(entrada.getTime())
@@ -20,23 +20,37 @@ export function obrigacaoIbscbs({ competencia, opSimpNac, codigoServico, categor
   const indefinido = motivo => resultado('INDETERMINADO', motivo);
   if (!dia) return indefinido('Confirme uma competência válida antes de verificar IBS/CBS.');
   if (!['1', '2', '3'].includes(opSimpNac)) return indefinido('Confirme o regime aplicável à competência da nota.');
-  if (opSimpNac !== '1') {
-    if (dia < '2027-01-01') return resultado('FACULTATIVO', 'Prazo do Simples ainda não iniciado pelo Ato 4/2026.', '2027-01-01');
-    return indefinido('O enquadramento do Simples para IBS/CBS em 2027 precisa de conferência; este contrato não resolve a opção de apuração.');
-  }
-  if (dia < '2026-10-01') return resultado('FACULTATIVO', 'Anterior ao primeiro prazo de NFS-e do Ato 4/2026.');
+  const simples = opSimpNac !== '1';
   const codigo = String(codigoServico ?? '');
-  if (!/^\d{6}$/.test(codigo) || Number(codigo.slice(0, 2)) < 1 || Number(codigo.slice(0, 2)) > 40) {
+  const codigoCoberto = /^\d{6}$/.test(codigo) && Number(codigo.slice(0, 2)) >= 1 && Number(codigo.slice(0, 2)) <= 40;
+  const categoriaValida = categoria == null || CATEGORIAS_IBSCBS.includes(categoria);
+  const marcoEspecial = SUBITENS_MARCO_2027.has(codigo.slice(0, 4)) || categoria === 'PLATAFORMA_DIGITAL';
+  // Nenhuma hipótese do Simples inicia em 2026. Preservar a resposta histórica,
+  // sem inventar início exato quando a classificação ainda é insuficiente.
+  if (simples && dia < '2027-01-01') return resultado('FACULTATIVO',
+    'Nenhum prazo do Simples previsto no Ato 7/2026 iniciado.',
+    codigoCoberto && categoriaValida ? (marcoEspecial ? '2027-03-01' : categoria === 'SERVICO_ISS' ? '2027-01-01' : null) : null);
+  if (dia < '2026-10-01') return resultado('FACULTATIVO', 'Anterior aos prazos das hipóteses de NFS-e cobertas por este contrato.');
+  if (!codigoCoberto) {
     return indefinido('Este fornecimento exige classificação fiscal específica antes de determinar o prazo de IBS/CBS.');
   }
-  if (categoria != null && !CATEGORIAS_IBSCBS.includes(categoria)) return indefinido('Categoria de operação de IBS/CBS inválida.');
-  // A partir de dezembro, ambas as categorias cobertas estão no prazo.
-  // Antes disso não presumir que um serviço comum está fora da hipótese de plataforma.
-  let inicio = '2026-12-01';
-  if (!DEZEMBRO.has(codigo.slice(0, 4)) && categoria !== 'PLATAFORMA_DIGITAL') {
-    if (!categoria && dia < inicio) return indefinido('O contador precisa classificar a operação no perfil: serviço sujeito ao ISS ou hipótese legal de plataforma digital.');
-    if (categoria === 'SERVICO_ISS') inicio = '2026-10-01';
+  if (!categoriaValida) return indefinido('Categoria de operação de IBS/CBS inválida.');
+  // Alíneas a–c: mesmo prazo para não optantes e Simples (§1º, II).
+  // Categoria não é inferida do uso da internet; alíneas e–h não têm contrato aqui.
+  let inicio = '2027-03-01';
+  if (!marcoEspecial) {
+    if (!categoria) {
+      if (!simples && dia >= '2027-03-01') return resultado('OBRIGATORIO',
+        'Todos os prazos das hipóteses cobertas já iniciaram; a categoria não permite identificar a data inicial exata.');
+      return indefinido('O contador precisa classificar a operação no perfil: serviço sujeito ao ISS ou hipótese legal de plataforma digital.');
+    }
+    inicio = simples ? '2027-01-01' : '2026-10-01';
   }
+  // Calendário documental apenas: não resolve opção de apuração nem homologa XML.
+  // O verificador de XML também consome estado: não exigir bloco do Simples2027
+  // sem contrato homologado para seu enquadramento. inicio registra só o prazo legal.
+  if (simples && dia >= inicio) return resultado('INDETERMINADO',
+    'O prazo documental do Simples iniciou, mas o enquadramento de IBS/CBS em 2027 precisa de conferência; este contrato não resolve a opção de apuração.', inicio);
   return resultado(dia >= inicio ? 'OBRIGATORIO' : 'FACULTATIVO',
     `Prazo aplicável à categoria de operação: ${inicio}.`, inicio);
 }

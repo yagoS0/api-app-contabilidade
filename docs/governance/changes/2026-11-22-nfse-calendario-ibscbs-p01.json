@@ -1,0 +1,44 @@
+{
+  "summary": "P0.1: corrigir calendário IBS/CBS da NFS-e conforme Ato4 alterado pelo Ato7/2026, preservando contratos e guardas.",
+  "operationalImpact": "Fiscal/NFS-e é dono da política pura. Impacto direto API/fiscal/documentação: março substitui dezembro nas alíneas a-c; outubro permanece; Simples distingue início janeiro/março sem exigir bloco não homologado. R01/R02/R07/R19/R20 preservados, com matriz normativa e histórico atualizados no documento fiscal desta entrega. Consumidores: resolverContextoFiscalDaNota, verificarNfse, snapshotFiscal e enum de perfis; versão do verificador torna conferências antigas desatualizadas sem regravação automática. Web/portal/comercial/comunicação/operações mantêm interfaces e autorizações; Guias/Contabilidade sem alteração. Sem novas escritas, schema, auditoria, transações, transportes, configuração ou UI; nenhuma alteração de concorrência/idempotência. PR310/311 não incorporados.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "Antes da edição: prioridadesFiscais 19/19.",
+    "Após correções independentes: focal final 172/172 em3suítes, funções puras e transporte simulado.",
+    "Governança88/88; arquitetura5/5; diagnose5019→5019, zero novas violações.",
+    "Regressão ampliada simulada:1853/1853 em85suítes; nenhum teste omitido nessa seleção, nenhuma conexão fiscal real."
+  ],
+  "rollback": "Reverter exclusivamente o commit do P0.1, sem banco ou regravação de snapshots. Reversão restaura prazo fiscal ultrapassado e precisa de avaliação fiscal antes de uso; não retransmitir notas. Merge/deploy exigem autorização própria.",
+  "humanDecisions": [
+    "Proprietário autorizou exclusivamente implementação P0.1, testes, documentação e PRrascunho. Proibidos merge, deploy, atos fiscais e correção de cancelamento nesta entrega."
+  ],
+  "limitations": [
+    "Categorias legais e-h não têm representação no contrato de perfis; matriz documenta datas, mas não cria cadastro nem presume classificação.",
+    "Guardas de XML2027 e opção Simples preservadas; calendário não homologa contrato.",
+    "Controlador2026-11-22T16-01-19-822Z-2470c3ea interrompido pelo principal após executor concluído para tratar F01 independente; executor registrou EPERM/MODULE_NOT_FOUND nas tentativas de teste. Principal executou testes pelo ambiente autorizado, sem alterar permissões/gates; não declarado ready_for_human.",
+    "Primeira seleção ampla incluiu4suítes PostgreSQL sem configuração local: falharam antes do acesso. Não modificadas; regressão final seleciona somente integrações simuladas conforme escopo."
+  ],
+  "finalReview": "Fiscal /root/fiscal_p01, arquitetura /root/arquitetura_p01 e regressão /root/regressao_p01 favoráveis após correçãoF01 e precisãoP3. Revisão fiscal conferiu atos oficiais integrais. Aprovação técnica não homologa emissão nem autoriza integração.",
+  "baseUpdate": {
+    "base": "3a68fcd128586e825ffbeced85b7351c3054a0ad",
+    "previousHead": "8f3675a4c2d4b78639810d75ba8208406401d976",
+    "method": "Merge nao destrutivo da main na branch original; nenhum conflito; sem force push.",
+    "preservation": "Os quatro arquivos de codigo/testes proprios do P0.1 permanecem identicos ao head anterior. Os 43 arquivos incorporados de #313/#314 permanecem identicos a main. Sem novo impacto operacional.",
+    "validation": "Governanca 40/40; arquitetura 5/5; diagnose 5020 -> 5020, zero acrescimos; estrutura, perfis e referencia operacional validos. Regressao fiscal, modais e CI do novo SHA registradas no PR apos conclusao.",
+    "reviews": "Revisoes independentes fiscal /root/revisao_fiscal_312_atualizacao e arquitetura /root/revisao_arquitetura_312_atualizacao favoraveis ao diff atualizado, condicionadas aos testes finais. Fontes oficiais reconferidas pelo revisor fiscal.",
+    "controller": "Sem nova alteracao funcional ou executor nesta reconciliacao sem conflitos. Estado historico do controlador permanece interrompido, sem ready_for_human; gates e revisoes reexecutados pelo principal.",
+    "authorization": "Atualizar branch e PR, testar e revisar; sem merge na main, deploy, P0.2 ou atos fiscais."
+  }
+}
