@@ -1,3 +1,5 @@
+import { CAMPOS_ENDERECO_OBRA, AVISO_CEP_OBRA } from "@contabilidade/shared";
+
 export function DadosDaOperacao({ form, campo, conferencia, disabled }) {
   return <details>
     <summary>Retenções, obra e destinatário desta nota</summary>
@@ -10,10 +12,18 @@ export function DadosDaOperacao({ form, campo, conferencia, disabled }) {
       <input id="emitir-vRetCP" inputMode="decimal" value={form.vRetCP} onChange={campo("vRetCP")} />
       <label htmlFor="emitir-obraTipo">Identificação da obra</label>
       <select id="emitir-obraTipo" value={form.obraTipo} onChange={campo("obraTipo")}>
-        <option value="cObra">CNO/CEI</option><option value="cCIB">CIB</option>
+        <option value="cObra">CNO/CEI</option><option value="cCIB">CIB</option><option value="end">Endereço nacional da obra</option>
       </select>
+      {form.obraTipo === "end" ? <>
+        <p className="hint" id="emitir-obra-aviso">{AVISO_CEP_OBRA}</p>
+        {CAMPOS_ENDERECO_OBRA.map(([k, rotulo, limite]) => <div key={k}>
+          <label htmlFor={`emitir-obra${k}`}>{rotulo}</label>
+          <input id={`emitir-obra${k}`} value={form[`obra${k}`]} onChange={campo(`obra${k}`)} maxLength={limite} inputMode={k === "CEP" ? "numeric" : undefined} aria-describedby="emitir-obra-aviso" />
+        </div>)}
+      </> : <>
       <label htmlFor="emitir-obraCodigo">Código da obra</label>
       <input id="emitir-obraCodigo" value={form.obraCodigo} onChange={campo("obraCodigo")} maxLength={30} />
+      </>}
       <label htmlFor="emitir-obraInscricao">Inscrição imobiliária (opcional)</label>
       <input id="emitir-obraInscricao" value={form.obraInscricao} onChange={campo("obraInscricao")} maxLength={30} />
       <label htmlFor="emitir-destinatarioDoc">CPF/CNPJ do destinatário diferente do tomador</label>

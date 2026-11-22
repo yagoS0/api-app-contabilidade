@@ -1,0 +1,36 @@
+{
+  "summary": "NFS-e: obra por endereço nacional nos dois emissores, com validação pura, XML e testes; independente do PR310.",
+  "operationalImpact": "Fiscal é dono da interpretação e XML; shared oferece normalização pura; API preserva fachada e valida somente a alternativa nova antes da reserva. Web e portal exibem campos e prévia sem inferir endereço. Impacto operacional delimitado: permite a alternativa nacional prevista em TCInfoObra, preservando E0370, guarda municipal, regime, autorização, confirmação, transporte e estados incertos. Comunicação, Guias, Contabilidade, Operações e comercial são consumidores transitivos sem alteração de comportamento. Sem novas regras de cálculo ou mudanças de dados.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "shared",
+    "web",
+    "governance"
+  ],
+  "tests": [
+    "API50suítes/1165testes aprovados, contratos HTTP e autorização com doubles.",
+    "XSDcompleto12/12 XMLs e25testes aprovados, transporte falso, contraprova inválida.",
+    "Governança40aprovados; diagnose5019→5019zeroacréscimos.",
+    "QA sintético1440/390/360 de ambosportais semoverflow/JS/redeexterna. Resultados finais de UI/build/CI no PR.",
+    "Interface final:59testes escritório,24portal aprovados. Ambos builds aprovados; aviso tamanho de bundle preexistente."
+  ],
+  "rollback": "Reverter somente o commit desta correção, sem migração ou exclusão de dados. Endereços já gravados no XML permanecem evidência; não reenviar notas automaticamente. Merge/deploy exigem autorização separada.",
+  "humanDecisions": [
+    "Usuário autorizou correção obra por endereço após conferência oficial, testes e PRrascunho separado310. Não autorizou merge, deploy nem emissão real."
+  ],
+  "limitations": [
+    "Controlador interrompido pelo principal após executor, para corrigir achados independentes e concluir validações; EPERM no executor registrado. Sem ready_for_human.",
+    "CEP formato não comprova município; exterior fora deescopo. Fonte oficial online identificada; download403 e leitura de artefatos versionados, sem afirmarhashremoto.",
+    "Testes simulados não equivalem a homologaçãofiscalreal."
+  ],
+  "finalReview": "Fiscal favorável após F01/F04; backend/arquitetura favorável após F02/F03; UI/UX favorável com QA1440/390/360. Expectativas do portal atualizadas e24testes aprovados. Pareceres humanos e CI final necessários antes de integração."
+}

@@ -436,3 +436,15 @@ describe("⚠⚠ o MESTRE (role admin) emite pelo portal do cliente", () => {
     expect(res.corpo.error).toBe("EMISSAO_VISITA_DO_ESCRITORIO");
   });
 });
+
+test("escritório: HTTP conserva endereço da obra normalizado no serviço autorizado", async () => {
+  const end = { CEP: "01551-020", xLgr: " Rua obra ", nro: "0", xBairro: "Centro" };
+  const r = await request(montarApp({ id: "u-adm", role: "contador" })).post("/nfse/issue").send({ ...PAYLOAD_EMISSAO, obra: { end } });
+  expect(r.status).toBe(201);
+  expect(NfseService.issue).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ companyId: LEGACY_ID, obra: { end: { ...end, CEP: "01551020", xLgr: "Rua obra" } } }) }));
+});
+test("escritório: endereço incompleto é recusado antes do serviço", async () => {
+  const r = await request(montarApp({ id: "u-adm", role: "contador" })).post("/nfse/issue").send({ ...PAYLOAD_EMISSAO, obra: { end: { CEP: "01551020" } } });
+  expect(r.status).toBe(400);
+  expect(NfseService.issue).not.toHaveBeenCalled();
+});

@@ -953,3 +953,31 @@ describe("divergências do XSD recusadas antes de reservar numeração", () => {
     expect(recusasDoXsd(xmlEnviado())).toEqual([]);
   });
 });
+
+it.each([undefined, "Bloco A"])("DPS com endereço nacional de obra cabe no XSD; complemento %s", async xCpl => {
+  montarCenario({ empresa: { codigoServicoNacional: "070201" } });
+  const resultado = await NfseService.issue({ data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, cLocPrestacao: "3550308" }, obra: { end: { CEP: "01551020", xLgr: "Rua da obra", nro: "0", ...(xCpl ? { xCpl } : {}), xBairro: "Centro" } } }, log });
+  expect(resultado).toEqual(expect.objectContaining({ status: "issued" }));
+  const xml = xmlEnviado();
+  expect(xml).toContain("<obra><end><CEP>01551020</CEP><xLgr>Rua da obra</xLgr><nro>0</nro>");
+  expect(recusasDoXsd(xml)).toEqual([]);
+  expect(recusasDoXsd(xml.replace("<end><CEP>", "<end><cMun>3550308</cMun><CEP>"))).not.toEqual([]);
+});
+
+it("endereço em serviço incompatível recusa antes de reserva, escrita ou transporte", async () => {
+  montarCenario();
+  const resultado = await NfseService.issue({ data: { ...PAYLOAD_BASE, obra: { end: { CEP: "01551020", xLgr: "Rua", nro: "0", xBairro: "Centro" } } }, log });
+  expect(resultado).toEqual(expect.objectContaining({ status: "falha_envio", codigo: "NFSE_DADOS_ESPECIAIS_INVALIDOS", numeroReutilizavel: true }));
+  expect(resultado.message).toContain("E0372");
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  expect(postMock).not.toHaveBeenCalled();
+});
+it("inscrição e endereço coexistem na DPS e a inscrição precede end", async () => {
+  montarCenario({ empresa: { codigoServicoNacional: "070201" } });
+  const resultado = await NfseService.issue({ data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, cLocPrestacao: "3550308" }, obra: { inscImobFisc: "A&B", end: { CEP: "01551020", xLgr: "São João", nro: "0", xBairro: "Centro" } } }, log });
+  expect(resultado).toEqual(expect.objectContaining({ status: "issued" }));
+  const xml = xmlEnviado();
+  expect(xml).toContain("<obra><inscImobFisc>A&amp;B</inscImobFisc><end>");
+  expect(recusasDoXsd(xml)).toEqual([]);
+});

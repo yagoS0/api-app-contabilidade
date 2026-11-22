@@ -99,6 +99,7 @@ import { SeletorMunicipio } from "./SeletorMunicipio";
 import { SeletorTomador } from "./SeletorTomador";
 import { DesfechoEmissao } from "./DesfechoEmissao";
 import { OPERACAO_VAZIA, conferirDadosDaOperacao } from "./lib/dadosDaOperacao";
+import { ENDERECO_OBRA_VAZIO } from "@contabilidade/shared";
 import { DadosDaOperacao } from "./DadosDaOperacao";
 import { PreviaNota } from "./PreviaNota";
 
@@ -1066,7 +1067,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     return (evento) => {
       const alvo = evento.target;
       const valor = alvo.type === "checkbox" ? alvo.checked : alvo.value;
-      setForm((anterior) => ({ ...anterior, [nome]: valor }));
+      setForm((anterior) => ({ ...anterior, ...(nome === "obraTipo" ? { ...ENDERECO_OBRA_VAZIO, obraCodigo: "" } : {}), [nome]: valor }));
     };
   }
 

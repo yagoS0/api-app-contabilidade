@@ -1,4 +1,5 @@
 import { TRACO, brl, fmtCnpj, fmtDateBr, fmtDoc, pct, texto } from "../../lib/format";
+import { resumoEnderecoObra } from "@contabilidade/shared";
 
 /**
  * PRÉ-VISUALIZAÇÃO AO VIVO da nota — o vocabulário `.nfse-preview` do protótipo
@@ -86,7 +87,7 @@ export function PreviaNota({ empresa, valores }) {
         </div>
       </section>
 
-      {dadosDaOperacao?.payload.obra && <section><h3>Obra</h3><div>{dadosDaOperacao.payload.obra.cObra ? "CNO/CEI" : "CIB"}: {dadosDaOperacao.payload.obra.cObra || dadosDaOperacao.payload.obra.cCIB}</div>{dadosDaOperacao.payload.obra.inscImobFisc && <div>Inscrição imobiliária: {dadosDaOperacao.payload.obra.inscImobFisc}</div>}</section>}
+      {dadosDaOperacao?.payload.obra && <section><h3>Obra</h3>{dadosDaOperacao.payload.obra.end ? <div>Endereço da obra: {resumoEnderecoObra(dadosDaOperacao.payload.obra.end)}</div> : <div>{dadosDaOperacao.payload.obra.cObra ? "CNO/CEI" : "CIB"}: {dadosDaOperacao.payload.obra.cObra || dadosDaOperacao.payload.obra.cCIB}</div>}{dadosDaOperacao.payload.obra.inscImobFisc && <div>Inscrição imobiliária: {dadosDaOperacao.payload.obra.inscImobFisc}</div>}</section>}
       {dadosDaOperacao?.payload.destinatario && <section><h3>Destinatário do serviço</h3><div>{dadosDaOperacao.payload.destinatario.nome}</div><div>{fmtDoc(dadosDaOperacao.payload.destinatario.cnpjCpf)}</div></section>}
       {dadosDaOperacao && !dadosDaOperacao.ok && <p role="alert">Revise os dados da operação antes de emitir.</p>}
       <section>

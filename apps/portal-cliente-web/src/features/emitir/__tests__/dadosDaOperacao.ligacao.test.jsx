@@ -161,3 +161,49 @@ test("usar outra nota como modelo não reaproveita retenções ou dados especiai
   for(const campo of ["vRetIRRF","vRetCP","obraCodigo","obraInscricao","destinatarioDoc","destinatarioNome"])
     expect(document.getElementById("emitir-"+campo)).toHaveValue("");
 });
+
+const preencherEnderecoObra = () => {
+  fireEvent.change(document.getElementById("emitir-obraTipo"), { target: { value: "end" } });
+  for (const [k, value] of Object.entries({ CEP: "01551-020", xLgr: "Rua da obra", nro: "0", xCpl: "Bloco A", xBairro: "Centro" }))
+    fireEvent.change(document.getElementById(`emitir-obra${k}`), { target: { value } });
+};
+test("endereço da obra aparece na prévia e no payload sem reutilizar tomador", async () => {
+  comPerfis([]); await renderizar(); await preencherOMinimo(); preencherOperacao(); preencherEnderecoObra();
+  expect(screen.getByText(/o CEP da obra deve pertencer ao município da prestação/)).toBeInTheDocument();
+  expect(within(screen.getByLabelText("Pré-visualização da nota")).getByText("Inscrição imobiliária: 987")).toBeInTheDocument();
+  expect(within(screen.getByLabelText("Pré-visualização da nota")).getByText(/Rua da obra · 0 · Bloco A · Centro · CEP 01551020/)).toBeInTheDocument();
+  await submeter();
+  expect(payloadsEnviados).toHaveLength(1);
+  expect(payloadsEnviados[0].obra).toEqual({ inscImobFisc: "987", end: { CEP: "01551020", xLgr: "Rua da obra", nro: "0", xCpl: "Bloco A", xBairro: "Centro" } });
+  expect(payloadsEnviados[0].tomador.endereco.xLgr).toBe("RUA X");
+});
+test("trocar tipo limpa endereço e identificadores; trocar empresa limpa a alternativa", async () => {
+  comPerfis([]); const r = await renderizar(); preencherOperacao(); preencherEnderecoObra();
+  fireEvent.change(document.getElementById("emitir-obraTipo"), { target: { value: "cCIB" } });
+  expect(document.getElementById("emitir-obraCodigo")).toHaveValue("");
+  expect(document.getElementById("emitir-obraInscricao")).toHaveValue("987");
+  fireEvent.change(document.getElementById("emitir-obraTipo"), { target: { value: "end" } });
+  expect(document.getElementById("emitir-obraCEP")).toHaveValue("");
+  preencherEnderecoObra();
+  r.rerender(<StrictMode><EmitirNotaPage empresa={{ ...EMPRESA, companyId: "outra" }} /></StrictMode>);
+  await act(async () => {});
+  expect(document.getElementById("emitir-obraTipo")).toHaveValue("cObra");
+  fireEvent.change(document.getElementById("emitir-obraTipo"), { target: { value: "end" } });
+  expect(document.getElementById("emitir-obraCEP")).toHaveValue("");
+});
+
+test("endereço incompleto impede submit e apagar tudo limpa a obra", async () => {
+  comPerfis([]);
+  const modelo = { companyId: EMPRESA.companyId, campos: { descricao: "Modelo" }, avisos: [], origem: { numero: "123" } };
+  render(<StrictMode><EmitirNotaPage empresa={EMPRESA} modelo={modelo} aoDescartarModelo={() => {}} /></StrictMode>);
+  await act(async () => {}); await preencherOMinimo();
+  fireEvent.change(document.getElementById("emitir-obraTipo"), { target: { value: "end" } });
+  await submeter();
+  expect(payloadsEnviados).toHaveLength(0);
+  expect(document.getElementById("emitir-operacao-erro")).toHaveFocus();
+  preencherEnderecoObra();
+  fireEvent.click(screen.getByRole("button", { name: "Apagar tudo" }));
+  expect(document.getElementById("emitir-obraTipo")).toHaveValue("cObra");
+  fireEvent.change(document.getElementById("emitir-obraTipo"), { target: { value: "end" } });
+  expect(document.getElementById("emitir-obraCEP")).toHaveValue("");
+});

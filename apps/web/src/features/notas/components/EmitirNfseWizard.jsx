@@ -150,6 +150,7 @@ import {
 } from "../lib/consultaTomador";
 
 import { conferirDadosDaOperacao } from "../lib/dadosDaOperacao";
+import { CAMPOS_ENDERECO_OBRA, ENDERECO_OBRA_VAZIO, AVISO_CEP_OBRA, resumoEnderecoObra } from "@contabilidade/shared";
 
 const PASSOS = ["Tomador", "Serviço e valores", "Conferência"];
 const PASSO_CONFERIR = 2;
@@ -307,7 +308,10 @@ export function EmitirNfseWizard({
   const [perfilId, setPerfilId] = useState("");
   const [buscaPerfil, setBuscaPerfil] = useState(null);
   const [retencoesComplementares, setRetencoesComplementares] = useState({ vRetIRRF: "", vRetCP: "" });
-  const [obra, setObra] = useState({ tipo: "cObra", codigo: "", inscImobFisc: "" });
+  const [obra, setObra] = useState({ tipo: "cObra", codigo: "", inscImobFisc: "", ...ENDERECO_OBRA_VAZIO });
+  useEffect(() => {
+    setObra({ tipo: "cObra", codigo: "", inscImobFisc: "", ...ENDERECO_OBRA_VAZIO });
+  }, [companyId, valoresIniciais]);
   const [destinatario, setDestinatario] = useState({ cnpjCpf: "", nome: "" });
   const [problemaPerfil, setProblemaPerfil] = useState(apiPerfis ? "Carregando os perfis de emissão…" : null);
   useEffect(() => {
@@ -661,7 +665,7 @@ export function EmitirNfseWizard({
   // vermelho fica para o que está preenchido e não serve — e-mail sem arroba, endereço pela
   // metade, percentual fora de 0–100, retenção sem alíquota — e para o que a EMPRESA não tem.
   // Os dois desabilitam o Continuar igualmente: a cor fala do que fazer, não do que vale.
-  const conferenciaOperacao = conferirDadosDaOperacao({ ...retencoesComplementares, obraTipo: obra.tipo, obraCodigo: obra.codigo, obraInscricao: obra.inscImobFisc, destinatarioDoc: destinatario.cnpjCpf, destinatarioNome: destinatario.nome }, valor);
+  const conferenciaOperacao = conferirDadosDaOperacao({ ...retencoesComplementares, ...obra, obraTipo: obra.tipo, obraCodigo: obra.codigo, obraInscricao: obra.inscImobFisc, destinatarioDoc: destinatario.cnpjCpf, destinatarioNome: destinatario.nome }, valor);
   const problemasDaNota = useMemo(() => {
     const problemaAliquota = problemaAliquotaComRetencao({ issRetido: servico.issRetido, aliquota: aliquotaParaRetencao });
     const valorEmBranco = !String(servico.valorServicos).trim();
@@ -802,7 +806,7 @@ export function EmitirNfseWizard({
     setRejeicao(null);
     const perfilNaConfirmacao = perfilEscolhido ? `Perfil de serviço: ${perfilEscolhido.nome} (${perfilEscolhido.codigoServicoNacional})\n\n` : "";
     const retencoesNaConfirmacao = Object.entries(retencoesComplementares).filter(([, v]) => v !== "").map(([k, v]) => `${k === "vRetIRRF" ? "IRRF retido" : "Previdência retida"}: R$ ${Number(v).toFixed(2).replace(".", ",")}`).join("\n");
-    const especiaisNaConfirmacao = [obra.codigo ? `Obra (${obra.tipo === "cCIB" ? "CIB" : "CNO/CEI"}): ${obra.codigo}${obra.inscImobFisc ? `; inscrição imobiliária: ${obra.inscImobFisc}` : ""}` : "", destinatario.cnpjCpf ? `Destinatário IBS/CBS: ${destinatario.nome} — ${destinatario.cnpjCpf}` : ""].filter(Boolean).join("\n");
+    const especiaisNaConfirmacao = [conferenciaOperacao.payload.obra?.end ? `Endereço da obra: ${resumoEnderecoObra(conferenciaOperacao.payload.obra.end)}${obra.inscImobFisc ? `; inscrição imobiliária: ${obra.inscImobFisc}` : ""}` : obra.codigo ? `Obra (${obra.tipo === "cCIB" ? "CIB" : "CNO/CEI"}): ${obra.codigo}${obra.inscImobFisc ? `; inscrição imobiliária: ${obra.inscImobFisc}` : ""}` : "", destinatario.cnpjCpf ? `Destinatário IBS/CBS: ${destinatario.nome} — ${destinatario.cnpjCpf}` : ""].filter(Boolean).join("\n");
     if (!window.confirm(linhasDaPreviaFiscal(previaFiscal.dados).join('\n') + '\n\n' + perfilNaConfirmacao + textoDeConfirmacao(dadosDaDeclaracao) + (retencoesNaConfirmacao ? `\n\n${retencoesNaConfirmacao}` : "") + (especiaisNaConfirmacao ? `\n\n${especiaisNaConfirmacao}` : ""))) return;
     setEnviando(true);
     try {
@@ -1411,12 +1415,18 @@ export function EmitirNfseWizard({
         </div>
 
         <section id="nfse-operacao" tabIndex={-1} aria-label="Dados específicos da operação" style={{ marginTop: 16, display: passo === 0 ? "none" : undefined }}>
+        {passo === PASSO_CONFERIR && conferenciaOperacao.payload.obra?.end && <p>Endereço da obra: {resumoEnderecoObra(conferenciaOperacao.payload.obra.end)}{obra.inscImobFisc ? `; inscrição imobiliária: ${obra.inscImobFisc}` : ""}</p>}
         <details style={{ marginBottom: 16 }}>
-          <summary>Obra e destinatário IBS/CBS {obra.codigo || destinatario.cnpjCpf ? "— dados informados" : "— quando aplicáveis"}</summary>
+          <summary>Obra e destinatário IBS/CBS {obra.tipo === "end" || obra.codigo || destinatario.cnpjCpf ? "— dados informados" : "— quando aplicáveis"}</summary>
           <fieldset disabled={passo === PASSO_CONFERIR || enviando}>
             <legend>Obra desta prestação</legend>
-            <label>Tipo de identificador<select value={obra.tipo} onChange={(e) => setObra((o) => ({ ...o, tipo: e.target.value, codigo: "" }))}><option value="cObra">CNO / CEI</option><option value="cCIB">CIB</option></select></label>
+            <label>Tipo de identificador<select value={obra.tipo} onChange={(e) => setObra(o => ({ ...o, tipo: e.target.value, codigo: "", ...ENDERECO_OBRA_VAZIO }))}><option value="cObra">CNO / CEI</option><option value="cCIB">CIB</option><option value="end">Endereço nacional da obra</option></select></label>
+            {obra.tipo === "end" ? <>
+              <p id="nfse-obra-aviso">{AVISO_CEP_OBRA}</p>
+              {CAMPOS_ENDERECO_OBRA.map(([k, rotulo, limite]) => <label key={k} style={{ display: "block" }}>{rotulo}<input value={obra[`obra${k}`]} maxLength={limite} inputMode={k === "CEP" ? "numeric" : undefined} aria-describedby="nfse-obra-aviso" onChange={(e) => setObra(o => ({ ...o, [`obra${k}`]: e.target.value }))} /></label>)}
+            </> : <>
             <label>Identificador da obra<input value={obra.codigo} onChange={(e) => setObra((o) => ({ ...o, codigo: e.target.value }))} /></label>
+            </>}
             <label>Inscrição imobiliária fiscal (opcional)<input value={obra.inscImobFisc} onChange={(e) => setObra((o) => ({ ...o, inscImobFisc: e.target.value }))} /></label>
           </fieldset>
           <fieldset disabled={passo === PASSO_CONFERIR || enviando}>

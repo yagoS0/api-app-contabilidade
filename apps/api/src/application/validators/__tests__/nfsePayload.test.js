@@ -189,3 +189,14 @@ describe("documento do tomador", () => {
     expect(comDoc("1114447773").error).toBe("tomador_documento_invalido");
   });
 });
+
+it("endereço da obra viaja normalizado e separado do endereço do tomador", () => {
+  const end = { CEP: "01551-020", xLgr: " Rua da obra ", nro: "0", xBairro: " Centro " };
+  const r = validateNfsePayload({ ...BASE, obra: { end } });
+  expect(r.ok).toBe(true);
+  expect(r.data.obra).toEqual({ end: { CEP: "01551020", xLgr: "Rua da obra", nro: "0", xBairro: "Centro" } });
+});
+it.each([
+  { endExt: {} }, { end: { CEP: "01551020" } },
+  { cObra: "1", end: { CEP: "01551020", xLgr: "Rua", nro: "0", xBairro: "Centro" } },
+])("payload recusa obra malformada %j", obra => expect(validateNfsePayload({ ...BASE, obra }).ok).toBe(false));
