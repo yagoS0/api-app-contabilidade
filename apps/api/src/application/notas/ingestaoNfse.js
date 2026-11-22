@@ -1,4 +1,5 @@
-import { normalizarDocumento } from "@contabilidade/shared/documentos-fiscais";
+import { validarVinculoDocumentoAdn } from "../../modules/nfse/public.js";
+import { validarDestinoPersistidoAdn } from "../../composition/nfseAdn.js";
 // A ÚNICA PORTA DE ENTRADA DE NFS-e NO BANCO.
 //
 // Esta função morava dentro de `adn/AdnNotasService.js` e o import manual de XML
@@ -64,43 +65,9 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
   // Antes descartávamos toda NFS-e sem `item.ChaveAcesso` (a maioria!) → nota sumia da apuração.
   if (!chaveAcesso && !idNfse) return { status: "skipped", reason: "sem_identificador" };
 
-  // Papel: EMIT se prestador é a empresa; senão DEST. NFS-e quase sempre EMIT
-  // (a empresa só recebe DFe de NFS-e em casos específicos).
-  const cnpjEmpresa = normalizarDocumento(companyCnpj);
-  const cnpjPrestador = metadata.cnpjPrestador || "";
-  const cnpjTomador = metadata.cnpjTomador || "";
-  const papel = cnpjPrestador && cnpjPrestador === cnpjEmpresa ? "EMIT" : "DEST";
-
-  // ── A nota é MESMO desta empresa? ────────────────────────────────────────────────────────
-  // Cinturão de segurança independente de como o certificado foi resolvido. Se a empresa não é nem
-  // prestadora nem tomadora, o documento não é dela — e gravar assim mesmo é o que fazia as notas
-  // do escritório aparecerem na carteira do cliente (como DEST, porque o CNPJ não batia).
-  //
-  // Isto pega uma classe inteira, não um caso: cert do escritório, A1 errado subido na empresa
-  // errada, ou qualquer futura mudança na resolução de certificado. Nenhuma delas avisa sozinha.
-  //
-  // Só rejeita quando HÁ CNPJ e ele não bate. Metadado sem nenhum dos dois (parser que não achou o
-  // campo) não é evidência de nota alheia — aí grava, porque descartar por falta de dado
-  // esconderia nota legítima, que é o erro oposto e igualmente caro.
-  //
-  // ⚠ O IMPORT MANUAL É MAIS ESTRITO QUE ISTO, de propósito, e continua sendo: lá o arquivo é
-  // escolhido por uma pessoa, e a titularidade é conferida ANTES desta chamada (`nota_nao_pertence`,
-  // que também recusa metadado sem CNPJ nenhum). Esta guarda é o piso comum, não o teto.
-  if (cnpjEmpresa && (cnpjPrestador || cnpjTomador)
-      && cnpjPrestador !== cnpjEmpresa && cnpjTomador !== cnpjEmpresa) {
-    // ⚠ ESTA RECUSA PRECISA APARECER NO LOG, com os três CNPJs.
-    //
-    // A guarda está certa em princípio, mas ela é a ÚNICA coisa no fluxo capaz de fazer uma empresa
-    // "ficar sem notas mesmo tendo emitido" em silêncio — o documento é lido, contado em
-    // `totalDocs`, e descartado sem deixar registro. Do lado de fora isso é indistinguível de "não
-    // havia nota".
-    //
-    // E há dois desfechos opostos que só os CNPJs distinguem:
-    //   • prestador = CNPJ do ESCRITÓRIO  → recusa CORRETA (é a nota do escritório, não do cliente);
-    //   • prestador = a própria empresa com outro sufixo de filial, ou CPF onde o cadastro tem CNPJ,
-    //     ou CNPJ digitado errado no cadastro → recusa INDEVIDA, e a nota legítima some.
-    //
-    // Sem esta linha não dá para saber qual dos dois aconteceu sem reprocessar tudo.
+  const vinculo = validarVinculoDocumentoAdn(companyCnpj, metadata);
+  const { empresa: cnpjEmpresa, prestador: cnpjPrestador, tomador: cnpjTomador, papel } = vinculo;
+  if (!vinculo.pertence) {
     log.warn(
       { portalClientId, cnpjEmpresa, cnpjPrestador: cnpjPrestador || null, cnpjTomador: cnpjTomador || null, chaveAcesso, idNfse },
       "[NFS-e] documento RECUSADO: nem prestador nem tomador é a empresa",
@@ -111,6 +78,8 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     };
   }
 
+  // Revalidar o destino persistido: companyCnpj recebido não autoriza outro PortalClient.
+  await validarDestinoPersistidoAdn(tx, portalClientId, cnpjEmpresa);
   await bloquearDocumentosDaEmpresa(tx, portalClientId);
   const competenciaDate = metadata.competencia || metadata.dataEmissao || null;
   const periodo = metadata.competencia ? await situacaoDoPeriodo(tx, { portalClientId, competencia: metadata.competencia }) : null;

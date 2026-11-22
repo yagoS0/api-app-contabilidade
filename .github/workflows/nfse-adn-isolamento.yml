@@ -1,0 +1,62 @@
+name: NFS-e ADN isolamento
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/src/**'
+      - 'apps/api/prisma/**'
+      - 'package*.json'
+      - '.github/workflows/nfse-adn-isolamento.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  adn-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://adn_test:synthetic_ci_only@127.0.0.1:55491/adn_governance_test
+      ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://adn_test:synthetic_ci_only@127.0.0.1:55491/adn_governance_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: PostgreSQL 16 descartável restrito ao loopback
+        run: |
+          docker run --detach --name adn-test --network host \
+            -e POSTGRES_USER=adn_test -e POSTGRES_PASSWORD=synthetic_ci_only \
+            -e POSTGRES_DB=adn_governance_test postgres:16 \
+            -c listen_addresses=127.0.0.1 -c port=55491
+          for attempt in $(seq 1 30); do
+            if docker exec adn-test pg_isready -h 127.0.0.1 -p 55491 -U adn_test -d adn_governance_test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - run: npm ci --include=dev
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Preparar exclusivamente o PostgreSQL descartável
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Isolamento, HTTP, persistência e concorrência sem provedor real
+        run: >-
+          npm test -w @contabilidade/api -- --runInBand --runTestsByPath
+          src/infrastructure/db/__tests__/AdnRepositoryIsolamento.test.js
+          src/infrastructure/db/__tests__/AdnRepositoryIsolamento.postgres.test.js
+          src/routes/__tests__/adnIsolamentoHttp.postgres.test.js
+          src/application/nfse/__tests__/adnVinculoDocumental.test.js
+          src/application/nfse/__tests__/adnSyncIsolamento.test.js
+          src/application/notas/__tests__/adnIsolamentoPersistencia.postgres.test.js
+          src/application/notas/__tests__/adnCnpjGuard.test.js
+          src/application/notas/__tests__/adnCursorNsu.test.js
+          src/application/notas/__tests__/adnEventoPersistido.test.js
+          src/application/notas/__tests__/adnTransporte.test.js
+          src/application/notas/__tests__/adnErroEco.test.js
+          src/routes/firm/__tests__/adnContratosRota.test.js
