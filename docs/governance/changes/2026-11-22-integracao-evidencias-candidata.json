@@ -1,0 +1,28 @@
+{
+  "summary": "Proposta inativa de evidências de integração: diagnóstico do limite Railway, declaração explícita do proprietário e ensaio puro do gate com dados sintéticos.",
+  "operationalImpact": "Nenhuma regra operacional do produto alterada. Contexto dono: governança de integração; consumidores: Principal/Controller e futura conferência CI/CD. Não modifica POLICY, AGENTS, controlador, gates, workflows, arquitetura do produto, APIs, frontend, banco, fiscal ou Railway. Não é autorização para integrar #307/#308 nem esta proposta.",
+  "risk": "high",
+  "domains": ["governance", "ci", "documentation"],
+  "tests": [
+    "Governança vigente: npm run governance:test, 40 aprovados, zero ignorados.",
+    "Arquitetura: verificar.test.cjs e fronteiras.test.cjs, 5 aprovados; diagnose 5019 para 5019, zero acréscimos. Fonte API idêntica à main; comparação com árvore do #307 que difere apenas em teste e registro de governança.",
+    "Ensaio candidato sintético sem rede: 35/35 aprovados em gate.candidate.test.mjs, zero ignorados. Testes do runner: 48/48 aprovados. Total local: 128 testes aprovados. Não integrado aos gates ou workflows vigentes.",
+    "Impacto/estrutura válidos; nove perfis/configurações TOML válidos; dois links Markdown relativos válidos; diff sem erros de whitespace. CI hospedada será registrada no PR sem atribuir ao ensaio cobertura que os workflows não executam."
+  ],
+  "rollback": "Reverter somente os novos arquivos candidatos; nenhuma configuração ou política vigente foi ativada. Preservar evidências históricas; não desfaz merges nem autoriza rollback de produção.",
+  "humanDecisions": [
+    "Elaboração e PR em rascunho autorizados. Ativação, merge desta proposta, #307/#308 e qualquer deploy permanecem proibidos nesta entrega.",
+    "Aprovar separadamente validade proposta de evidências, fluxo de declaração e futura adoção; confirmar origem das evidências continua responsabilidade humana do Principal/proprietário.",
+    "Homologação futura do acesso mínimo project:viewer e equivalência painel/gatilhos depende de mecanismo autorizado, sem ampliar permissões automaticamente."
+  ],
+  "independentReviews": {
+    "security": "integration_security_review: favorável ao candidato inativo; datas impossíveis corrigidas, identidade/expiração/veto técnico e ausência de efeitos revisados. Hash do código 71FDA51BF334526E3E01E010155D72167A2033EF89E435F2DF64ABF87189D055.",
+    "infrastructure": "integration_railway_research: revisão independente da proposta escrita pelo Principal, favorável após normalização explícita das limitações. Pesquisa oficial não foi apresentada como consulta privada à configuração Altan.",
+    "architecture": "integration_arch_review: favorável à proposta inativa; controlador, POLICY, AGENTS, gates e workflows intactos. Nenhum parecer autoriza ativação ou integração."
+  },
+  "limitations": [
+    "Fluxo separado de mudança da própria governança, conduzido pelo Principal com revisões independentes; controlador funcional não foi iniciado para alterar seus próprios gates. Não declarado ready_for_human.",
+    "Candidato valida estrutura e coerência; não autentica mensagens, checks ou respostas API. Sem adaptador real, sem execução de merge/deploy e sem substituição de branch protection.",
+    "CI geral da base possui falha conhecida de relógio corrigida no #307 ainda não integrado; eventual falha hospedada deve ser registrada, não ignorada nem reparada neste escopo."
+  ]
+}
