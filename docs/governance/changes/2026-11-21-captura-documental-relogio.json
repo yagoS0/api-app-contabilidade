@@ -1,0 +1,16 @@
+{
+  "summary": "Fixar o relógio da fixture de captura documental, restaurando os timers ao final de cada teste.",
+  "operationalImpact": "Sem impacto operacional. Somente teste Fiscal/API: a competência 2026-10 continua exercitando DAS normal antes do vencimento. Guias e Contabilidade mantêm as mesmas asserções documentais e de provisão; Operações, Comunicação, Comercial, Portal e Web são consumidores transitivos sem alteração. Nenhuma mudança em seleção normal/cobrança, autorização, contratos, persistência, regras fiscais, workers ou transporte.",
+  "risk": "high",
+  "domains": ["accounting", "api", "commercial", "communication", "fiscal", "guides", "operations", "portal", "web", "documentation", "governance"],
+  "tests": [
+    "Base 1bfe21340db796ff668773c1a015ad07da2cce92: reproduzidas as duas falhas emitirDasCobranca is not a function após o vencimento da fixture.",
+    "Candidata: 110 testes aprovados em oito suítes de captura, interpretação, contabilidade e recuperação; 42 snapshots preservados.",
+    "Governança: 40 testes aprovados; arquitetura: 5 testes aprovados; diagnose 5019 para 5019, zero novas violações. Referência operacional canônica e fallback com SHA-256 idêntico.",
+    "Resultados da regressão ampliada e CI hospedada serão registrados no PR. Nenhuma chamada fiscal ou banco produtivo utilizado."
+  ],
+  "rollback": "Reverter este commit de teste e registro. Não requer migração, restauração ou mudança de produção; a dependência do relógio voltaria a existir no teste.",
+  "humanDecisions": ["Autorizados correção test-only e PR; merge, deploy e B2 não autorizados."],
+  "limitations": ["Controlador funcional não iniciado: não há alteração funcional. Não se declara ready_for_human. CI e aprovação humana são condições separadas."],
+  "finalReview": "Revisão independente captura_clock_review favorável ao diff do teste sobre 1bfe21340db796ff668773c1a015ad07da2cce92: relógio UTC coerente com a fixture, restauração por afterEach, asserções preservadas e nenhuma mudança produtiva. Parecer não substitui CI ou autorização de integração."
+}
