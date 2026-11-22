@@ -4,6 +4,7 @@ import fs from "node:fs";
 import axios from "axios";
 import { gunzipSync } from "node:zlib";
 import { parseXmlMetadata } from "./AdnXmlMetadata.js";
+import { validarVinculoDocumentoAdn } from "../../modules/nfse/public.js";
 import { parseDate } from "../../utils/date.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
@@ -178,6 +179,11 @@ export class AdnSyncService {
       err.code = "COMPANY_NOT_FOUND";
       throw err;
     }
+    if (company && normalizarDocumento(company.cnpj) !== cnpj) {
+      const err = new Error("adn_company_cnpj_mismatch");
+      err.code = "ADN_COMPANY_CNPJ_MISMATCH";
+      throw err;
+    }
     const certInfo = company ? await resolveCompanyCert(company) : null;
     if (company && !certInfo?.pfxBuffer) {
       const err = new Error("adn_cert_required");
@@ -238,7 +244,13 @@ export class AdnSyncService {
         ...metadata,
       };
 
-      const result = await AdnRepository.upsertDocument(payload);
+      const vinculo = validarVinculoDocumentoAdn(cnpj, metadata);
+      if (!vinculo.pertence) {
+        const err = new Error("adn_documento_outro_cnpj");
+        err.code = "ADN_DOCUMENTO_OUTRO_CNPJ";
+        throw err;
+      }
+      const result = await AdnRepository.upsertDocument(payload, { cnpjConsulta: cnpj });
       if (payload.tipoDocumento === "EVENTO" && payload.chaveAcesso) {
         await AdnRepository.updateByChaveAcesso(payload.chaveAcesso, {
           situacao: metadata.situacao,
@@ -249,7 +261,7 @@ export class AdnSyncService {
           prestadorNome: metadata.prestadorNome,
           cnpjTomador: metadata.cnpjTomador,
           tomadorNome: metadata.tomadorNome,
-        });
+        }, { cnpjConsulta: cnpj });
       }
       if (result.action) processed += 1;
     }
