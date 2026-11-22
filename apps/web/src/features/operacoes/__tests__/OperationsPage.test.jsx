@@ -13,7 +13,8 @@ it('paga sem envio continua pendente de envio; barras e lista usam empresas e ei
   expect(screen.getByRole('button',{name:'Enviado 0/1 empresas'})).toBeEnabled();
   fireEvent.click(screen.getByRole('button',{name:'Disponível 1/1 empresas'}));
   const coverage = within(screen.getByRole('region', { name: 'Empresas · Guias disponivel' }));
-  expect(await coverage.findByText('Disponível', {exact:true})).toBeInTheDocument();
+  const availableGuide=await coverage.findByRole('button',{name:'DAS · Disponível · Alfa'});
+  expect(availableGuide).toBeInTheDocument();expect(availableGuide).toHaveTextContent(/^DAS$/);expect(coverage.queryByText('Disponível',{exact:true})).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'Pago 1/1 empresas'})).toBeEnabled();expect(screen.getByRole('button',{name:'Enviado 0/1 empresas'})).toBeEnabled();
   fireEvent.click(coverage.getByRole('button',{name:'DAS · Disponível · Alfa'}));expect(screen.getByText('Pagamento já confirmado')).toBeInTheDocument();
   fireEvent.keyDown(document,{key:'Escape'});
@@ -214,8 +215,8 @@ it('Transmitido sem vínculo não inventa valores, preserva documentos e navega�
  const table=within(screen.getByRole('region',{name:'Transmissões vinculadas'}));
  for(const column of ['Empresa','Receita transmitida','Tributos','Documentos','Ações']) expect(table.getByRole('columnheader',{name:column})).toBeInTheDocument();
  expect(table.queryByRole('columnheader',{name:'Confirmado'})).not.toBeInTheDocument();expect(table.queryByRole('columnheader',{name:'Calculado'})).not.toBeInTheDocument();
- expect(await table.findByText('Leitura vinculada indisponível nesta conexão.')).toBeInTheDocument();expect(table.getAllByText(/Não disponível/)).toHaveLength(1);expect(table.getAllByText('Indisponível')).toHaveLength(2);expect(table.queryByText(/R\$/)).not.toBeInTheDocument();
- expect(table.getByRole('button',{name:'Baixar recibo'})).toBeDisabled();expect(table.getByRole('button',{name:'Baixar extrato'})).toBeDisabled();
+ expect(await table.findByText('Leitura vinculada indisponível nesta conexão.')).toBeInTheDocument();expect(table.getAllByText(/Não disponível/)).toHaveLength(1);expect([table.getByRole('button',{name:'Baixar recibo · Indisponível'}),table.getByRole('button',{name:'Baixar extrato · Indisponível'})]).toHaveLength(2);expect(table.queryByText('Indisponível',{exact:true})).not.toBeInTheDocument();expect(table.queryByText(/R\$/)).not.toBeInTheDocument();
+ expect(table.getByRole('button',{name:'Baixar recibo · Indisponível'})).toBeDisabled();expect(table.getByRole('button',{name:'Baixar extrato · Indisponível'})).toBeDisabled();
  for(const action of ['Retificar','Abrir empresa']) expect(table.getByRole('link',{name:action})).toHaveAttribute('href','/companies/a/cadastro-fiscal?competencia=2026-10');
  fireEvent.click(table.getByRole('button',{name:'Detalhes da transmissão de Alfa'}));expect(screen.getByText('Retificar abre a apuração; não executa reabertura.')).toBeInTheDocument();
 });

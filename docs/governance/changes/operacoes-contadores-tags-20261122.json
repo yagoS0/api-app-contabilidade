@@ -1,0 +1,20 @@
+{
+  "summary": "Alinha contador e filtro Calculado, corrige leitura por canal e aplica fundo integral às tags de guias sem disponibilidade escrita.",
+  "risk": "high",
+  "domains": ["accounting", "commercial", "communication", "documentation", "guides", "operations", "portal", "web"],
+  "operationalImpact": "Correção de consistência e apresentação, sem nova regra operacional. Preserva R01/R02/R11/R19/R21/R22, elegibilidade de comandos, cálculo, transmissão, destinatários, pagamento e mês fechado. Nenhuma alteração em API, schema, workers, configurações ou ativações. Produto validado no snapshot 336dcb9a2bc2b109d07fa6630e4419874a8c663d92108c346e54fde9e6a76ccd; somente metadados completados após os testes.",
+  "tests": [
+    "Fechamento complementar preserva execução original interrompida e resultados falhos; não atribui ready_for_human ao controlador. Evidências materiais em ALTAN/output/operacoes-contadores-tags-20261122.",
+    "WEB fechamento-web: 600 suítes, 7134 assertions aprovadas, zero falhas/pendências/não executadas; reuso auditado por hashes, dependências e ponteiros brutos.",
+    "API fechamento-api-final: 831 suítes identificadas, 807 integralmente aprovadas, 23 skipped e uma com assertions pendentes; 13745 assertions aprovadas, zero falhas, 154 pendentes, zero suítes não executadas; fontes inalteradas. Pendências não são aprovação.",
+    "Portal original: 102 suítes/1610 assertions aprovadas; governança original: 88 testes aprovados; provas compatíveis, arquivos/dependências intactos.",
+    "Build final WEB código zero; build portal aprovado. Visual computador/celular, paginação e hover real dos componentes com dados fictícios e operações externas bloqueadas.",
+    "Revisões independentes UI/UX/comunicação e contratos/backend/domínio aprovadas no snapshot final. Parecer sistêmico e CI exigidos antes de integrar. Relatório docs/operacoes-contadores-tags-20261122.md."
+  ],
+  "rollback": "Reverter somente o commit desta correção e republicar frontend anterior. Sem migração, alteração de variáveis ou dados a restaurar. Preservar outros trabalhos e evidências.",
+  "humanDecisions": [
+    "Usuário autorizou implementar, reaproveitar testes válidos, abrir PR e publicar na main somente após CI e revisões.",
+    "Não ativar automações nem alterar dados reais; inspeção produtiva somente leitura. Nenhum ato fiscal ou envio real autorizado.",
+    "Disponibilidade deve ser representada pelo fundo completo da tag; nomes acessíveis e detalhes continuam preservados. Pendências anteriores do plano não são encerradas por esta entrega."
+  ]
+}
