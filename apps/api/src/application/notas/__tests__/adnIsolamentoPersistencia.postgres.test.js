@@ -1,7 +1,8 @@
 // PostgreSQL descartável explícito; fixtures próprias, repetíveis. Não usa DATABASE_URL/dotenv.
 jest.mock('../../../infrastructure/db/prisma.js', () => {
   const raw = process.env.ALTAN_GOVERNANCE_TEST_DATABASE_URL;
-  if (!raw) return { prisma: {} };
+  if (process.env.ALTAN_ADN_TESTE_POSTGRES16 !== '1') return { prisma: {} };
+  if (!raw) throw Error('URL explícita obrigatória para o ensaio ADN PostgreSQL16');
   const url = new URL(raw);
   if (process.env.NODE_ENV !== 'test' || !['postgres:', 'postgresql:'].includes(url.protocol)
     || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
@@ -15,7 +16,7 @@ import { upsertNfseFromItem } from '../ingestaoNfse.js';
 import { randomUUID, randomInt } from 'node:crypto';
 import { assertDisposablePostgres } from '../../../test-support/disposablePostgresGuard.js';
 
-const pg = process.env.ALTAN_GOVERNANCE_TEST_DATABASE_URL ? describe : describe.skip;
+const pg = process.env.ALTAN_ADN_TESTE_POSTGRES16 === '1' ? describe : describe.skip;
 pg('Persistência moderna ADN isolada', () => {
 const tag = randomUUID();
 const A = String(70000000000000 + randomInt(1000000000000));

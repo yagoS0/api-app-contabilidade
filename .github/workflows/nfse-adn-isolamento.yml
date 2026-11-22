@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 15
     env:
       NODE_ENV: test
+      ALTAN_ADN_TESTE_POSTGRES16: '1'
       DATABASE_URL: postgresql://adn_test:synthetic_ci_only@127.0.0.1:55491/adn_governance_test
       ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://adn_test:synthetic_ci_only@127.0.0.1:55491/adn_governance_test
     steps:

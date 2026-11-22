@@ -41,7 +41,7 @@ Referência operacional: `4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830
 
 - 35 testes focais aprovados em 6 suítes, incluindo 11 PostgreSQL 16: keyset, cursores, HTTP/ACL, vínculo, ausência de escrita, replay, colisão NSU, evento parcial e concorrência em duas conexões.
 - 6 testes de `adnSyncIsolamento`: provedor falso, empresa divergente antes do certificado, documento alheio/inconclusivo, lote fora de ordem, vazio e falha após item válido.
-- Sem variável explícita de banco: 11 testes PostgreSQL ignorados sem conectar. Com banco, identidade real, versão 16, usuário, nome e loopback são verificados antes das escritas.
+- A suíte PG16 exige `ALTAN_ADN_TESTE_POSTGRES16=1` e URL explícita. Sem a seleção dedicada: 11 testes ignorados sem conectar, mesmo se outro job fornecer banco PG15. Seleção ativa sem URL falha. Com banco, identidade real, versão 16, usuário, nome e loopback são verificados antes das escritas.
 - 88 testes de governança e 5 do verificador aprovados. Diagnose: base 5019, candidata 5019, zero novas violações.
 - Workflow dedicado usa PostgreSQL 16 descartável, ligado somente ao loopback do runner, sem credenciais produtivas ou transporte externo.
 - Regressão ampliada: 2646 aprovados e 2 expectativas antigas de gravação sem identidade rejeitadas. Os dois testes foram atualizados para exigir recusa e zero escrita; a suíte afetada passou 15/15 na reexecução. Os demais 141 arquivos passaram. CI hospedada deve conferir o SHA final; não se declara reexecução integral local após ajuste apenas dos testes.
@@ -66,3 +66,5 @@ Revisores independentes apontaram e foram tratados: import profundo, nova consul
 ## Rollback
 
 Não há migração nem transformação de dados a reverter. Reverter apenas os commits deste PR restaura o código anterior, mas **reabre o defeito de isolamento**; não é rollback produtivo seguro por si só. Em publicação futura, preferir correção pontual ou suspensão supervisionada da consulta vulnerável, mediante autorização. Nunca apagar documentos ou retroceder cursor automaticamente. Este PR não autoriza publicação, restauração ou reparação fiscal.
+
+A primeira CI aprovou o workflow focal (87/87) e falhou na seleção ampla de testes do job usability-regression (PostgreSQL15). A seleção explícita do ensaio PG16 evita executar sua suíte no banco de outro job; não remove testes nem relaxa versão/identidade. O workflow dedicado continua obrigatório para esta evidência.

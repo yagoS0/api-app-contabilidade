@@ -1,7 +1,8 @@
 // Somente PostgreSQL 16 descartável explícito; nunca usa DATABASE_URL/dotenv.
 jest.mock('../prisma.js', () => {
   const raw = process.env.ALTAN_GOVERNANCE_TEST_DATABASE_URL;
-  if (!raw) return { prisma: {} };
+  if (process.env.ALTAN_ADN_TESTE_POSTGRES16 !== '1') return { prisma: {} };
+  if (!raw) throw Error('URL explícita obrigatória para o ensaio ADN PostgreSQL16');
   const url = new URL(raw);
   if (process.env.NODE_ENV !== 'test' || !['postgres:', 'postgresql:'].includes(url.protocol)
     || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
@@ -15,7 +16,7 @@ import { AdnRepository } from '../AdnRepository.js';
 import { assertDisposablePostgres } from '../../../test-support/disposablePostgresGuard.js';
 import { randomUUID, randomInt, randomBytes } from 'node:crypto';
 
-const pg = process.env.ALTAN_GOVERNANCE_TEST_DATABASE_URL ? describe : describe.skip;
+const pg = process.env.ALTAN_ADN_TESTE_POSTGRES16 === '1' ? describe : describe.skip;
 pg('ADN: isolamento real em PostgreSQL16', () => {
   const tag = randomUUID();
   const A = String(70000000000000 + randomInt(1000000000000));
