@@ -11,7 +11,7 @@ const CARTEIRA = [
   { companyId: "c2", razao: "BETA PRESUMIDO SA", cnpj: "22222222000122", legacyCompany: { regimeTributario: "LUCRO_PRESUMIDO" } },
 ];
 
-test('entrada e recarga do deep link restauram competência e tabela contextual; seleção seguinte remove filtro antigo', async () => {
+test('entrada e recarga do deep link restauram competência e modal; seleção seguinte remove filtro antigo', async () => {
  const mockApi=api();
  function Harness() {
   const [competencia,setCompetencia]=useState('2026-09');
@@ -21,19 +21,19 @@ test('entrada e recarga do deep link restauram competência e tabela contextual;
     dashboardCompetencia={competencia} onChangeCompetencia={setCompetencia}/></>;
  }
  const mount=url=>mountRouter(<WorkspaceNavigationProvider><Harness/></WorkspaceNavigationProvider>, [url]);
- const url='/companies?visao=operacoes&operacoesEtapa=calculado&operacoesLista=missing&operacoesCompetencia=2026-08';
+ const url='/companies?visao=operacoes&operacoesEtapa=calculado&operacoesLista=missing&operacoesCompetencia=2026-08&operacoesModal=aberto';
  let view=mount(url);
- expect(await screen.findByRole('region', { name: 'Tabela contextual: Calculado' })).toHaveTextContent('Competência 2026-08');
+ expect(await screen.findByRole('dialog', { name: 'Calculado · agosto de 2026' })).toBeInTheDocument();
  const saved=screen.getByTestId('url-atual').textContent;
  view.unmount();view=mount(saved);
- expect(await screen.findByRole('region', { name: 'Tabela contextual: Calculado' })).toHaveTextContent('Competência 2026-08');
+ expect(await screen.findByRole('dialog', { name: 'Calculado · agosto de 2026' })).toBeInTheDocument();
  fireEvent.keyDown(document,{key:'Escape'});
  fireEvent.click(screen.getByRole('button',{name:'Mês anterior'}));
  await waitFor(()=>expect(screen.getByTestId('url-atual')).toHaveTextContent('competencia=2026-07'));
  expect(screen.getByTestId('url-atual')).not.toHaveTextContent('operacoesEtapa');
  expect(screen.getByText('Julho de 2026')).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:/^Calculado /}));
- expect(screen.getByRole('region', { name: 'Tabela contextual: Calculado' })).toHaveTextContent('Competência 2026-07');
+ expect(screen.getByRole('dialog', { name: 'Calculado · julho de 2026' })).toBeInTheDocument();
  expect(screen.getByTestId('url-atual')).toHaveTextContent('operacoesCompetencia=2026-07');
 });
 

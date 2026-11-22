@@ -1,0 +1,29 @@
+{
+  "summary": "Implementa os sete modais aprovados de Operações com tabelas por empresa, tags por guia, filtros, seleção e rodapés fixos, preservando os motores existentes.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "documentation",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "Sem nova regra fiscal, migração ou ativação operacional. Organização visual aprovada em 22/11/2026; extensão aditiva e somente leitura das evidências de pagamento. Preservados autoria, competência, revisão documental, pausas, reservas, fechamento e distinção entre declaração e prova oficial. Referência operacional sem mudanças; regras R01/R02/R06/R08-R12/R19-R22/R25/R26 e seções33/36/37.",
+  "tests": [
+    "Execução original 2026-11-22T15-51-06-925Z-425432e9 permanece escalated por timeout; conclusão complementar autorizada, sem reclassificar falhas anteriores.",
+    "API: conjunto exato825 suítes,13700 assertions aprovadas e143 pending explícitos,0todo; banco PostgreSQL descartável e integrações externas desligadas. Evidência: ALTAN/output/operacoes-modais-20261122/retomada-api/manifest.json.",
+    "Histórico preservado: a retomada inicial da interface cobriu338/600 e interrompeu por timeout; o complemento8min concluiu600 com598 aprovadas/2 reprovadas. A correção autorizada somente dos dois testes passou em2 suítes/54 casos. Consolidado final verificado independentemente:600 suítes/7118 casos aprovados,0falhas/pendentes,598 provas reaproveitadas. Nenhum aplicativo mudou nessa correção. Evidências em ALTAN/output/operacoes-modais-20261122/revalidacao-dois-testes/.",
+    "Portal:102 suítes/1610 casos aprovados; governança:88 casos aprovados. Builds de web/portal aprovados, com buildweb renovado após CSS final. Provas próprias e compartilhadas conciliadas por hash; não houve repetição desnecessária.",
+    "Revisão visual dos sete modais aprovada, com1/4/40 guias e34 verificações por cenário em1440/390px;145 fontes conferidas. Pareceres reais independentes de UI/UX, pagamento e sistêmico favoráveis no fechamento complementar. PARECER-SISTEMICO-DOIS-TESTES.txt distingue o fechamento local do runtime original escalated.",
+    "Lint sem erros; duas advertências de refs em hooks registradas e revisadas. Provas e limitações em ALTAN/output/operacoes-modais-20261122/RELATORIO-FINAL.txt.",
+    "CI hospedado e conferência produtiva serão registrados na integração; não são presumidos pelos testes locais. Nenhuma política, catálogo ou gate foi alterado para aprovar a entrega."
+  ],
+  "rollback": "Reverter exclusivamente o diff desta branch contra b4cf79ef4c0252300950d7f7d9efe94c4efae914. Sem migração, dados reais ou automações ativadas a desfazer. Preservar outros chats e evidências.",
+  "humanDecisions": [
+    "Desenhos dos sete modais aprovados pelo usuário antes da implementação.",
+    "Conclusão complementar autorizada, preservando a execução original e os mesmos gates e revisores.",
+    "CSS para muitas guias e correção da preparação de banco aprovados; extensão somente de360000ms para API, sem reiniciar consumo.",
+    "Histórico: após o timeout, usuário autorizou480000ms para somente262 suítes e depois correção de apenas dois arquivos de teste, com reaproveitamento das provas e revisão independente. Todas as falhas e timeouts originais permanecem preservados.",
+    "Autorização atual de22/11/2026: abrir PR, integrar na main e publicar em produção somente passando no CI; depois conferir modais em leitura. Não autoriza ativar automações, modificar dados reais ou realizar mensagens/atos fiscais."
+  ]
+}

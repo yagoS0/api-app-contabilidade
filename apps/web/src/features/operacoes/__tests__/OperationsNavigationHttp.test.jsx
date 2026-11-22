@@ -29,6 +29,7 @@ function mount({ status = 'PENDING', uncertain = false, invalidSnapshot = false 
     else if (method === 'GET' && path === `/firm/companies/a/notas/auditoria?competencia=${period}`) payload = { auditoria: { competencia: period, totalAchados: 0, perguntas: [] } };
     else if (method === 'GET' && path === `/firm/companies/a/pgdas/${period}/historico`) payload = { competencia: period, versoes: [] };
     else if (method === 'GET' && path === `${root}/transmission-documents`) payload = { ok: true, companyId: 'a', competencia: period, items: [], confirmation: null };
+    else if (method === 'GET' && path === '/firm/companies/a/guides?page=1&limit=50') payload = {data:[],total:0,page:1,limit:50};
     else if (method === 'PUT' && path === root && ['confirm', 'release'].includes(body?.action)) {
       expect(body.expectedRevision).toBe(current.revision);
       current = { ...current, status: body.action === 'confirm' ? 'CONFIRMED' : 'RELEASED', revision: body.action === 'confirm' ? 'r2' : 'r3' };
@@ -49,19 +50,19 @@ async function openStage(stage) {
   const button = screen.getByRole('button', { name: new RegExp(`^${stage} `) });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled());
+  await waitFor(() => expect(stage === 'Calculado' ? screen.getByRole('checkbox', { name: 'Selecionar CDA' }) : screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled());
 }
 
 test('real page/client: review reads the selected company/period and returns without writes', async () => {
-  const flow = mount();
-  await openStage('Calculado');
+  const flow = mount({status:'CONFIRMED'});
+  await openStage('Confirmado');
   fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
   const detail = await screen.findByRole('region', { name: 'Conferir CDA' });
   expect(detail).toHaveTextContent('Imposto salvo');
   expect(flow.requests.map(r => r.path)).toEqual(expect.arrayContaining([root, `/firm/companies/a/apuracao-snapshot/${period}`, `/firm/companies/a/notas/auditoria?competencia=${period}`, `/firm/companies/a/pgdas/${period}/historico`, `${root}/transmission-documents`]));
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Voltar' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toHaveFocus());
-  expect(screen.getByRole('region', { name: 'Tabela contextual: Calculado' })).toBeVisible();
+  expect(screen.getByRole('dialog', { name: /^Confirmado ·/ })).toBeVisible();
   expect(flow.writes()).toEqual([]);
   expect(flow.unexpected).toEqual([]);
 });
@@ -69,8 +70,9 @@ test('real page/client: review reads the selected company/period and returns wit
 test.each([false, true])('real page/client: confirmation then explicit release/transmission; uncertain=%s', async uncertain => {
   const flow = mount({ uncertain });
   await openStage('Calculado');
-  fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Confirmar apuração' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar CDA' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir selecionadas' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirmar cálculos selecionados' }));
   await waitFor(() => expect(flow.writes()).toHaveLength(1));
   expect(flow.writes()[0]).toMatchObject({ method: 'PUT', path: root, body: { action: 'confirm', expectedRevision: 'r1' } });
   fireEvent.keyDown(document, { key: 'Escape' });
@@ -91,7 +93,7 @@ test.each([false, true])('real page/client: confirmation then explicit release/t
     await screen.findByText(/1 liberação\(ões\) processada/);
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: /^Transmitido / }));
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Tabela contextual: Transmitido' })).toBeVisible());
+    await waitFor(() => expect(screen.getByRole('dialog', { name: /^Transmitido ·/ })).toBeVisible());
     expect(await screen.findByText('Vínculo indisponível. Confira o histórico na apuração.')).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Selecionar extrato de CDA' })).toBeDisabled();
   }
@@ -102,8 +104,10 @@ test.each([false, true])('real page/client: confirmation then explicit release/t
 test('evidence belonging to another company cannot confirm or transmit', async () => {
   const flow = mount({ invalidSnapshot: true });
   await openStage('Calculado');
-  fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
-  expect(await screen.findByRole('button', { name: 'Confirmar apuração' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar CDA' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir selecionadas' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/mudaram/);
+  expect(screen.queryByRole('button', {name:'Confirmar cálculos selecionados'})).not.toBeInTheDocument();
   expect(flow.writes()).toEqual([]);
   expect(flow.unexpected).toEqual([]);
 });
