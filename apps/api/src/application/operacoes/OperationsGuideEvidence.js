@@ -7,6 +7,7 @@ import { bloqueioEnvioParcela } from '../guides/GuiaParcelaEnvioGuard.js';
 import { validateTransmissionContext } from './OperationsTransmissionDocuments.js';
 import { revisaoDocumentoGuia } from '../whatsapp/EnvioDocumentoGuiaWhatsappService.js';
 import { dataDoComprovante } from '../guides/lib/comprovantePagamento.js';
+import { lerRegistroRecalculo } from '../guides/RegistroRecalculoGuia.js';
 
 const fail = (message = 'A prévia mudou ou já foi utilizada. Confira novamente antes de enviar.', status = 409) => Object.assign(new Error(message), { status, code: 'OPERATIONS_PREVIEW_CHANGED' });
 // PostgreSQL JSONB does not preserve object-key order. Sign semantic content.
@@ -36,6 +37,24 @@ async function authorize(db, userId, companyId, write = false) {
 const getGuide = (db, companyId, competencia, guideId) => db.guide.findFirst({ where: { id: guideId, portalClientId: companyId, competencia }, include: { parcelamento: true, parcela: true } });
 const safeCause = e => e?.erroCodigo ? 'Tentativa não concluída. Confira o histórico e o destinatário antes de repetir.' : null;
 
+// Read-only projection: absence is not zero; never derive principal from the total.
+export function operationGuideComposition(extracted, expectedTotal = null) {
+  const source = extracted?.composicao ?? extracted?.fields?.composicao ?? extracted?.fields ?? extracted;
+  const parts = Array.isArray(source) ? source : Array.isArray(source?.itens) ? source.itens : source && typeof source === 'object' ? [source] : [];
+  const value = v => ['number','string'].includes(typeof v) && String(v).trim() !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 && Number.isSafeInteger(Math.round(Number(v) * 100)) ? Number(v) : null;
+  const rows = parts.filter(part => part && typeof part === 'object' && !Array.isArray(part)).map(part => ({
+    principal:value(part.principal ?? part.valorPrincipal), juros:value(part.juros ?? part.valorJuros),
+    multa:value(part.multa ?? part.valorMulta), total:value(part.total ?? part.valorTotal),
+  }));
+  // An aggregate and its items are alternatives, never additive. Incomplete parts
+  // remain explicit; a complete but contradictory composition is not evidence.
+  const knownSum = row => ['principal','juros','multa'].reduce((sum,key)=>sum+(row[key]===null?0:Math.round(row[key]*100)),0);
+  if (rows.some(row => row.total !== null && knownSum(row) > Math.round(row.total*100)+1)) return [];
+  if (expectedTotal != null && value(expectedTotal) !== null && rows.reduce((sum,row)=>sum+knownSum(row),0) > Math.round(Number(expectedTotal)*100)+1) return [];
+  if (rows.some(row => Object.values(row).every(v => v !== null) && Math.abs(Math.round(row.principal * 100) + Math.round(row.juros * 100) + Math.round(row.multa * 100) - Math.round(row.total * 100)) > 1)) return [];
+  if (expectedTotal !== null && expectedTotal !== undefined && (value(expectedTotal) === null || rows.length && rows.every(row => row.total !== null) && Math.abs(rows.reduce((sum, row) => sum + Math.round(row.total * 100), 0) - Math.round(Number(expectedTotal) * 100)) > 1)) return [];
+  return rows.filter(row => Object.values(row).some(v => v !== null));
+}
 export function createOperationsGuideEvidence({ db = prisma, recipients = destinatariosDeEnvio, now = () => new Date() } = {}) {
   async function read({ userId, companyId, competencia, offset = 0 }) {
     validateTransmissionContext(companyId, competencia);
@@ -53,9 +72,19 @@ export function createOperationsGuideEvidence({ db = prisma, recipients = destin
         && g.parcela?.pagamentoStatus === 'CONFIRMADO' && g.parcela?.pagamentoEvidencia?.resultado === 'CONFIRMADO' ? g.parcela : null;
       const receipt = g.paymentStatus === 'PAID' && g.paymentStatusSource === 'SERPRO' && g.extracted?.comprovante?.confiavel === true ? g.extracted.comprovante : null;
       const receiptDate = dataDoComprovante(receipt);
+      // Payment composition describes its own persisted evidence. A newer billing
+      // document may contain charges that were never part of this payment.
+      const declared = g.paymentStatus === 'PAID' && g.paymentStatusSource === 'CLIENTE' ? confirmation : null;
+      const declaredValue = declared?.documento?.valor;
+      const declaredAmount = ['number', 'string'].includes(typeof declaredValue) && String(declaredValue).trim() !== '' && Number.isFinite(Number(declaredValue)) && Number(declaredValue) >= 0 && Number.isSafeInteger(Math.round(Number(declaredValue) * 100)) ? Number(declaredValue) : null;
+      const paymentComposition = official ? operationGuideComposition(official.pagamentoEvidencia.comprovante, official.valorPago)
+        : receipt ? operationGuideComposition(receipt, receipt.total) : declared ? operationGuideComposition(declared.documento?.composicao, declared.documento?.valor) : [];
+      const paymentCompositionSource = official ? 'PARCELA_SERPRO' : receipt ? 'COMPROVANTE_SERPRO' : declared ? 'CONFIRMACAO_CLIENTE' : null;
       items.push({ companyId, competencia, guideId: g.id, tipo: g.tipo, valor: amount(g.valor), revisao: operationsGuideRevision(g), estadoDocumental: g.status,
+        composicao: operationGuideComposition(g.extracted), recalculo: lerRegistroRecalculo(g),
         pagamento: { status: g.paymentStatus || null, origem: g.paymentStatusSource || null, dataCivil: confirmation?.pagoEm || (official?.pagamentoEm ? iso(official.pagamentoEm).slice(0,10) : receiptDate ? iso(receiptDate).slice(0,10) : g.paymentStatus === 'PAID' && g.paymentStatusSource === 'MANUAL' && g.paymentConfirmedAt ? iso(g.paymentConfirmedAt).slice(0,10) : null),
           registradoEm: confirmation?.confirmadoEm || iso(official?.pagamentoConsultadoEm) || (g.paymentStatusSource === 'SERPRO' ? iso(g.serproLastCheckedAt) : null), valorPago: official ? amount(official.valorPago) : receipt ? amount(receipt.total) : null, proveniencia: confirmation ? 'CONFIRMACAO_CLIENTE' : official ? 'PARCELA_SERPRO' : receipt ? 'COMPROVANTE_SERPRO' : g.paymentStatusSource || null,
+          oficialComprovado: Boolean(official || receipt), valorDeclarado: declaredAmount, composicao: paymentComposition, composicaoOrigem: paymentCompositionSource,
           estadoBaixa: confirmation?.estadoBaixa || (g.baixada ? 'CONCLUIDA' : null) },
         envios: sends.slice(0,50).map(e => ({ id: e.id, canal: e.canal, destino: e.destino, status: e.status, enviadoEm: iso(e.enviadoEm), entregueEm: iso(e.entregueEm), lidoEm: iso(e.lidoEm), causa: safeCause(e) })),
         tentativas: attempts.slice(0,50).map(t => ({ id: t.id, canal: t.envioGuia.canal, destino: t.envioGuia.destino, status: t.status, criadoEm: iso(t.criadoEm), aceitoEm: iso(t.aceitoEm), entregueEm: iso(t.entregueEm), lidoEm: iso(t.lidoEm), causa: safeCause(t),

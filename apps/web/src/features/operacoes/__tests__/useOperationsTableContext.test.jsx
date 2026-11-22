@@ -2,9 +2,14 @@ import { act, renderHook } from '@testing-library/react';
 import { useOperationsTableContext, readOperationsTableContext, orderOperationsRows } from '../useOperationsTableContext';
 const names = { apurar: 'Apuração', calculado: 'Calculado', enviado: 'Enviado' };
 const saved = '?visao=operacoes&competencia=2026-10&operacoesCompetencia=2026-10&operacoesEtapa=enviado&operacoesLista=all&operacoesBusca=Alfa&operacoesFiltro=pending&operacoesOrdem=name-desc&operacoesPagina=2';
+test('filtros de confirmação não vazam para outras etapas na URL',()=>{
+ const query='?competencia=2026-10&operacoesCompetencia=2026-10&operacoesEtapa=confirmado&operacoesFiltro=ready';
+ expect(readOperationsTableContext(query,'2026-10',{...names,confirmado:'Confirmado'}).filter).toBe('ready');
+ expect(readOperationsTableContext(query.replace('Etapa=confirmado','Etapa=calculado'),'2026-10',names).filter).toBe('all');
+});
 
 test('URL restaura apenas contexto de apresentação do período correto', () => {
-  expect(readOperationsTableContext(saved, '2026-10', names)).toEqual({ competencia: '2026-10', key: 'enviado', mode: 'all', query: 'Alfa', filter: 'pending', order: 'name-desc', page: 2 });
+  expect(readOperationsTableContext(saved, '2026-10', names)).toEqual({ competencia: '2026-10', key: 'enviado', mode: 'all', query: 'Alfa', filter: 'pending', order: 'name-desc', page: 2, open:false });
   expect(readOperationsTableContext(saved, '2026-11', names)).toMatchObject({ key: 'apurar', query: '', page: 0, filter: 'all' });
   expect(readOperationsTableContext(saved.replace('operacoesPagina=2', 'operacoesPagina=-1'), '2026-10', names).page).toBe(0);
   expect(readOperationsTableContext(saved.replace('operacoesEtapa=enviado', 'operacoesEtapa=invalid'), '2026-10', names).key).toBe('apurar');
@@ -30,4 +35,9 @@ test('ordenação é apresentação estável, sem alterar a projeção recebida'
   expect(orderOperationsRows(rows, 'name-desc').map(row => row.company.companyId)).toEqual(['b', 'a']);
   expect(orderOperationsRows(rows, 'stage')).toBe(rows);
   expect(rows[0].company.companyId).toBe('b');
+});
+
+test('modal URL state is presentation only and cannot cross periods', () => {
+ expect(readOperationsTableContext(saved+'&operacoesModal=aberto','2026-10',names).open).toBe(true);
+ expect(readOperationsTableContext(saved+'&operacoesModal=aberto','2026-11',names).open).toBe(false);
 });

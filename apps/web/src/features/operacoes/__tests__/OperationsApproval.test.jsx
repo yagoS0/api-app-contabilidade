@@ -1,7 +1,27 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { OperationsApproval } from '../OperationsApproval';
 
 const rows = [{ company: { companyId: 'a', razao: 'CDA', myRole: 'ACCOUNTANT' } }];
+test('Confirmado filtra prontas, erros e apuração externa sem confirmar ou transmitir',async()=>{
+ const list=['a','b','c'].map((companyId,i)=>({company:{companyId,razao:['Pronta','Externa','Revisão'][i],myRole:'ACCOUNTANT'}}));
+ const api=fixture();api.executeCompanyOperation=jest.fn();
+ api.getOperationEvidence=jest.fn(async competencia=>({competencia,total:3,items:list.map(({company},i)=>({companyId:company.companyId,competencia,revision:'r'+i,regime:i===1?'PRESUMIDO':'SIMPLES',status:i===2?'INVALIDATED':'CONFIRMED',calculation:{calculoId:'calc'+i,dasValor:100},externalSummary:i===1?{apurar:{concluida:true}}:null,blocked:i===2?'Divergência da base':null,pending:[]}))}));
+ function Harness() {
+  const [filter,setFilter]=useState('all');
+  const [page,setPage]=useState(0);
+  return <OperationsApproval embedded contextual modalStage api={api} rows={list} competencia="2026-10" stage="confirmado"
+   tableContext={{filter,setFilter: value=>{setFilter(value);setPage(0);},page,setPage}}/>;
+ }
+ render(<Harness/>);
+ await waitFor(()=>expect(screen.getByRole('combobox',{name:'Situação da etapa'})).toBeEnabled());
+ for(const [filter,yes,no] of [['ready','Pronta','Externa'],['external','Externa','Pronta'],['error','Revisão','Pronta']]){
+  fireEvent.change(screen.getByRole('combobox',{name:'Situação da etapa'}),{target:{value:filter}});
+  expect(screen.getByRole('rowheader',{name:new RegExp(`^${yes}`)})).toBeInTheDocument();
+  expect(screen.queryByRole('rowheader',{name:new RegExp(`^${no}`)})).not.toBeInTheDocument();
+ }
+ expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();expect(api.getCompanyOperation).not.toHaveBeenCalled();
+});
 function fixture(overrides = {}) {
   let state = { regime: 'SIMPLES', companyId: 'a', competencia: '2026-09', revision: 'r1', status: 'PENDING', pending: [], schedule: null, calculation: { calculoId: 'calculo-1', dasValor: 100 }, ...overrides };
   return { getOperationEvidence: jest.fn(async competencia => ({items:[state,{...state,companyId:'b'}].map(item=>({...item,competencia})),total:2,competencia})), getApuracaoSnapshot: jest.fn(async (id, competencia) => ({ snapshot: { portalClientId: id, competencia, estado: 'calculada', idempotencyKey: 'calculo-1', dasSimuladoSerpro: 100, atividadesEscolhidas: [] } })),
@@ -290,7 +310,7 @@ test.each(['revisao', 'auditoria', 'operacao'])('prévia agrupada relê só sele
  if (failure === 'operacao') api.getCompanyOperation.mockRejectedValue(Error('Operação indisponível'));
  fireEvent.click(screen.getByLabelText('Selecionar CDA'));
  fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas',exact:true}));
- expect(await screen.findByRole('alert')).toHaveTextContent(/indisponível|mudaram/);
+ await waitFor(() => expect(screen.getAllByRole('alert').some(alert => /indisponível|mudaram/.test(alert.textContent))).toBe(true));
  expect(screen.queryByRole('button',{name:'Liberar e executar'})).not.toBeInTheDocument();
  expect(api.getCompanyOperation).toHaveBeenCalledTimes(1);
  expect(api.saveCompanyOperation).not.toHaveBeenCalled(); expect(api.executeCompanyOperation).not.toHaveBeenCalled();

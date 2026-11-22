@@ -69,3 +69,11 @@ Pareceres independentes em22/11/2026: `/root/fiscal_p01` favorável após confer
 Resultados do Principal: referência anterior de19testes aprovada; focal final172/172 em3suítes; governança88/88; arquitetura5/5; diagnose5019→5019, zero novas violações; estrutura/perfis/registro válidos; diff sem erros. Log e JSON dos comandos ficam na área local ignorada de governança. A primeira seleção ampla incluiu quatro suítes PostgreSQL não configuradas: falharam antes do acesso ao banco. Não foram modificadas; a regressão final usa somente funções e integrações simuladas, conforme o escopo autorizado. Não houve acesso a banco real, dados de cliente, certificado real ou emissão fiscal.
 
 Regressão final simulada: **85 suítes e 1.853 testes aprovados**, zero falhas. As quatro suítes que exigem PostgreSQL ficam fora desta seleção, sem alterações ou declaração de aprovação local. Os172 testes focais estão incluídos nesse total, não são somados novamente. CI hospedada será registrada no PR no SHA final.
+
+## Atualização sobre a main após #313 e #314
+
+Em 22/11/2026, reconciliada a branch original com `3a68fcd128586e825ffbeced85b7351c3054a0ad` por merge não destrutivo, sem conflitos e sem force push. Os quatro arquivos próprios de código/testes permanecem idênticos a `8f3675a4c2d4b78639810d75ba8208406401d976`; os 43 arquivos incorporados da main preservam integralmente o ADN e os modais. Não há nova mudança fiscal ou operacional.
+
+Revisões independentes fiscal e arquitetural favoráveis ao diff atualizado, condicionadas à validação final. Governança 40/40, testes arquiteturais 5/5 e diagnose 5020 → 5020, zero novas violações. Estrutura, perfis e referência operacional validados. A contagem anterior de testes de governança é histórica; este registro usa o total efetivamente reportado nesta execução. Resultados da regressão fiscal, modais e CI integral serão vinculados ao SHA final no PR #312.
+
+Sem novo executor ou alteração funcional na reconciliação; preservado o estado histórico do controlador interrompido, sem declarar `ready_for_human`. Mantidos o escopo, as limitações normativas e o rollback descritos acima. Nenhuma autorização de merge na main, deploy ou P0.2.
