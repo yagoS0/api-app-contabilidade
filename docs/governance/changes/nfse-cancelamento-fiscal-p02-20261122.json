@@ -18,12 +18,13 @@
   "operationalImpact": "NFS-e é proprietária. Aceite HTTP deixa de equivaler a cancelamento. Escritório, portal e assistente consomem confirmação fiscal comum. Sem mudança tributária, schema, calendário IBS/CBS ou sincronização ADN. Nenhum ato fiscal real autorizado.",
   "tests": [
     "Caracterização anterior: 28 testes do serviço aprovados, incluindo três reproduções de HTTP 200 sem prova aceito indevidamente.",
-    "Candidata final: 30 testes política/aplicação/assinatura; 29 serviço legado/contenção; 115 HTTP/portão/cliente/assistente acrescidos de 2 testes de revogação WhatsApp aprovados.",
+    "Candidata: 32 testes política/aplicação/assinatura e 27 ambiente (59/59); 29 serviço; 117 HTTP/portão/cliente/assistente; 31 contratos do assistente aprovados.",
     "PostgreSQL 16 descartável: 16 testes aprovados, incluindo duas conexões, CAS, rollback, custódia tardia, isolamento e notas já canceladas sem novo POST. Três testes inicialmente reproduziram XML alheio persistido; passaram após correção sem relaxar a proteção.",
     "Revisor segurança executou independentemente 39 testes unitários/HTTP aprovados.",
-    "Governança: 88 testes aprovados; testes arquiteturais: 5 aprovados. Diagnose 5020 base/5020 candidata, zero acréscimos. Estrutura e registro de impacto válidos. Regressão ampliada e CI finais em andamento."
+    "Governança: 88 aprovados; arquiteturais: 5 aprovados. Diagnose 5020/5020, zero novas violações; gate de impacto válido.",
+    "Regressão ampliada 184 suítes: 3439 aprovados, 5 casos falhos e uma suíte não iniciada. Falhas delimitadas a duas expectativas/fixtures antigas e quatro suítes sem URL PostgreSQL. Reexecuções: contratos assistente31/31, ambiente+política59/59 e quatro suítes Guru PostgreSQL5/5 aprovados. Não se declara repetição integral da regressão após esses ajustes. CI final valida o SHA publicado."
   ],
-  "reviewProcess": "Controlador 2026-11-22T18-57-59-869Z-cdf6ff5d iniciado. Pedido do principal mencionou erroneamente ServiceInvoiceEvent inexistente; executor entregou diagnóstico. Controlador interrompido pelo principal, sem ready_for_human. Implementação continuou com executor separado reutilizando AppSetting. Fiscal e arquitetura concluíram parecer favorável para PR de contenção, não homologação produtiva. Segurança executou 39 testes e aprovou correções; último teste de revogação WhatsApp acrescentado e aprovado, revisor conferindo cobertura final. Autores não aprovaram sua própria autoria.",
+  "reviewProcess": "Controlador 2026-11-22T18-57-59-869Z-cdf6ff5d iniciado. Pedido do principal mencionou erroneamente ServiceInvoiceEvent inexistente; executor entregou diagnóstico. Controlador interrompido pelo principal, sem ready_for_human. Implementação continuou com executor separado reutilizando AppSetting. Fiscal e arquitetura concluíram parecer favorável para PR de contenção, não homologação produtiva. Segurança executou 39 testes e aprovou correções e cobertura de revogação WhatsApp. Ajuste posterior de marcação antesDoPost submetido à revisão delimitada. Autores não aprovaram sua própria autoria.",
   "rollback": "Sem migração. Reverter código reabre confirmação indevida e não é rollback produtivo seguro. Reservas/evidências devem ser preservadas; qualquer publicação ou contenção produtiva exige autorização própria.",
   "humanDecisions": [
     "Revisão humana do PR e SHA final antes de integração; deploy separado."
@@ -31,6 +32,6 @@
   "limitations": [
     "Envelope JSON do provedor não confirmado nas fontes públicas acessíveis; sem XML oficial verificável, resultado permanece inconclusivo.",
     "Assinatura com certificado embutido comprova integridade, não valida por si só cadeia ICP-Brasil ou revogação. Origem deve ser exclusivamente transporte oficial autenticado.",
-    "Envelope JSON/lista de eventos impede declarar o fluxo nacional completo homologado. Histórico AppSetting não possui imutabilidade garantida no banco. NAO_ENVIADO não é liberado automaticamente. Validação final e CI permanecem pendentes."
+    "Envelope JSON/lista de eventos impede declarar o fluxo nacional completo homologado. AppSetting não possui imutabilidade garantida no banco. NAO_ENVIADO não é liberado automaticamente. CI final registrada no PR."
   ]
 }

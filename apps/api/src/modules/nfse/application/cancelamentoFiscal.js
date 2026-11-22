@@ -32,6 +32,8 @@ export function criarCancelamentoFiscal({ reservar, registrarResultado, marcarDe
       if (!decisao.cancelada) throw resultadoFiscalNaoConfirmado(decisao.situacao);
       return { status: 'cancelled', confirmacaoFiscal: true, situacao: decisao.situacao, nfse: invoice, providerData: { eventoId: evidencia.id, hash: evidencia.hash } };
     } catch (erro) {
+      // Só esta tentativa nova comprova ausência de despacho. Reserva antiga continua incerta.
+      if (reserva.nova && !despachou) erro.antesDoPost = true;
       if (erro.code !== 'NFSE_CANCELAMENTO_NAO_CONFIRMADO') {
         try { await registrarFalha(reserva, { incerto: despachou || !reserva.nova, codigo: erro.code || 'FALHA_LOCAL' }); }
         catch { /* A reserva durável anterior continua impedindo novo despacho. Preserva o erro original. */ }

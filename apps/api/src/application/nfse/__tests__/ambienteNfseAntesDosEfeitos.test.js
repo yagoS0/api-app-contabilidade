@@ -6,6 +6,8 @@ jest.mock('../nfseCertificado.js',()=>({resolverCertificadosDaEmpresa:jest.fn()}
 jest.mock('../nfseNumeracao.js',()=>({normalizarSerie:jest.fn(x=>x),reservarNumeracao:jest.fn()}));
 jest.mock('../../../infrastructure/db/NfseRepository.js',()=>({NfseRepository:{claimRetry:jest.fn(),update:jest.fn(),updateMany:jest.fn(),create:jest.fn(),findById:jest.fn(),findByChaveAcesso:jest.fn()}}));
 jest.mock('../../../infrastructure/db/prisma.js',()=>({prisma:{company:{findUnique:jest.fn()},serviceInvoice:{findUnique:jest.fn(),create:jest.fn(),update:jest.fn(),updateMany:jest.fn()},$transaction:jest.fn()}}));
+// Porta de reserva simulada; o caso de uso real continua exigindo autorização e certificado.
+jest.mock('../../../modules/nfse/infrastructure/prisma/cancelamentoFiscal.js',()=>({criarPersistenciaCancelamento:()=>({reservar:jest.fn(async()=>({nova:true})),marcarDespacho:jest.fn(),registrarResultado:jest.fn(),registrarFalha:jest.fn()})}));
 import axios from 'axios';
 import {prisma} from '../../../infrastructure/db/prisma.js';
 import {NfseRepository} from '../../../infrastructure/db/NfseRepository.js';
@@ -15,7 +17,7 @@ import {NfseService} from '../NfseService.js';
 const config=require('../../../config.js');
 const EMPRESA={id:'company-fixture',cnpj:'11222333000181',inscricaoMunicipal:'123',codigoServicoNacional:'171201',codigoServicoMunicipal:'001',rpsSerie:'1',rpsNumero:'1',codigoMunicipioIbge:'3304557',regimeTributario:'SIMPLES_NACIONAL'};
 const emitir=retry=>NfseService.issue({data:{companyId:EMPRESA.id},log:config.log,...(retry?{retryInvoiceId:'tentativa'}:{})});
-const cancelar=()=>NfseService.sendEvent({companyId:EMPRESA.id,chaveAcesso:'3'.repeat(50),tipoEvento:'e101101',cMotivo:'1',justificativa:'Cancelamento sintético para teste isolado.',log:config.log});
+const cancelar=()=>NfseService.sendEvent({companyId:EMPRESA.id,chaveAcesso:'3'.repeat(50),tipoEvento:'e101101',cMotivo:'1',justificativa:'Cancelamento sintético para teste isolado.',revalidarAutorizacao:async()=>{},log:config.log});
 const consultar=()=>NfseService.syncFromProvider({companyId:EMPRESA.id,filters:{chaveAcesso:'3'.repeat(50)},log:config.log});
 const conciliar=()=>NfseService.conciliarTentativa({companyId:EMPRESA.id,invoiceId:'tentativa'});
 const metodos=[['emissão',()=>emitir(false)],['retry',()=>emitir(true)],['evento',cancelar],['consulta',consultar],['conciliação',conciliar]];
