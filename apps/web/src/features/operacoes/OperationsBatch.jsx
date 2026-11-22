@@ -13,7 +13,7 @@ function BatchDialog({ footerTarget, embedded, titulo, children, rodape, ...prop
   return embedded ? <section className="operacoes-conferencia-detalhe" aria-label={titulo}><h3 ref={heading} tabIndex={-1}>{titulo}</h3>{children}{footerTarget ? createPortal(<div className="operacoes-acoes operacoes-destinos">{rodape}</div>,footerTarget) : <div className="operacoes-acoes operacoes-destinos">{rodape}</div>}</section>
     : <Modal titulo={titulo} rodape={rodape} {...props}>{children}</Modal>;
 }
-export function OperationsBatch({ api, competencia, disabled = false, onChanged, embedded = false, onBusyChange, onDetailChange, footerTarget, actionsVisible = true }) {
+export function OperationsBatch({ api, competencia, disabled = false, onChanged, embedded = false, restoreTriggerFocus = false, onBusyChange, onDetailChange, footerTarget, actionsVisible = true }) {
   const [preview, setPreview] = useState(null), [batches, setBatches] = useState([]), [error, setError] = useState('');
   const [busy, setBusy] = useState(false), [reading, setReading] = useState(true), [confirmation, setConfirmation] = useState('');
   const [task, setTask] = useState(null), [taskError, setTaskError] = useState('');
@@ -28,9 +28,9 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
   useEffect(() => { onDetailChange?.(detail); return () => onDetailChange?.(false); }, [detail, onDetailChange]);
   useEffect(() => {
-    if (embedded && wasDetail.current && !detail) trigger.current?.focus();
+    if ((embedded || restoreTriggerFocus) && wasDetail.current && !detail) trigger.current?.focus();
     wasDetail.current = detail;
-  }, [embedded, detail]);
+  }, [embedded, restoreTriggerFocus, detail]);
   useEffect(() => {
     const origin = { api, competencia }; context.current = origin; taskRequest.current += 1;
     pending.current = false; setBusy(false); setReading(true);

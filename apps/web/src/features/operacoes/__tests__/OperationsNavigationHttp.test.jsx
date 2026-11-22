@@ -61,7 +61,7 @@ test('real page/client: review reads the selected company/period and returns wit
   expect(flow.requests.map(r => r.path)).toEqual(expect.arrayContaining([root, `/firm/companies/a/apuracao-snapshot/${period}`, `/firm/companies/a/notas/auditoria?competencia=${period}`, `/firm/companies/a/pgdas/${period}/historico`, `${root}/transmission-documents`]));
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Voltar' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toHaveFocus());
-  expect(screen.getByRole('dialog', { name: 'Calculado' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Tabela contextual: Calculado' })).toBeVisible();
   expect(flow.writes()).toEqual([]);
   expect(flow.unexpected).toEqual([]);
 });
@@ -75,7 +75,7 @@ test.each([false, true])('real page/client: confirmation then explicit release/t
   expect(flow.writes()[0]).toMatchObject({ method: 'PUT', path: root, body: { action: 'confirm', expectedRevision: 'r1' } });
   fireEvent.keyDown(document, { key: 'Escape' });
   await openStage('Confirmado');
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /Selecionar todas as elegíveis do filtro/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas' }));
   const execute = await screen.findByRole('button', { name: 'Liberar e executar' });
   expect(execute).toBeDisabled();
@@ -91,7 +91,7 @@ test.each([false, true])('real page/client: confirmation then explicit release/t
     await screen.findByText(/1 liberação\(ões\) processada/);
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: /^Transmitido / }));
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Transmitido' })).toBeVisible());
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Tabela contextual: Transmitido' })).toBeVisible());
     expect(await screen.findByText('Vínculo indisponível. Confira o histórico na apuração.')).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Selecionar extrato de CDA' })).toBeDisabled();
   }

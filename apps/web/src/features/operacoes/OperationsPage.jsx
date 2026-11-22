@@ -1,3 +1,5 @@
+import { OperationsContextualTable, OperationsTablePagination } from './OperationsContextualTable';
+import { useOperationsTableContext, orderOperationsRows } from './useOperationsTableContext';
 import { OperationsProcurationTable } from './OperationsProcurationTable';
 import { OperationsGuides } from './OperationsGuides';
 import { OperationsCalculationDetails, OperationsTransmissionTable } from './OperationsCalculationDetails';
@@ -28,10 +30,10 @@ const EMPTY_COMPANIES = [];
 const panelNames = { apurar: 'Apurar', guias: 'Guias', contabilizacao: 'Contabilização', concluido: 'Concluído', calculado: 'Calculado', confirmado: 'Confirmado', transmitido: 'Transmitido', disponivel: 'Disponível', enviado: 'Enviado', pago: 'Pago', ...Object.fromEntries(CHECKLIST_OPERACOES) };
 
 
-function Progress({ label, metric, unavailable, color, onClick, stage = false }) {
+function Progress({ label, metric, unavailable, color, onClick, stage = false, active = false, disabled = false }) {
   const count = metric.done.length;
   const Tag = onClick ? 'button' : 'div';
-  return <Tag type={onClick ? 'button' : undefined} role={onClick ? undefined : 'group'} className={`operacoes-progress${stage ? " operacoes-progress-stage" : ""}`} disabled={onClick ? unavailable : undefined} aria-disabled={unavailable || undefined} onClick={onClick} aria-label={`${label} ${unavailable ? '—' : `${count}/${metric.total}`} empresas`} aria-description={`${unavailable ? 'Informação indisponível.' : `${metric.unknown.length} a verificar. ${metric.notApplicable.length} não aplicáveis, fora do total e das pendências.`} ${onClick ? 'Abrir tabela de empresas; o filtro identifica o conjunto da barra e as pendências.' : 'Indicador informativo. Abra Contabilização para conferir as empresas.'}`}>
+  return <Tag type={onClick ? 'button' : undefined} role={onClick ? undefined : 'group'} className={`operacoes-progress${stage ? " operacoes-progress-stage" : ""}`} disabled={onClick ? unavailable || disabled : undefined} aria-disabled={unavailable || disabled || undefined} aria-pressed={onClick ? active : undefined} aria-controls={onClick ? "operacoes-tabela-contextual" : undefined} onClick={onClick} aria-label={`${label} ${unavailable ? '—' : `${count}/${metric.total}`} empresas`} aria-description={`${unavailable ? 'Informação indisponível.' : `${metric.unknown.length} a verificar. ${metric.notApplicable.length} não aplicáveis, fora do total e das pendências.`} ${onClick ? 'Abrir tabela de empresas; o filtro identifica o conjunto da barra e as pendências.' : 'Indicador informativo. Abra Contabilização para conferir as empresas.'}`}>
     <span className="operacoes-progress-label">{label}</span><strong>{unavailable ? '—' : `${count}/${metric.total}`}</strong>
     <span className="operacoes-track" aria-hidden="true"><span style={{ width: `${metric.total ? count / metric.total * 100 : 0}%`, background: color }} /></span>
     {!unavailable && metric.unknown.length > 0 && <small>{metric.unknown.length} a verificar</small>}
@@ -51,8 +53,9 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
   const summary = resumirEtapasOperacoes(rows, evidence.items, manualInss.items);
   const distribution = distribuicoesCadastrais(rows);
   const errorCompanies = [...new Map(groups.erros.map(t => [t.company.companyId, t.company])).values()];
-  const [panel, setPanel] = useState(null), [query, setQuery] = useState(''), [page, setPage] = useState(0);
-  const [stageFilter, setStageFilter] = useState('all');
+  const tableContext = useOperationsTableContext(navigation, competencia, panelNames);
+  const { query, setQuery, setPage, filter: stageFilter, setFilter: setStageFilter } = tableContext;
+  const panel = { key: tableContext.key, mode: tableContext.mode, competencia, title: tableContext.mode === 'warnings' ? `Avisos de ${panelNames[tableContext.key]}` : tableContext.key === 'apurar' ? 'Apuração' : panelNames[tableContext.key] };
   const [filtersOpen,setFiltersOpen]=useState(false),[filterDraft,setFilterDraft]=useState('all');
   const filterTrigger=useRef(null),filterHeading=useRef(null);
   useEffect(()=>{if(filtersOpen)filterHeading.current?.focus();},[filtersOpen]);
@@ -67,29 +70,10 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
     else calculationTrigger.current?.focus({ preventScroll: true });
   }, [calculationRow]);
   const [procuracao, setProcuracao] = useState(null), [approvalRows, setApprovalRows] = useState(null);
-  useEffect(() => { setCalculationRow(null); setPanel(null); setQuery(''); setPage(0); setApprovalOpen(false); setProcuracao(null); setSelection(null); }, [competencia, api]);
+  useEffect(() => { setCalculationRow(null); setFiltersOpen(false); setApprovalOpen(false); setProcuracao(null); setSelection(null); }, [competencia, api]);
 
-  const search = navigation?.location?.search;
-  useEffect(() => {
-    if (search == null) return;
-    setFiltersOpen(false);
-    const params = new URLSearchParams(search), key = params.get('operacoesEtapa'), mode = params.get('operacoesLista');
-    if ((!params.has('competencia') || params.get('competencia') === competencia) && params.get('operacoesCompetencia') === competencia && Object.hasOwn(panelNames, key) && ['all', 'stage', 'missing', 'warnings'].includes(mode)) {
-      setPanel({ key, title: mode === 'all' && key === 'apurar' ? 'Apuração' : panelNames[key], mode, competencia });
-    } else setPanel(null);
-    // Only URL and period identify a saved presentation filter.
-  }, [search, competencia]);
-  const saveFilter = (key, mode) => {
-    if (!navigation?.location || navigation.location.pathname !== '/companies') return;
-    const params = new URLSearchParams(search);
-    params.set('competencia', competencia);
-    params.set('visao', 'operacoes');
-    for (const name of ['operacoesEtapa', 'operacoesLista', 'operacoesCompetencia']) params.delete(name);
-    if (key) { params.set('operacoesEtapa', key); params.set('operacoesLista', mode); params.set('operacoesCompetencia', competencia); }
-    navigation.navigate(`/companies?${params.toString()}`, { replace: true });
-  };
-  const show = (key, title, mode = 'all') => { setCalculationRow(null); setStageFilter('all'); setFiltersOpen(false); setPanel({ key, title, mode, competencia }); setQuery(''); setPage(0); saveFilter(key, mode); };
-  const closePanel = () => { setGuideReviewing(false);setCalculationRow(null); setPanel(null); saveFilter(null); };
+  const show = (key, title, mode = 'all') => { if (busy || approvalBusy) return; setCalculationRow(null); setGuideReviewing(false); setFiltersOpen(false); tableContext.select(key, mode); };
+  const closePanel = () => { setGuideReviewing(false); setCalculationRow(null); };
   const [chart, setChart] = useState(null);
   const [selection, setSelection] = useState(null);
   const [approvalOpen, setApprovalOpen] = useState(false), [approvalStage, setApprovalStage] = useState('confirmado');
@@ -127,14 +111,18 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
     finally { sending.current = false; setBusy(false); setPreview(false); }
   }
   const panelRows = !panel ? [] : panel.mode === 'all' ? summary.items : panel.mode === 'warnings' ? summary.items.filter(r => panel.key === 'confirmado' ? r.operation?.status === 'INVALIDATED' : r.operation?.execution && r.operation.execution.status !== 'DONE') : panel.mode === 'stage' ? summary.items.filter(r => r.presentation.chave === panel.key) : summary.metrics[panel.key]?.missing || [];
-  const sortedPanelRows = [...panelRows].sort((a, b) => Number(a.axes.calculado === true) - Number(b.axes.calculado === true) || Number(a.axes.confirmado === true) - Number(b.axes.confirmado === true) || Number(a.axes.transmitido === true) - Number(b.axes.transmitido === true));
+  const sortedPanelRows = orderOperationsRows([...panelRows].sort((a, b) => Number(a.axes.calculado === true) - Number(b.axes.calculado === true) || Number(a.axes.confirmado === true) - Number(b.axes.confirmado === true) || Number(a.axes.transmitido === true) - Number(b.axes.transmitido === true)), tableContext.order);
   const attentionFilterAvailable = ['calculado', 'transmitido'].includes(panel?.key);
-  const effectiveStageFilter = stageFilter === 'error' && !attentionFilterAvailable ? 'all' : stageFilter;
+  const stageFilterAvailable = !['apurar','concluido'].includes(panel.key);
+  const effectiveStageFilter = !stageFilterAvailable || stageFilter === 'error' && !attentionFilterAvailable ? 'all' : stageFilter;
   const filtered = sortedPanelRows.filter(r => `${nome(r.company)} ${r.company.cnpj || ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).filter(r => effectiveStageFilter === 'all' || (effectiveStageFilter === 'done' ? r.axes[panel?.key] === true : effectiveStageFilter === 'pending' ? r.axes[panel?.key] === false : effectiveStageFilter === 'error' ? Boolean(r.operation?.blocked || r.operation?.execution?.status && r.operation.execution.status !== 'DONE') : r.axes[panel?.key] == null));
+  const page = Math.min(tableContext.page, Math.max(0, Math.ceil(filtered.length / 30) - 1));
+  const approvalPanel = panel.mode === 'all' && (panel.key === 'confirmado' || panel.key === 'calculado' && api?.getCompanyOperation);
   const accountingPanel = panel && (CHECKLIST_OPERACOES.some(([k]) => k === panel.key) || panel.key === 'contabilizacao');
   const guidePanel = panel && ['guias', 'disponivel', 'enviado', 'pago'].includes(panel.key);
+  const requiresManualEvidence = ['guias', 'concluido', 'disponivel', 'enviado', 'pago'].includes(panel.key);
   const compactCalculationPanel = attentionFilterAvailable;
-  const statusText = v => v === true ? 'Concluído' : v === false ? 'Pendente' : 'A verificar';
+  const statusText = v => v === true ? 'Concluído' : v === false ? 'Pendente' : v === 'na' ? 'Não aplicável' : 'A verificar';
   const refresh = () => { evidence.reload(); manualInss.reload(); onRefresh?.(); };
   return <section className="operacoes" aria-label="Operações">
     <div className="operacoes-cabecalho"><CompetenciaCarteira competencia={competencia} onChange={onChangeCompetencia} onRefresh={refresh} loading={loading} disabled={busy || approvalBusy} /></div>
@@ -142,11 +130,11 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
     <div className="operacoes-layout operacoes-resumo-b">
       <div className="operacoes-etapas-pizzas">
         <section className="operacoes-etapa operacoes-apuracao" aria-label="Apuração">
-          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Apuração" onClick={() => show('apurar','Apuração','all')} disabled={unavailable}>Apuração</button></h2>
+          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Apuração" onClick={() => show('apurar','Apuração','all')} disabled={unavailable || busy || approvalBusy} aria-pressed={panel.key === "apurar"}>Apuração</button></h2>
           <div className="operacoes-etapa-indicadores">
           {[['calculado','Calculado'],['confirmado','Confirmado'],['transmitido','Transmitido']].map(([key,label]) => {
             const warnings = summary.items.filter(r => key === 'confirmado' ? r.operation?.status === 'INVALIDATED' : key === 'transmitido' && r.operation?.execution && r.operation.execution.status !== 'DONE');
-            return <div className="operacoes-status-com-aviso" key={key}><Progress label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable || (key === 'confirmado' && (evidence.loading || Boolean(evidence.error)))} onClick={() => { if (key === 'confirmado' || key === 'calculado' && api?.getCompanyOperation) { setApprovalStage(key); setApprovalRows(null); setApprovalOpen(true); } else show(key,label); }} />
+            return <div className="operacoes-status-com-aviso" key={key}><Progress label={label} color="var(--state-ok)" metric={summary.metrics[key]} disabled={busy || approvalBusy} unavailable={unavailable || (key === 'confirmado' && (evidence.loading || Boolean(evidence.error)))} active={panel.key === key} onClick={() => show(key,label)} />
               {key === 'calculado' ? <OperationsAlerts api={api} compact /> : !unavailable && warnings.length > 0 && <button type="button" className="operacoes-aviso-etapa operacoes-erro" aria-label={`Avisos de ${label}: ${warnings.length} empresas`} onClick={() => show(key,`Avisos de ${label}`,'warnings')}>⚠ {warnings.length}</button>}
             </div>;
           })}
@@ -154,16 +142,16 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
           {evidence.error && <p className="operacoes-feedback-compact" role={api?.getOperationEvidence ? "alert" : "status"}>{evidence.error} <Button size="sm" variant="secondary" onClick={evidence.reload}>Atualizar conferências</Button></p>}
         </section>
         <section className="operacoes-etapa operacoes-guias" aria-label="Guias">
-          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label={`Erros de envio de guias ${unavailable ? '—' : errorCompanies.length}`} onClick={() => open('erros')} disabled={unavailable}>Guias {errorCompanies.length > 0 && <span className="operacoes-erro">⚠ {errorCompanies.length}</span>}</button></h2>
+          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-pressed={panel.key === 'guias'} onClick={() => show('guias','Guias')} disabled={unavailable || busy || approvalBusy}>Guias</button><button className="operacoes-aviso-etapa operacoes-erro" aria-label={`Erros de envio de guias ${unavailable ? '—' : errorCompanies.length}`} onClick={() => open('erros')} disabled={unavailable}>⚠ {unavailable ? '—' : errorCompanies.length}</button></h2>
           <div className="operacoes-etapa-indicadores">
-          {[['disponivel','Disponível'],['enviado','Enviado'],['pago','Pago']].map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable || manualUnavailable} onClick={() => show(key,label)} />)}
+          {[['disponivel','Disponível'],['enviado','Enviado'],['pago','Pago']].map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} disabled={busy || approvalBusy} unavailable={unavailable || manualUnavailable} active={panel.key === key} onClick={() => show(key,label)} />)}
           </div>
           {manualInss.error && <p role="alert">{manualInss.error} <Button size="sm" variant="secondary" onClick={manualInss.reload}>Conferir INSS manual</Button></p>}
         </section>
         <section className="operacoes-etapa operacoes-contabilizacao" aria-label="Contabilização">
-          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Contabilização" onClick={() => show('contabilizacao','Contabilização','all')} disabled={unavailable}>Contabilização</button></h2>
+          <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Contabilização" onClick={() => show('contabilizacao','Contabilização','all')} disabled={unavailable || busy || approvalBusy} aria-pressed={panel.key === "contabilizacao"}>Contabilização</button></h2>
           <div className="operacoes-etapa-indicadores">
-          {CHECKLIST_OPERACOES.map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} unavailable={unavailable} />)}
+          {CHECKLIST_OPERACOES.map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} disabled={busy || approvalBusy} unavailable={unavailable} active={panel.key === key} onClick={() => show(key,label)} />)}
           </div>
         </section>
         <div className="operacoes-quatro-pizzas">{[['parcelas','Parcelamento'],['fiscal','Situação fiscal'],['certificado','Certificado'],['procuracao','Procuração']].map(([key,title]) => <Pizza key={key} title={title} groups={distribution[key]} unavailable={unavailable} onSelect={group => setChart({ key, group, competencia })} />)}</div>
@@ -171,13 +159,15 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
       <OperationsRoutineCompanies api={api} companies={companies} competencia={competencia} loading={loading} error={error} onRefreshCompanies={refresh} />
       <OperationsDasPendencias api={api} companies={companies} competencia={competencia} unavailable={unavailable} />
     </div>
-    {panel?.competencia === competencia && !unavailable && !(manualUnavailable && ['guias','concluido','disponivel','enviado','pago'].includes(panel.key)) && <Modal titulo={panel.title} tamanho="lg" className="operacoes-dialogo" suspenso={Boolean(calculationRow) || guideSuspended} ocupado={busy} aoFechar={() => !busy && closePanel()} rodape={<><div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>{!guidePanel && panel.key !== 'transmitido' && <Button variant="secondary" disabled={busy} onClick={closePanel}>Fechar</Button>}</>}>
+    <div id="operacoes-tabela-contextual">
+    <OperationsContextualTable title={panel.title} competencia={competencia} loading={loading || (requiresManualEvidence && manualInss.loading)} error={error || (requiresManualEvidence && manualInss.error)} suspended={Boolean(calculationRow) || guideSuspended} footer={<div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>}>
+      {approvalPanel ? <OperationsApproval embedded contextual tableContext={tableContext} footerTarget={guideFooter} stage={panel.key} evidence={evidence} key={`${competencia}:${panel.key}`} api={api} rows={rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <>
       <div hidden={guideReviewing}>
         <small className="operacoes-panel-context">Competência {competencia}</small>
-        <div className="operacoes-search-row"><label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label>
-          {['calculado','transmitido','disponivel','enviado','pago'].includes(panel.key) && <Button ref={filterTrigger} variant="secondary" disabled={busy} aria-expanded={filtersOpen} onClick={()=>{setFilterDraft(effectiveStageFilter);setFiltersOpen(true);}}>Filtros {effectiveStageFilter==='all'?0:1}</Button>}
-        </div>
-        {filtersOpen && <section className="operacoes-filter-panel" aria-label="Filtros da etapa"><h3 ref={filterHeading} tabIndex={-1}>Filtros</h3><label>Situação da etapa<select aria-label="Situação da etapa" value={filterDraft} onChange={e=>setFilterDraft(e.target.value)}><option value="all">Todas as empresas deste conjunto</option><option value="done">{panel.key==='calculado'?'Calculadas':'Com conclusão comprovada'}</option><option value="pending">{panel.key==='calculado'?'Não calculadas':'Pendentes'}</option>{attentionFilterAvailable&&<option value="error">Atenção ou bloqueio</option>}<option value="unknown">A verificar</option></select></label><div className="operacoes-acoes"><Button variant="secondary" onClick={closeFilters}>Voltar</Button><Button onClick={()=>{setStageFilter(filterDraft);setPage(0);closeFilters();}}>Aplicar</Button></div></section>}
+        <div className="operacoes-search-row"><label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
+          {!['apurar','concluido'].includes(panel.key) && <Button ref={filterTrigger} variant="secondary" disabled={busy} aria-expanded={filtersOpen} onClick={()=>{setFilterDraft(effectiveStageFilter);setFiltersOpen(true);}}>Filtros {effectiveStageFilter==='all'?0:1}</Button>}
+          <label className="operacoes-rotinas-filtros">Ordenar empresas<select value={tableContext.order} disabled={busy} onChange={e=>tableContext.setOrder(e.target.value)}><option value="stage">Ordem da etapa</option><option value="name">Nome A–Z</option><option value="name-desc">Nome Z–A</option></select></label></div>
+        {filtersOpen && <section className="operacoes-filter-panel" aria-label="Filtros da etapa"><h3 ref={filterHeading} tabIndex={-1}>Filtros</h3><label>Situação da etapa<select aria-label="Situação da etapa" value={filterDraft} onChange={e=>setFilterDraft(e.target.value)}><option value="all">Todas as empresas deste conjunto</option><option value="done">{panel.key==='calculado'?'Calculadas':'Com conclusão comprovada'}</option><option value="pending">{panel.key==='calculado'?'Não calculadas':'Pendentes'}</option>{attentionFilterAvailable&&<option value="error">Atenção ou bloqueio</option>}<option value="unknown">A verificar</option></select></label><div className="operacoes-acoes"><Button variant="secondary" onClick={closeFilters}>Voltar</Button><Button onClick={()=>{setStageFilter(filterDraft);closeFilters();}}>Aplicar</Button></div></section>}
       </div>{panel.key === 'transmitido' && <OperationsTransmissionTable key={competencia} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} footerTarget={guideFooter} onDetailChange={setGuideReviewing} onBusyChange={setBusy} />}
       {panel.key === 'transmitido' ? null : guidePanel ? <OperationsGuides onPreviewChange={setGuideReviewing} key={`${competencia}:${panel.key}`} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} stage={panel.key} filteredRows={filtered} footerTarget={guideFooter} onSuspendChange={setGuideSuspended} onBusyChange={setBusy} onManualInss={row => { closePanel(); setSelection({ group: 'revisoes', id: `${row.company.companyId}:inss-detalhe`, manualCompanyId: row.company.companyId, competencia }); setPreview(false); setResult(null); }} /> : <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas da etapa" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th>{compactCalculationPanel && <th className="operacoes-acao-curta">Ação</th>}{compactCalculationPanel ? <th>{panelNames[panel.key]}</th> : accountingPanel ? CHECKLIST_OPERACOES.map(([key,label]) => <th key={key}>{label}</th>) : <><th>Calculado</th><th>Confirmado</th><th>Transmitido</th></>}{!compactCalculationPanel && <th>Evidências e ações</th>}</tr></thead><tbody>{filtered.slice(page * 30, page * 30 + 30).map(row => <tr key={row.company.companyId}>
         <th scope="row">{nome(row.company)}{compactCalculationPanel && <>
@@ -190,13 +180,16 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
         {!compactCalculationPanel && <td>{accountingPanel ? <><p>Fechamento: {row.fluxo.contabilizacao?.rotulo || 'A verificar'} · Importação ERP: {row.fluxo.contabilizacao?.importados ?? '—'}/{row.fluxo.contabilizacao?.total ?? '—'}</p>{row.fluxo.contabilizacao?.conferenciaDesatualizada && <p role="status">Conferência desatualizada · revise a correção do mês fechado.</p>}</> : <><p>Revisão: {row.operation?.revision || 'A verificar'}</p>{row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}{row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}<Button size="sm" variant="secondary" onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Ver evidências de {nome(row.company)}</Button></>}
           <details><summary>Subetapas e evidências</summary><ul>{(row.fluxo.tarefas || []).map(t => <li key={t.chave}>{t.titulo} · {t.concluida ? 'Concluída' : 'Pendente'}{t.revisar ? ' · Revisar dados alterados' : ''}</li>)}</ul></details>
           <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,accountingPanel ? 'lancamentos' : 'cadastroFiscal')}>{accountingPanel ? 'Abrir lançamentos' : 'Abrir apuração'}</InternalLink>
-          {!accountingPanel && <><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,'obrigacoes')}>Abrir obrigações</InternalLink>{['ACCOUNTANT','FIRM_ADMIN'].includes(row.company.myRole) && <Button size="sm" variant="secondary" disabled={!row.operation} onClick={() => { setApprovalRows([row]); closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}</>}
+          {!accountingPanel && <><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,'obrigacoes')}>Abrir obrigações</InternalLink>{['ACCOUNTANT','FIRM_ADMIN'].includes(row.company.myRole) && <Button size="sm" variant="secondary" disabled={!row.operation} onClick={() => { setApprovalStage("confirmado"); setApprovalRows([row]); closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}</>}
           </div>
         </td>}
       </tr>)}</tbody></table></div>}
       {!filtered.length && <p>Nenhuma empresa neste conjunto.</p>}
-      {!guideReviewing && filtered.length > 30 && <div className="operacoes-acoes"><Button variant="secondary" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Anterior</Button><span>{page + 1}/{Math.ceil(filtered.length / 30)}</span><Button variant="secondary" disabled={(page + 1) * 30 >= filtered.length} onClick={() => setPage(p => p + 1)}>Próxima</Button></div>}
-    </Modal>}
+      {!guideReviewing && <OperationsTablePagination page={page} total={filtered.length} onPage={setPage} disabled={busy} />}
+      </>}
+    </OperationsContextualTable>
+    </div>
+    {busy && !active && !guideSuspended && <Modal titulo="Operação em andamento" ocupado><p role="status">Aguarde a conclusão da operação antes de navegar. Não repita a ação.</p></Modal>}
     {calculationRow && panel?.competencia === competencia && !unavailable && <Modal titulo={`Evidências de ${nome(calculationRow.company)}`} tamanho="lg" className="operacoes-dialogo" aoFechar={() => setCalculationRow(null)} rodape={<Button variant="secondary" onClick={() => setCalculationRow(null)}>Voltar à tabela de empresas</Button>}>
       <h3 ref={calculationHeading} tabIndex={-1}>Cálculo e auditoria de {nome(calculationRow.company)}</h3>
       <p>Competência {competencia}</p>
@@ -209,7 +202,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
         <div className="operacoes-acoes">
           <InternalLink className="btn btn-secondary btn-sm" href={link(calculationRow.company, 'cadastroFiscal')}>Abrir apuração</InternalLink>
           <InternalLink className="btn btn-secondary btn-sm" href={link(calculationRow.company, 'obrigacoes')}>Abrir obrigações</InternalLink>
-          {['ACCOUNTANT','FIRM_ADMIN'].includes(calculationRow.company.myRole) && <Button size="sm" variant="secondary" disabled={!calculationRow.operation} onClick={() => { setApprovalRows([calculationRow]); calculationTrigger.current = null; closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}
+          {['ACCOUNTANT','FIRM_ADMIN'].includes(calculationRow.company.myRole) && <Button size="sm" variant="secondary" disabled={!calculationRow.operation} onClick={() => { setApprovalStage("confirmado"); setApprovalRows([calculationRow]); calculationTrigger.current = null; closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}
         </div>
       </>}
       <OperationsCalculationDetails api={api} companyId={calculationRow.company.companyId} competencia={competencia} />

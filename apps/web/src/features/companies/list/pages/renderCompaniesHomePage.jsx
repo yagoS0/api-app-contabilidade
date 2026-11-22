@@ -83,7 +83,7 @@ export function CompaniesHomePage({
     if (navigation?.location?.pathname === '/companies') {
       const params = new URLSearchParams(locationSearch);
       params.set('competencia', next);
-      for (const key of ['operacoesEtapa','operacoesLista','operacoesCompetencia']) params.delete(key);
+      for (const key of ['operacoesEtapa','operacoesLista','operacoesCompetencia','operacoesBusca','operacoesFiltro','operacoesOrdem','operacoesPagina']) params.delete(key);
       restoredSearch.current = `?${params.toString()}`;
       navigation.navigate(`/companies?${params.toString()}`, {replace:true});
     }

@@ -1,0 +1,29 @@
+{
+  "summary": "B2: tabelas contextuais de Operações reutilizando os componentes e contratos existentes, com contexto visual e navegação preservados.",
+  "operationalImpact": "Sem alteração de regra operacional. Operações/web é dono da composição; Empresas e navegação compartilhada preservam retorno e sessão; Apuração, Guias, Contabilização e Rotinas reutilizam os mesmos leitores, projeções e ações. Portal é consumidor transitivo do mapa, sem alteração direta. API, autorização por empresa, HTTP, FS12, cálculos, transmissão, reservas, pagamentos, documentos, provisões, fechamento e integrações permanecem inalterados. Estado visual não comprova autorização, evidência fiscal ou conclusão.",
+  "risk": "high",
+  "domains": [
+    "operations",
+    "web",
+    "portal",
+    "documentation",
+    "governance"
+  ],
+  "tests": [
+    "Referência anterior à extração: 398 testes aprovados em 29 suítes de Operações, WorkspaceNavigation e carteira. Matriz de equivalência em docs/design/operacoes-alternativa-b2.md.",
+    "Diagnose inicial: base 5019, candidata 5019, zero acréscimos. Verificador mede API; revisão de frontend é complementar.",
+    "Comparação visual utiliza exclusivamente fixtures sintéticas, base exata 1bfe2134, transporte falso e bloqueio da rede externa. Resultados finais, capturas e CI serão registrados no PR.",
+    "Candidata: 31 testes focais em cinco suítes aprovados; confirmação inline adicional: seis testes aprovados no arquivo de integração (conjuntos sobrepostos). Regressão portal: 1610 testes, 102 suítes, zero ignorados.",
+    "Governança: 40 testes do controlador, 48 do runner e cinco do verificador aprovados. Registro de impacto válido. Build web aprovado, avisos preexistentes de tamanho de bundle.",
+    "Comparação final: 15 estados por versão em 1440/390/360, zero overflow global/JS/rede externa; foco 15/15, detalhes/retorno 3/3 por versão; zoom nativo200% comprovado. Uma ocorrência axe em Transmitido idêntica à base. Capturas e limitações em docs/design/evidencias-operacoes-b2/README.md."
+  ],
+  "rollback": "Reverter exclusivamente o commit de apresentação, testes e documentação. Não há migração, backfill ou alteração de dados. Sem autorização de publicação, integração ou limpeza.",
+  "humanDecisions": [
+    "B2 autorizado para implementação, testes, revisões e PR em rascunho. Merge, deploy, produção, alterações fiscais e B3 não autorizados."
+  ],
+  "limitations": [
+    "Controlador 2026-11-22T11-02-18-744Z-787780ff terminou em escalated por timeout do executor. Conclusão supervisionada pelo principal com revisões independentes; sem ready_for_human. Gates interrompidos não são considerados aprovados.",
+    "Capturas e testes com dados sintéticos não representam homologação fiscal/produtiva. CI hospedada e pareceres finais devem ser consultados no SHA do PR."
+  ],
+  "finalReview": "Arquitetura e UI/UX independentes favoráveis sobre os hashes registrados nas evidências locais. Operações favorável condicionado à prova de confirmação inline, acrescentada e aprovada (6/6). Controlador permanece escalated; sem ready_for_human. Regressões amplas e CI final são registradas no PR, sem presumir aprovação."
+}

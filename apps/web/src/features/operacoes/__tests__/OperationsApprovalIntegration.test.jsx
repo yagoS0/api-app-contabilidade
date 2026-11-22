@@ -38,7 +38,8 @@ async function openApprovals(stage = 'Confirmado') {
   trigger.focus();
   fireEvent.click(trigger);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled());
-  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: `Tabela contextual: ${stage}` })).toBeVisible();
 }
 
 test('acompanhamento integrado anuncia falha de atualização sem perder o último resultado', async () => {
@@ -51,9 +52,9 @@ test('acompanhamento integrado anuncia falha de atualização sem perder o últi
   } }).mockRejectedValueOnce(new Error('Falha ao atualizar acompanhamento'));
   await openApprovals();
   fireEvent.click(await screen.findByRole('button', { name: 'Acompanhar tarefa' }));
-  const detail = await screen.findByRole('region', { name: 'Acompanhamento da tarefa' });
+  const detail = await screen.findByRole('dialog', { name: 'Acompanhamento da tarefa' });
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  expect(within(detail).getByRole('heading', { name: 'Acompanhamento da tarefa' })).toHaveFocus();
+  expect(detail).toContainElement(document.activeElement);
   fireEvent.click(within(detail).getByRole('button', { name: 'Atualizar tarefa' }));
   expect(await within(detail).findByRole('alert')).toHaveTextContent('Falha ao atualizar acompanhamento');
   expect(within(detail).getByText('0/1 itens processados')).toBeInTheDocument();
@@ -70,10 +71,10 @@ test('a conferência da empresa usa uma só camada de diálogo e não executa ao
   expect(api.getCompanyOperation).not.toHaveBeenCalled();
   expect(api.getAuditoriaNotas).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
+  expect(await screen.findByRole('dialog', { name: 'Conferir CDA' })).toHaveTextContent('Imposto salvo');
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  expect(await screen.findByRole('region', { name: 'Conferir CDA' })).toHaveTextContent('Imposto salvo');
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Calculado' })).getByRole('button', { name: 'Voltar' }));
-  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Conferir CDA' })).getByRole('button', { name: 'Voltar' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Conferir detalhes' })).toBeEnabled();
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -87,15 +88,15 @@ test('rotina integrada usa uma camada, retorna foco e bloqueia Escape durante ac
   api.acceptOperationsBatch.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   await openApprovals();
   fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
-  await screen.findByRole('region', { name: 'Liberar rotina de transmissão' });
+  await screen.findByRole('dialog', { name: 'Liberar rotina de transmissão' });
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  await waitFor(() => expect(screen.getByRole('heading', { name: 'Liberar rotina de transmissão' })).toHaveFocus());
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'Liberar rotina de transmissão' })).toContainElement(document.activeElement));
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Liberar rotina' })).toHaveFocus());
   fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
   const input = await screen.findByLabelText('Digite a competência 2026-09');
   fireEvent.change(input, { target: { value: '2026-09' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Liberar rotina de transmissão' })).getByRole('button', { name: 'Liberar rotina' }));
   await waitFor(() => expect(api.acceptOperationsBatch).toHaveBeenCalledTimes(1));
   expect(screen.queryByRole('button', { name: 'Fechar' })).not.toBeInTheDocument();
   fireEvent.keyDown(document, { key: 'Escape' });
@@ -112,9 +113,10 @@ test('rotina integrada usa uma camada, retorna foco e bloqueia Escape durante ac
 test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupado e não repete execução (%s)', async result => {
   const task = fixture();
   await openApprovals();
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /Selecionar todas as elegíveis do filtro/ }));
   expect(screen.getByRole('checkbox', { name: 'Selecionar CDA' })).toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Transmitir selecionadas' }));
+  await screen.findByRole('dialog', { name: 'Conferir transmissão' });
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
   const execute = await screen.findByRole('button', { name: 'Liberar e executar' });
   expect(execute).toBeDisabled();
@@ -142,10 +144,49 @@ test.each(['success', 'timeout'])('liberação explícita mantém diálogo ocupa
     expect(screen.queryByRole('button', { name: 'Conferir detalhes' })).not.toBeInTheDocument();
     const retry = screen.getByRole('button', { name: 'Transmitir selecionadas' });
     expect(retry).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Selecionar todas as elegíveis do filtro/ })).toBeDisabled();
     fireEvent.click(retry);
     expect(task.api.saveCompanyOperation).toHaveBeenCalledTimes(1);
   }
   expect(task.api.executeCompanyOperation).toHaveBeenCalledWith('a', '2026-09', 'r2');
   expect(task.api.executeCompanyOperation).toHaveBeenCalledTimes(1);
+});
+
+test('confirmação inline mantém diálogo ocupado único e indicadores durante persistência', async () => {
+  const { api } = fixture('PENDING');
+  let finish;
+  api.saveCompanyOperation.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await openApprovals('Calculado');
+  const indicator = screen.getByRole('button', { name: /^Calculado / });
+  const indicatorName = indicator.getAttribute('aria-label');
+  const indicatorValue = indicator.querySelector('strong').textContent;
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar CDA' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir selecionadas' }));
+  const confirm = await screen.findByRole('button', { name: 'Confirmar cálculos selecionados' });
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1));
+  const dialog = screen.getByRole('dialog', { name: 'Operação em andamento' });
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(indicator).toBeDisabled();
+  expect(indicator).toHaveAttribute('aria-label', indicatorName);
+  expect(indicator.querySelector('strong')).toHaveTextContent(indicatorValue);
+  expect(screen.getByRole('button', { name: 'Mês anterior' })).toBeDisabled();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.click(dialog);
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(dialog).toContainElement(document.activeElement);
+  expect(screen.queryByRole('button', { name: 'Fechar' })).not.toBeInTheDocument();
+  const repeat = screen.getByRole('button', { name: 'Conferir selecionadas' });
+  expect(repeat).toBeDisabled();
+  fireEvent.click(repeat);
+  expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1);
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+  expect(api.acceptOperationsBatch).not.toHaveBeenCalled();
+  const current = await api.getCompanyOperation.mock.results[0].value;
+  await act(async () => finish({ ...current, status: 'CONFIRMED', revision: 'r2' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(indicator).toBeEnabled();
+  expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1);
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });

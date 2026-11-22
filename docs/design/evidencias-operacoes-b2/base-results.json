@@ -1,0 +1,356 @@
+[
+  {
+    "width": 1440,
+    "name": "calculado",
+    "geometry": {
+      "width": 1440,
+      "scroll": 1425,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Calculado\n✕\n\nCompetência 2026-10 · Conferir registra a revisão, sem transmitir.\n\nBuscar empresa\nSituação da etapa\nTodas as empresas deste conjunto\nCalculadas\nNão calculadas\nAtenção ou bloqueio\nA verificar\nSelecionar todas do filtro (0)\nLimpar seleção\n\tEMPRESA\tRECEITA CALCULADA\tIMPOSTOS\tAVISOS\tERROS\tSITUAÇÃO / AÇÕES\n\n\tHorizonte Serviços — exemplo sintético\nSimples Nacional · Rotina não comprovada\n\tNão disponível\tImpostos indisponíveis\tAuditoria não concluída\nAuditoria ainda não consultada\n\tConferir evidências\tA conferir\nConferir detalhes\n\n\n\tLagoa Participações — exemplo sintético\nSimples Nacional · Rotina não comprovada\n\tNão disponível\tImpostos indisponíveis\tAuditoria não concluída\nAuditoria ainda não consultada\n\tConferir evidências\tA conferir\nConferir detalhes\n\n\n\tBosque Tecnologia — exemplo sintético\nSimples Nacional · Rotina não comprovada\n\tNão disponível\t\nDAS Simples\nR$ 0,00\n\tAuditoria não concluída\nAuditoria ainda não consultada\n\tConferir evidências\tConfirmada\nConferir detalhes\n\n\n\tAurora Comércio — exemplo sintético\nSimples Nacional · Rotina não comprovada\n\tNão disponível\t\nDAS Simples\nR$ 120,00\n\tAuditoria não concluída\nAuditoria ainda não consultada\n\tConferir evidências\tConfirmada\nConferir detalhes\n0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+    "detail": {
+      "dialogs": 1,
+      "focus": "<h3 tabindex=\"-1\">Conferir Horizonte Serviços — exemplo sintético</h3>",
+      "returned": true
+    },
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 1440,
+    "name": "confirmado",
+    "geometry": {
+      "width": 1440,
+      "scroll": 1425,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Confirmado\n✕\n\nCompetência 2026-10 · Fila não comprova transmissão. Liberar rotina inclui todas as confirmadas elegíveis, independentemente da seleção manual.\n\nBuscar empresa\nSelecionar todas do filtro (0)\nLimpar seleção\n\tEMPRESA\tRECEITA CONFIRMADA\tIMPOSTOS\tCONFIRMAÇÃO\tSITUAÇÃO / AÇÕES\n\n\tBosque Tecnologia — exemplo sintético\nSimples Nacional · Rotina não comprovada\n\tNão disponível\t\nDAS Simples\nR$ 0,00\n\tAutor não disponível\nA verificar\n\tConfirmada\nConferir detalhes\n\n\n\tAurora Comércio — exemplo sintético\nSimples Nacional · Rotina não comprovada\n\tNão disponível\t\nDAS Simples\nR$ 120,00\n\tAutor não disponível\nA verificar\n\tConfirmada\nConferir detalhes\n0 selecionadas · 0 fora da busca\nAtualizar conferências\nTransmitir selecionadas",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 1440,
+    "name": "transmitido",
+    "geometry": {
+      "width": 1440,
+      "scroll": 1425,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                ".operacoes-transmission-footer > .btn-md.btn-secondary.btn"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Transmitido\n✕\nCompetência 2026-10\nBuscar empresa\nFiltros 0\n0 selecionadas · 0 fora da página ou busca atual\nLimpar seleção\nLimites do download\n\tEMPRESA / DECLARAÇÃO\tRECEITA TRANSMITIDA\tTRIBUTOS\tRECIBO\tEXTRATO\tAÇÕES\n\n\tHorizonte Serviços — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tNão disponível\tDAS: Não disponível\tBaixar recibo\tBaixar extrato\tDetalhes\nRetificar\nAbrir empresa\nRetificar abre a apuração; não executa reabertura.\n\n\n\tLagoa Participações — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tNão disponível\tDAS: Não disponível\tBaixar recibo\tBaixar extrato\tDetalhes\nRetificar\nAbrir empresa\nRetificar abre a apuração; não executa reabertura.\n\n\n\tBosque Tecnologia — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tNão disponível\tDAS: Não disponível\tBaixar recibo\tBaixar extrato\tDetalhes\nRetificar\nAbrir empresa\nRetificar abre a apuração; não executa reabertura.\n\n\n\tAurora Comércio — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tNão disponível\tDAS: Não disponível\tBaixar recibo\tBaixar extrato\tDetalhes\nRetificar\nAbrir empresa\nRetificar abre a apuração; não executa reabertura.\nSelecionar página (0)\nBaixar extratos selecionados (0)",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 1440,
+    "name": "disponivel",
+    "geometry": {
+      "width": 1440,
+      "scroll": 1425,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Disponível\n✕\nCompetência 2026-10\nBuscar empresa\nFiltros 0\nSelecionar para\nEnvio de guias\nConsulta SERPRO\nSelecionar todas as elegíveis do filtro · 0\nLimpar seleção\n0 selecionadas em outras páginas\n\tEMPRESA\tGUIA\tDISPONIBILIDADE\tVALOR\tAÇÕES\n\n\tHorizonte Serviços — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tLagoa Participações — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tBosque Tecnologia — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tAurora Comércio — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\nEnviar selecionadas\nConsultar guias · SERPRO\n0 empresas selecionadas",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 1440,
+    "name": "contabilizacao",
+    "geometry": {
+      "width": 1440,
+      "scroll": 1425,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Contabilização\n✕\nCompetência 2026-10\nBuscar empresa\nEMPRESA\tRECEITAS\tPROVISÕES\tFOLHA/PRÓ-LABORE\tDESPESAS\tPAGAMENTOS\tEVIDÊNCIAS E AÇÕES\nHorizonte Serviços — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nLagoa Participações — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nBosque Tecnologia — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nAurora Comércio — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\nFechar",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 390,
+    "name": "calculado",
+    "geometry": {
+      "width": 390,
+      "scroll": 375,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Calculado\n✕\n\nCompetência 2026-10 · Conferir registra a revisão, sem transmitir.\n\nBuscar empresa\nSituação da etapa\nTodas as empresas deste conjunto\nCalculadas\nNão calculadas\nAtenção ou bloqueio\nA verificar\nSelecionar todas do filtro (0)\nLimpar seleção\nEMPRESA\nRECEITA CALCULADA\nIMPOSTOS\nAVISOS\nERROS\nSITUAÇÃO / AÇÕES\nHorizonte Serviços — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nImpostos indisponíveis\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nA conferir\nConferir detalhes\nLagoa Participações — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nImpostos indisponíveis\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nA conferir\nConferir detalhes\nBosque Tecnologia — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 0,00\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nConfirmada\nConferir detalhes\nAurora Comércio — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 120,00\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nConfirmada\nConferir detalhes\n0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+    "detail": {
+      "dialogs": 1,
+      "focus": "<h3 tabindex=\"-1\">Conferir Horizonte Serviços — exemplo sintético</h3>",
+      "returned": true
+    },
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 390,
+    "name": "confirmado",
+    "geometry": {
+      "width": 390,
+      "scroll": 375,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Confirmado\n✕\n\nCompetência 2026-10 · Fila não comprova transmissão. Liberar rotina inclui todas as confirmadas elegíveis, independentemente da seleção manual.\n\nBuscar empresa\nSelecionar todas do filtro (0)\nLimpar seleção\nEMPRESA\nRECEITA CONFIRMADA\nIMPOSTOS\nCONFIRMAÇÃO\nSITUAÇÃO / AÇÕES\nBosque Tecnologia — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 0,00\nAutor não disponível\nA verificar\nConfirmada\nConferir detalhes\nAurora Comércio — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 120,00\nAutor não disponível\nA verificar\nConfirmada\nConferir detalhes\n0 selecionadas · 0 fora da busca\nAtualizar conferências\nTransmitir selecionadas",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 390,
+    "name": "transmitido",
+    "geometry": {
+      "width": 390,
+      "scroll": 375,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                ".operacoes-transmission-footer > .btn-md.btn-secondary.btn"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Transmitido\n✕\nCompetência 2026-10\nBuscar empresa\nFiltros 0\n0 selecionadas · 0 fora da página ou busca atual\nLimpar seleção\nLimites do download\n\tEMPRESA / DECLARAÇÃO\tTRIBUTOS\tAÇÕES\n\n\tHorizonte Serviços — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\n\n\tLagoa Participações — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\n\n\tBosque Tecnologia — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\n\n\tAurora Comércio — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\nSelecionar página (0)\nBaixar extratos selecionados (0)",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 390,
+    "name": "disponivel",
+    "geometry": {
+      "width": 390,
+      "scroll": 375,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Disponível\n✕\nCompetência 2026-10\nBuscar empresa\nFiltros 0\nSelecionar para\nEnvio de guias\nConsulta SERPRO\nSelecionar todas as elegíveis do filtro · 0\nLimpar seleção\n0 selecionadas em outras páginas\n\tEMPRESA\tGUIA\tDISPONIBILIDADE\tVALOR\tAÇÕES\n\n\tHorizonte Serviços — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tLagoa Participações — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tBosque Tecnologia — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tAurora Comércio — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\nEnviar selecionadas\nConsultar guias · SERPRO\n0 empresas selecionadas",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 390,
+    "name": "contabilizacao",
+    "geometry": {
+      "width": 390,
+      "scroll": 375,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Contabilização\n✕\nCompetência 2026-10\nBuscar empresa\nEMPRESA\tRECEITAS\tPROVISÕES\tFOLHA/PRÓ-LABORE\tDESPESAS\tPAGAMENTOS\tEVIDÊNCIAS E AÇÕES\nHorizonte Serviços — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nLagoa Participações — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nBosque Tecnologia — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nAurora Comércio — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\nFechar",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 360,
+    "name": "calculado",
+    "geometry": {
+      "width": 360,
+      "scroll": 345,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Calculado\n✕\n\nCompetência 2026-10 · Conferir registra a revisão, sem transmitir.\n\nBuscar empresa\nSituação da etapa\nTodas as empresas deste conjunto\nCalculadas\nNão calculadas\nAtenção ou bloqueio\nA verificar\nSelecionar todas do filtro (0)\nLimpar seleção\nEMPRESA\nRECEITA CALCULADA\nIMPOSTOS\nAVISOS\nERROS\nSITUAÇÃO / AÇÕES\nHorizonte Serviços — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nImpostos indisponíveis\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nA conferir\nConferir detalhes\nLagoa Participações — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nImpostos indisponíveis\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nA conferir\nConferir detalhes\nBosque Tecnologia — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 0,00\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nConfirmada\nConferir detalhes\nAurora Comércio — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 120,00\nAuditoria não concluída\nAuditoria ainda não consultada\nConferir evidências\nConfirmada\nConferir detalhes\n0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+    "detail": {
+      "dialogs": 1,
+      "focus": "<h3 tabindex=\"-1\">Conferir Horizonte Serviços — exemplo sintético</h3>",
+      "returned": true
+    },
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 360,
+    "name": "confirmado",
+    "geometry": {
+      "width": 360,
+      "scroll": 345,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Confirmado\n✕\n\nCompetência 2026-10 · Fila não comprova transmissão. Liberar rotina inclui todas as confirmadas elegíveis, independentemente da seleção manual.\n\nBuscar empresa\nSelecionar todas do filtro (0)\nLimpar seleção\nEMPRESA\nRECEITA CONFIRMADA\nIMPOSTOS\nCONFIRMAÇÃO\nSITUAÇÃO / AÇÕES\nBosque Tecnologia — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 0,00\nAutor não disponível\nA verificar\nConfirmada\nConferir detalhes\nAurora Comércio — exemplo sintético\nSimples Nacional · Rotina não comprovada\nNão disponível\nDAS Simples\nR$ 120,00\nAutor não disponível\nA verificar\nConfirmada\nConferir detalhes\n0 selecionadas · 0 fora da busca\nAtualizar conferências\nTransmitir selecionadas",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 360,
+    "name": "transmitido",
+    "geometry": {
+      "width": 360,
+      "scroll": 345,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [
+        {
+          "id": "label-content-name-mismatch",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                ".operacoes-transmission-footer > .btn-md.btn-secondary.btn"
+              ],
+              "summary": "Fix any of the following:\n  Text inside the element is not included in the accessible name"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Transmitido\n✕\nCompetência 2026-10\nBuscar empresa\nFiltros 0\n0 selecionadas · 0 fora da página ou busca atual\nLimpar seleção\nLimites do download\n\tEMPRESA / DECLARAÇÃO\tTRIBUTOS\tAÇÕES\n\n\tHorizonte Serviços — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\n\n\tLagoa Participações — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\n\n\tBosque Tecnologia — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\n\n\tAurora Comércio — exemplo sintético\n\nLeitura vinculada indisponível nesta conexão.\n\n\tDAS: Não disponível\tDetalhes\nSelecionar página (0)\nBaixar extratos selecionados (0)",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 360,
+    "name": "disponivel",
+    "geometry": {
+      "width": 360,
+      "scroll": 345,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Disponível\n✕\nCompetência 2026-10\nBuscar empresa\nFiltros 0\nSelecionar para\nEnvio de guias\nConsulta SERPRO\nSelecionar todas as elegíveis do filtro · 0\nLimpar seleção\n0 selecionadas em outras páginas\n\tEMPRESA\tGUIA\tDISPONIBILIDADE\tVALOR\tAÇÕES\n\n\tHorizonte Serviços — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tLagoa Participações — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tBosque Tecnologia — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\n\n\n\tAurora Comércio — exemplo sintético\n\nLeitura de guias: Leitura de documentos indisponível. Abra Guias para conferir a fonte; não há confirmação de ausência.\n\n\t\nTributos · 2026-10\n—\t\t—\t\nAbrir Guias\nEnviar selecionadas\nConsultar guias · SERPRO\n0 empresas selecionadas",
+    "errors": [],
+    "blocked": []
+  },
+  {
+    "width": 360,
+    "name": "contabilizacao",
+    "geometry": {
+      "width": 360,
+      "scroll": 345,
+      "focus": "<input type=\"search\" value=\"\" style=\"\">",
+      "dialogCount": 1
+    },
+    "axe": {
+      "violations": [],
+      "incomplete": [
+        "color-contrast",
+        "label-content-name-mismatch"
+      ]
+    },
+    "text": "Contabilização\n✕\nCompetência 2026-10\nBuscar empresa\nEMPRESA\tRECEITAS\tPROVISÕES\tFOLHA/PRÓ-LABORE\tDESPESAS\tPAGAMENTOS\tEVIDÊNCIAS E AÇÕES\nHorizonte Serviços — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nLagoa Participações — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nBosque Tecnologia — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\n\nAurora Comércio — exemplo sintético\tA verificar\tA verificar\tA verificar\tA verificar\tA verificar\t\n\nFechamento: Aberto · Importação ERP: 0/—\n\nSubetapas e evidências\nAbrir lançamentos\nFechar",
+    "errors": [],
+    "blocked": []
+  }
+]

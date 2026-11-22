@@ -96,7 +96,7 @@ test('lista de Transmitido pagina 30 de todas as empresas; não usa numerador co
   };
   render(<OperationsPage api={api} companies={companies} competencia={pa} />);
   fireEvent.click(screen.getByRole('button', { name: 'Transmitido 1/31 empresas' }));
-  const dialog = within(screen.getByRole('dialog', { name: 'Transmitido' }));
+  const dialog = within(screen.getByRole('region', { name: 'Tabela contextual: Transmitido' }));
   await waitFor(() => expect(dialog.queryByText('Lendo documentos salvos…')).not.toBeInTheDocument());
   const firstPage = dialog.getAllByRole('rowheader').map(el => el.textContent.split('Vínculo')[0]);
   expect(firstPage).toHaveLength(30);
@@ -126,7 +126,7 @@ test.each([
   const trigger = await screen.findByRole('button', { name: `${stage} ${count} empresas` });
   await waitFor(() => expect(trigger).toBeEnabled());
   fireEvent.click(trigger);
-  const dialog = within(await screen.findByRole('dialog', { name: stage }));
+  const dialog = within(await screen.findByRole('region', { name: `Tabela contextual: ${stage}` }));
   await waitFor(() => expect(dialog.getAllByRole('rowheader')).toHaveLength(names.length));
   for (const name of names) expect(dialog.getByRole('rowheader', { name: new RegExp(`^${name}`) })).toBeVisible();
   expect(api.getCompanyOperation).not.toHaveBeenCalled();

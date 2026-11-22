@@ -538,3 +538,24 @@
   .operacoes-resumo-b .operacoes-quatro-pizzas { grid-template-columns:minmax(0,1fr); }
   .operacoes-resumo-b .operacoes-grafico-corpo { flex-direction:row; align-items:center; }
 }
+
+/* B2: the specialized stage tables share a permanent, bounded work area. */
+.operacoes-contextual { min-width:0; max-width:100%; margin-top:var(--space-4,16px); border:1px solid var(--border); border-radius:var(--radius,8px); padding:16px; }
+.operacoes-contextual[hidden] { display:none; }
+.operacoes-contextual-header { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; margin-bottom:16px; }
+.operacoes-contextual-header h2 { margin:0; font-size:1.125rem; font-weight:600; }
+.operacoes-contextual-header span { color:var(--text-muted); }
+.operacoes-contextual .operacoes-tabela-scroll { max-width:100%; overflow-x:auto; }
+.operacoes-contextual .operacoes-search-row { flex-wrap:wrap; }
+.operacoes-contextual label { min-width:0; max-width:100%; }
+.operacoes-contextual input, .operacoes-contextual select { max-width:100%; box-sizing:border-box; }
+.operacoes-contextual-footer { position:sticky; bottom:0; background:var(--bg-surface); z-index:2; }
+.operacoes-contextual-footer:has(> :empty) { display:none; }
+.operacoes-progress[aria-pressed="true"], .operacoes-titulo[aria-pressed="true"] { outline:2px solid var(--primary); outline-offset:2px; }
+@media(max-width:580px) {
+  .operacoes-contextual { padding:12px; }
+  .operacoes-contextual .operacoes-search-row { display:grid; grid-template-columns:minmax(0,1fr); }
+  .operacoes-contextual .operacoes-acoes { flex-wrap:wrap; }
+  .operacoes-contextual .operacoes-acoes .btn { white-space:normal; min-height:44px; }
+  .operacoes-contextual-footer { position:static; }
+}
