@@ -1,0 +1,35 @@
+{
+  "summary": "NFS-e Nacional: caracterização encadeada de emissão simulada, assinatura, consulta e DANFSe, sem mudança produtiva.",
+  "operationalImpact": "Sem alteração de regra operacional. Fiscal/NFS-e coordena; Cadastro e Identidade fornecem parâmetros e acesso. Consumidores API, portal, web, lotes, recorrências e Comunicação permanecem intactos. Guias, Contabilidade, Comercial e Operações são afetados transitivamente no mapa, sem mudanças de código. R01/R02 e R19/R20 preservadas; não há transmissão real, schema, payload, configuração ou alteração de autorização.",
+  "risk": "high",
+  "domains": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "governance",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "tests": [
+    "Referência: 1591 testes aprovados em 74 suítes; quatro suítes PG inicialmente sem variável obrigatória, depois cinco testes aprovados no PostgreSQL 16 descartável exclusivo.",
+    "Teste encadeado com RSA efêmera, transporte/Prisma falsos e bloqueio TCP/TLS; leitor documental real e recuperação sem retransmissão. Resultado final agregado e CI vinculados ao SHA no PR.",
+    "Governança: 40 testes aprovados; verificador arquitetural: 4 testes aprovados. Diagnose final e revisão independente registrados no PR.",
+    "Candidata: 79 suítes API / 1605 testes aprovados, incluindo cinco PostgreSQL 16; ajuste final da marca de teste revalidado: 9/9. Diagnose base5019/candidata5019/zero novos. CI final deve ser consultada pelo SHA.",
+    "Frontend: 159 testes / sete suítes aprovados; oitava suíte inicialmente sem dependência local @faker-js/faker. Após vincular dependência já instalada, 16/16 aprovados. Total oito suítes / 175 testes."
+  ],
+  "rollback": "Reverter apenas o commit de testes/documentação. Nenhuma migração, dado, configuração ou serviço produtivo alterado.",
+  "humanDecisions": [
+    "Autorizado inspecionar NFS-e, testar com dados sintéticos e abrir PR em rascunho. Não autorizado merge, deploy, transmissão real, certificados produtivos, Operações/B3."
+  ],
+  "limitations": [
+    "Controlador 2026-11-22T14-17-07-007Z-8cb11c87 interrompido pelo principal durante gates, após conclusão do executor e findings de testes/revisão. Executor teve EPERM para Node. Correções e validações supervisionadas pelo principal; não declarado ready_for_human.",
+    "Persistência simulada do novo ensaio não comprova concorrência PostgreSQL, ACL HTTP completa, mTLS, homologação oficial ou disponibilidade remota. Suite PG de regressão valida outros contratos existentes.",
+    "Nenhum defeito fiscal produtivo novo comprovado no recorte. Limitação de obra por endereço e revalidação final nas rotas manuais documentadas para caracterização específica."
+  ],
+  "finalReview": "Fiscal/arquitetura favorável no teste SHA256 7ed1b30102554261b59583f7ade95c2f541b8621ee2bc0c9544f7efce964ecf2 e documento a652fe15bf0719fb1129cc776cd7663b34e569f59105ba2a710fde30101887e9. Backend/segurança solicitou fortalecer prova da marca de teste; ajuste aplicado e aprovado no hash 102e7af649b8d64104f0c3a55019e96b042aecec7091cf92328f115040d65927, com focal9/9. Pareceres independentes condicionados à CI; não autorizam integração."
+}
