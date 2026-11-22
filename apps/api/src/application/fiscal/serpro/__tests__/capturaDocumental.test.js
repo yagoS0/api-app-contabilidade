@@ -15,7 +15,12 @@ import { capturePgdasGuideForCompany } from '../CaptureSerproGuidesService.js';
 import { generateEntriesFromCircular } from '../../../accounting/AccountingEntryGeneratorService.js';
 import { createOrUpdateGuideFromProcessing } from '../../../guides/GuideService.js';
 import { gravarAcrescimoCircular } from '../../circularAcrescimos.js';
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+ // A fixture de outubro exercita DAS normal antes do vencimento de novembro.
+ jest.useFakeTimers({ now: new Date('2026-11-14T12:00:00.000Z'), doNotFake: ['nextTick', 'setImmediate'] });
+ jest.clearAllMocks();
+});
+afterEach(() => jest.useRealTimers());
 test('captura documental salva DAS sem sobrescrever circular, gerar lançamentos ou excluir guias', async () => {
  const r = await capturePgdasGuideForCompany({ portalClientId: 'a', competencia: '2026-10', somenteDocumentos: true });
  expect(r.guide.guideId).toBe('g');
