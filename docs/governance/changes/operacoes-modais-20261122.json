@@ -16,9 +16,10 @@
     "Portal:102 suítes/1610 casos aprovados; governança:88 casos aprovados. Builds de web/portal aprovados, com buildweb renovado após CSS final. Provas próprias e compartilhadas conciliadas por hash; não houve repetição desnecessária.",
     "Revisão visual dos sete modais aprovada, com1/4/40 guias e34 verificações por cenário em1440/390px;145 fontes conferidas. Pareceres reais independentes de UI/UX, pagamento e sistêmico favoráveis no fechamento complementar. PARECER-SISTEMICO-DOIS-TESTES.txt distingue o fechamento local do runtime original escalated.",
     "Lint sem erros; duas advertências de refs em hooks registradas e revisadas. Provas e limitações em ALTAN/output/operacoes-modais-20261122/RELATORIO-FINAL.txt.",
-    "CI hospedado e conferência produtiva serão registrados na integração; não são presumidos pelos testes locais. Nenhuma política, catálogo ou gate foi alterado para aprovar a entrega."
+    "CI hospedado e conferência produtiva serão registrados na integração; não são presumidos pelos testes locais. Nenhuma política, catálogo ou gate foi alterado para aprovar a entrega.",
+    "Integração: a main4d4749cf do PR313 foi incorporada sem conflitos, com seus19 arquivos intactos, para que o novo workflow que usa checkout do head encontre seus testes. A primeira falha remota por ENOENT fica preservada; CI será conferido no novo SHA antes de merge. Nenhum teste ou gate foi alterado para esse ajuste de composição."
   ],
-  "rollback": "Reverter exclusivamente o diff desta branch contra b4cf79ef4c0252300950d7f7d9efe94c4efae914. Sem migração, dados reais ou automações ativadas a desfazer. Preservar outros chats e evidências.",
+  "rollback": "Reverter exclusivamente o incremento de Operações do PR314 (24 arquivos comparados à main4d4749cf82d2b1b1c2664286daca68fa95cf3586), preferindo reverter seu commit de integração. Preservar integralmente o PR313/ADN incorporado da main e outros chats. Sem migração, dados reais ou automações ativadas a desfazer.",
   "humanDecisions": [
     "Desenhos dos sete modais aprovados pelo usuário antes da implementação.",
     "Conclusão complementar autorizada, preservando a execução original e os mesmos gates e revisores.",
