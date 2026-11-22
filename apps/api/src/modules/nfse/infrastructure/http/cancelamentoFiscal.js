@@ -12,7 +12,55 @@ function unico(node, nome, ns = NS) {
 }
 const texto = (node, nome) => unico(node, nome).textContent.trim();
 
-// Recebe exclusivamente o corpo retornado pelo cliente oficial mTLS, nunca dados da requisição.
+// Somente o adaptador interno produz este recibo opaco. Um corpo ou booleano
+// fornecido pelo chamador não comprova transporte oficial. Não é validação de PKI.
+const respostasOficiais = new WeakMap();
+
+function contextoDoTransporte(contexto) {
+  const snapshot = { companyId: String(contexto?.companyId || ''), cnpj: String(contexto?.cnpj || '').replace(/\D/g, ''), chaveAcesso: String(contexto?.chaveAcesso || ''), ambiente: contexto?.ambiente };
+  if (!snapshot.companyId || !/^\d{14}$/.test(snapshot.cnpj) || !/^\d{50}$/.test(snapshot.chaveAcesso) || !['producao', 'homologacao'].includes(snapshot.ambiente)) throw new Error('NFSE_CONTEXTO_TRANSPORTE_INVALIDO');
+  return Object.freeze(snapshot);
+}
+function destinoOficial(destino, contexto, operacao) {
+  const url = new URL(destino);
+  const producao = contexto.ambiente === 'producao';
+  const host = operacao === 'SOLICITAR' ? (producao ? 'sefin.nfse.gov.br' : 'sefin.producaorestrita.nfse.gov.br') : (producao ? 'adn.nfse.gov.br' : 'adn.producaorestrita.nfse.gov.br');
+  const pathValido = operacao === 'SOLICITAR'
+    ? [`/SefinNacional/nfse/${contexto.chaveAcesso}/eventos`, `/API/SefinNacional/nfse/${contexto.chaveAcesso}/eventos`].includes(url.pathname)
+    : url.pathname === `/contribuintes/NFSe/${contexto.chaveAcesso}/Eventos`;
+  if (url.protocol !== 'https:' || url.hostname !== host || url.port || url.username || url.password || url.search || url.hash || !pathValido) throw new Error('NFSE_DESTINO_CANCELAMENTO_INVALIDO');
+  return url.href;
+}
+export function criarTransporteCancelamento({ client, caminho, requestBody, contexto }) {
+  const identidade = contextoDoTransporte(contexto);
+  if (caminho !== `/nfse/${identidade.chaveAcesso}/eventos`) throw new Error('NFSE_DESTINO_CANCELAMENTO_INVALIDO');
+  const envio = destinoOficial(`${String(client.defaults?.baseURL || '').replace(/\/+$/, '')}${caminho}`, identidade, 'SOLICITAR');
+  const consulta = destinoOficial(`https://${identidade.ambiente === 'producao' ? 'adn.nfse.gov.br' : 'adn.producaorestrita.nfse.gov.br'}/contribuintes/NFSe/${identidade.chaveAcesso}/Eventos`, identidade, 'CONSULTAR');
+  const receber = (resposta, operacao, destino) => {
+    const recibo = Object.freeze({});
+    respostasOficiais.set(recibo, Object.freeze({ corpo: resposta.data, contexto: identidade, operacao, destino }));
+    return recibo;
+  };
+  return {
+    enviar: async () => receber(await client.post(envio, requestBody, { proxy: false, timeout: 15000, maxRedirects: 0 }), 'SOLICITAR', envio),
+    consultar: async () => receber(await client.get(consulta, { proxy: false, timeout: 15000, maxRedirects: 0 }), 'CONSULTAR', consulta),
+  };
+}
+
+export function verificarRespostaCancelamento(resposta, contexto) {
+  if (!resposta || !respostasOficiais.has(resposta)) return null;
+  try {
+    const recibo = respostasOficiais.get(resposta);
+    const esperado = contextoDoTransporte(contexto);
+    if (Object.keys(esperado).some(campo => esperado[campo] !== recibo.contexto[campo]) || !['SOLICITAR', 'CONSULTAR'].includes(recibo.operacao)) return null;
+    destinoOficial(recibo.destino, recibo.contexto, recibo.operacao);
+    const evidencia = verificarXmlEventoOficial(recibo.corpo, esperado);
+    return evidencia ? { ...evidencia, origemVerificada: true } : null;
+  } catch { return null; }
+}
+
+
+// Certificado embutido comprova apenas integridade, nunca procedência oficial.
 // O envelope JSON de eventos ainda não foi homologado: não adivinhar campos do provedor.
 export function verificarXmlEventoOficial(corpo, contexto) {
   try {
@@ -74,6 +122,6 @@ export function verificarXmlEventoOficial(corpo, contexto) {
     if (tipoEvento === '101101' || tipoEvento === '101103') {
       if (texto(pedido, 'CNPJAutor') !== String(contexto.cnpj).replace(/\D/g, '')) return null;
     }
-    return { companyId: contexto.companyId, chaveAcesso, ambiente, tipoEvento, sequencia: texto(info, 'nSeqEvento'), id: info.getAttribute('Id'), pedidoId: pedido.getAttribute('Id'), integridadeVerificada: true, origemVerificada: true, hash: createHash('sha256').update(corpo).digest('hex'), xml: corpo };
+    return { companyId: contexto.companyId, chaveAcesso, ambiente, tipoEvento, sequencia: texto(info, 'nSeqEvento'), id: info.getAttribute('Id'), pedidoId: pedido.getAttribute('Id'), integridadeVerificada: true, origemVerificada: false, hash: createHash('sha256').update(corpo).digest('hex'), xml: corpo };
   } catch { return null; }
 }

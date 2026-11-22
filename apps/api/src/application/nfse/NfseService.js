@@ -1,4 +1,4 @@
-import { executarCancelamentoFiscal } from '../../composition/nfseCancelamento.js';
+import { executarCancelamentoFiscal, criarTransporteCancelamento } from '../../composition/nfseCancelamento.js';
 import { validarAmbienteNfse } from './ambienteNfse.js';
 import { situacaoDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
 import { fingerprintConfirmacaoEmissao, exigirFingerprintConfirmado } from './fingerprintConfirmacaoEmissao.js';
@@ -1683,10 +1683,9 @@ export class NfseService {
           const requestBody = { [eventField]: NFSE_EVENT_FORMAT === 'gzipB64'
             ? gzipSync(Buffer.from(signedEventoXml, 'utf-8')).toString('base64') : signedEventoXml };
           const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, '');
-          return {
-            enviar: async () => (await client.post(`${nfsePath}/${encodeURIComponent(chaveAcesso)}/eventos`, requestBody)).data,
-            consultar: async () => (await clientEventosDaEmpresa(client).get(`/NFSe/${encodeURIComponent(chaveAcesso)}/Eventos`)).data,
-          };
+          return criarTransporteCancelamento({ client,
+            caminho: `${nfsePath}/${encodeURIComponent(chaveAcesso)}/eventos`, requestBody,
+            contexto: { companyId: empresaDoEvento, cnpj: companyDoEvento.cnpj, chaveAcesso, ambiente: NFSE_ENV === 'producao' ? 'producao' : 'homologacao' } });
         },
       });
     }

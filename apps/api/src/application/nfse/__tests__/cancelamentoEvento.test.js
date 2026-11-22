@@ -28,8 +28,9 @@ jest.mock("../../../config.js", () => ({
 }));
 
 // Persistência é porta simulada aqui; concorrência e CAS usam PostgreSQL na suíte específica.
+let mockReservaNova = true;
 jest.mock("../../../modules/nfse/infrastructure/prisma/cancelamentoFiscal.js", () => ({
-  criarPersistenciaCancelamento: () => ({ reservar: jest.fn(async () => ({ nova: true })), marcarDespacho: jest.fn(), registrarResultado: jest.fn(), registrarFalha: jest.fn() }),
+  criarPersistenciaCancelamento: () => ({ reservar: jest.fn(async () => ({ nova: mockReservaNova })), marcarDespacho: jest.fn(), registrarResultado: jest.fn(), registrarFalha: jest.fn() }),
 }));
 jest.mock("axios", () => ({ __esModule: true, default: { create: jest.fn() } }));
 
@@ -72,7 +73,7 @@ const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 const CHAVE = "3".repeat(50);
 const JUSTIFICATIVA_OK = "Servico nao foi prestado ao tomador";
 
-let postMock;
+let postMock, getMock;
 
 function montarCenario({ respostaProvedor } = {}) {
   prisma.company.findUnique.mockResolvedValue({ id: "company-1", cnpj: "39254243000191" });
@@ -84,8 +85,10 @@ function montarCenario({ respostaProvedor } = {}) {
   postMock = jest.fn(async () =>
     respostaProvedor === undefined ? { data: { ok: true } } : respostaProvedor()
   );
+  getMock = jest.fn(async () => ({ data: { ok: true } }));
   axios.create.mockReturnValue({
     post: postMock,
+    get: getMock,
     defaults: { baseURL: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional" },
   });
 }
@@ -110,11 +113,23 @@ function xmlAssinado() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockReservaNova = true;
   montarCenario();
 });
 
 // Antes: HTTP200 promovido a accepted (reprodução registrada). Depois: sem XML não há prova.
 describe("P0.2 — HTTP200 não é confirmação fiscal", () => {
+  it('POST usa proxy false sem alterar defaults das demais operações', async () => {
+    await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+    expect(postMock).toHaveBeenCalledWith(`https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse/${CHAVE}/eventos`, expect.any(Object), { proxy: false, timeout: 15000, maxRedirects: 0 });
+    expect(axios.create.mock.calls[0][0]).not.toHaveProperty('proxy');
+  });
+  it('GET de reserva antiga usa proxy false no ADN e não reenvia', async () => {
+    mockReservaNova = false;
+    await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+    expect(postMock).not.toHaveBeenCalled();
+    expect(getMock).toHaveBeenCalledWith(`https://adn.producaorestrita.nfse.gov.br/contribuintes/NFSe/${CHAVE}/Eventos`, { proxy: false, timeout: 15000, maxRedirects: 0 });
+  });
   it.each([{}, { ok: true }, { status: "pending" }])("mantém %j inconclusivo", async data => {
     montarCenario({ respostaProvedor: () => ({ status: 200, data }) });
     await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });

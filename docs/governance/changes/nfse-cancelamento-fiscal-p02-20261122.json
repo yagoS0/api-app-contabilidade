@@ -17,6 +17,7 @@
   ],
   "operationalImpact": "NFS-e é proprietária. Aceite HTTP deixa de equivaler a cancelamento. Escritório, portal e assistente consomem confirmação fiscal comum. Sem mudança tributária, schema, calendário IBS/CBS ou sincronização ADN. Nenhum ato fiscal real autorizado.",
   "tests": [
+    "Fechamento: 170/170 testes em seis suítes; 16/16 PostgreSQL 16 cancelamento e 3/3 Guru/HTTP; 5/5 arquitetura, diagnose 5020/5020. Segurança independente 54/54 e quatro ensaios Axios/adaptador real interceptados antes da rede. Estes resultados incluem os 112 testes focais, não são cumulativos.",
     "Caracterização anterior: 28 testes do serviço aprovados, incluindo três reproduções de HTTP 200 sem prova aceito indevidamente.",
     "Candidata: 32 testes política/aplicação/assinatura e 27 ambiente (59/59); 29 serviço; 117 HTTP/portão/cliente/assistente; 31 contratos do assistente aprovados.",
     "PostgreSQL 16 descartável: 16 testes aprovados, incluindo duas conexões, CAS, rollback, custódia tardia, isolamento e notas já canceladas sem novo POST. Três testes inicialmente reproduziram XML alheio persistido; passaram após correção sem relaxar a proteção.",
@@ -30,6 +31,8 @@
     "Revisão humana do PR e SHA final antes de integração; deploy separado."
   ],
   "limitations": [
+    "Fechamento Controller: NO-GO funcional. Manual oficial define JSON e consulta de todos eventos; adaptador só interpreta XML individual. Campos oficiais não comprovados e não inferidos. Segurança deu GO restrito após vincular origem à empresa/CNPJ/chave/ambiente/operação/destino e impedir proxy implícito. Assinatura isolada não prova autoridade fiscal.",
+    "Controlador 2026-11-22T19-57-52-815Z-08ccc40d: executor concluído, governança 88 aprovados. Gate API com 1554 aprovados, um falho e duas suítes não iniciadas por falta de URL PostgreSQL descartável. Principal interrompeu durante gates e concluiu com executor/revisores independentes, sem ready_for_human. Logs preservados; parecer anterior não autoriza integração.",
     "Envelope JSON do provedor não confirmado nas fontes públicas acessíveis; sem XML oficial verificável, resultado permanece inconclusivo.",
     "Assinatura com certificado embutido comprova integridade, não valida por si só cadeia ICP-Brasil ou revogação. Origem deve ser exclusivamente transporte oficial autenticado.",
     "Envelope JSON/lista de eventos impede declarar o fluxo nacional completo homologado. AppSetting não possui imutabilidade garantida no banco. NAO_ENVIADO não é liberado automaticamente. CI final registrada no PR."

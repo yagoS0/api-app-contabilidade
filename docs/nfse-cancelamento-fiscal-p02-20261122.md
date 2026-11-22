@@ -2,6 +2,52 @@
 
 Base: `07e24a2bf60d93d49960c170043b77478497ab0b`. Conferência: 22/11/2026.
 
+## Fechamento delimitado PR315 — rodada 0
+
+Base deste fechamento: `daf6079c6a94ec7a67f728707d765f9fca9739e7`.
+**NO-GO funcional: contrato JSON de retorno ainda não verificável.** Conforme a pesquisa oficial informada no pedido, o transporte utiliza JSON, mas seus campos não estão comprovados. Não foram inferidos campos, envelopes ou regras de extração. A aceitação de XML bruto em testes não demonstra compatibilidade com o retorno real. Este fechamento não homologa cancelamento nem consulta fiscal e não declara `ready_for_human`.
+
+Correção restrita à origem da evidência: POST e GET do cancelamento passam `proxy: false` por requisição, impedindo herança de proxy do Axios nessa operação. Defaults compartilhados, TLS com `rejectUnauthorized: true`, mTLS, timeout e bloqueio de redirects permanecem. As demais operações não recebem essa opção por consequência.
+
+O verificador XML agora retorna `integridadeVerificada: true` e `origemVerificada: false` quando a assinatura embutida é válida. Certificado sintético/autossinado não comprova procedência. O adaptador HTTP interno encapsula o corpo recebido em recibo opaco registrado em WeakMap privado; a composição verifica esse recibo antes de promover a origem. Texto XML, objetos com `origemVerificada`, cópia ou serialização do recibo não substituem a passagem pelo adaptador. Esse mecanismo delimita a procedência interna do transporte configurado; não cria PKI, confiança na cadeia do certificado embutido ou proteção contra código interno malicioso. Testes positivos simulam explicitamente o adaptador e não representam validação remota.
+
+Complemento após revisão de segurança: o recibo inclui snapshot imutável de empresa, CNPJ, chave e ambiente da coleta, além da operação e URL de destino. Antes de interpretar o XML, o verificador compara esses dados com o contexto consumidor. Hosts, HTTPS e caminhos oficiais específicos são validados por ambiente; query, fragmento, credenciais na URL, portas alternativas e chave divergente são recusados. As requisições usam a URL absoluta validada, `proxy: false`, `maxRedirects: 0` e timeout de 15 segundos. O cliente compartilhado e o wrapper usado por outras consultas permanecem inalterados.
+
+Reexecução complementar autorizada: **3 suítes e 112 testes aprovados**, cobrindo política/assinatura/procedência, fachada de cancelamento e configuração anterior aos efeitos. Inclui troca de contexto A→B/CNPJ/chave/ambiente, mutação posterior do objeto original, destinos incompatíveis e JSON forjado. Nenhum teste consulta provedor real. O executor do controlador estava concluído; o principal encerrou o controlador em testing antes desta complementação para impedir conflito de escritores, preservando o histórico sem declarar ready_for_human.
+
+Contexto dono: Fiscal/NFS-e; composição API e fachada `NfseService.sendEvent` conectam o transporte ao caso de uso existente. Escritório/web, portal e comunicação continuam recebendo inconclusivo sem prova suficiente. Consumidores indiretos de Contabilidade, Guias, Operações e Comercial conservam contratos, permissões e persistência; nenhuma alteração nesses módulos, em schema, eventos, rotas, configuração ou governança. Regras preservadas: R02, R19, R20 e seções 30/31 (resultado fiscal comprovado, identidade, autorização e ausência de repetição incerta). Risco alto por determinar admissibilidade de evidência fiscal.
+
+Validação desta rodada:
+
+- Adicionados cenários focais para `proxy: false` no POST/GET pela fachada, integridade sem origem, certificado sintético não confiável, transporte falso sem origem em reserva nova/antiga, recibo não copiável e JSON desconhecido mesmo vindo do adaptador. Casos positivos identificam a simulação de procedência.
+- Tentado em `apps/api`: `node ../../node_modules/jest/bin/jest.js --runInBand --runTestsByPath src/application/nfse/__tests__/confirmacaoFiscalCancelamento.test.js src/application/nfse/__tests__/cancelamentoEvento.test.js`. Não executou testes: Node v20.20.2 encerrou com código 1, `EPERM: operation not permitted, lstat 'C:\Users\yagoa'`.
+- Tentado `node scripts/governance/check.mjs plan --base daf6079c6a94ec7a67f728707d765f9fca9739e7`: mesma restrição antes de executar o plano. Nenhuma permissão foi alterada.
+- `git diff --check` passou. SHA-256 da fonte operacional canônica conferido: `4edbbc7134008570aa1152d34019c467afabd3aa6768dc89c80830ac166f6113`.
+
+Conclusão do principal: 170 testes em seis suítes aprovados (incluem os 112 acima); 16 testes PostgreSQL 16 de cancelamento explicitamente habilitados e três testes Guru/HTTP aprovados. Cinco testes arquiteturais passaram; diagnose 5020/5020, zero novas violações. A primeira execução PostgreSQL deixou os 16 desabilitados por flag e foi repetida corretamente; não foi contada como aprovação.
+
+Segurança independente: GO restrito à origem, 54 testes aprovados e quatro ensaios com adaptador real/Axios sob proxy sintético, POST/GET em produção/homologação, interceptados antes de qualquer conexão. Fiscal independente: NO-GO funcional. Integridade com certificado embutido não comprova autoridade, cadeia ICP-Brasil, validade ou revogação; a âncora de procedência é o transporte oficial autenticado, sem aceitar XML avulso.
+
+| Formato recebido | Resultado | Limite |
+|---|---|---|
+| XML textual individual válido, com recibo do adaptador | Interpretável conforme tipo existente | Teste sintético não homologa envelope produtivo |
+| XML avulso ou objeto com origem alegada | Não confirma | Certificado embutido não basta |
+| Objeto JSON, JSON textual ou lista de eventos | Inconclusivo | Incompatibilidade com o envelope documentado; bloqueio funcional |
+| Vazio, malformado ou HTTP 200 sem evento | Inconclusivo | Não altera situação fiscal |
+| Contexto de empresa/ambiente/chave/CNPJ divergente | Rejeitado | Não transfere procedência |
+
+O Manual API §1.5 (página 5 do PDF) define comunicação JSON e XML fiscal assinado; o Manual ADN §1.1.1 (página 3) informa retorno de todos os eventos. Os campos exatos não puderam ser comprovados no Swagger oficial acessível. Não foram importados contratos de NFS-e Via ou APIs municipais. Um ato aceito pelo provedor pode permanecer inconclusivo localmente e conservar a reserva: a limitação impede integração funcional, não é simples homologação opcional.
+
+Escritório, portal e assistente convergem em NfseService.sendEvent e na mesma política fiscal; não foi identificado caminho alternativo que promova HTTP 200 a cancelamento. Nenhuma regra de outro domínio foi alterada.
+
+Controlador desta revisão: 2026-11-22T19-57-52-815Z-08ccc40d, executor concluído, 88 testes de governança aprovados. Gate API registrou 1554 aprovados, um falho e duas suítes não iniciadas por falta de URL de banco descartável. Principal interrompeu os gates e concluiu a proteção contextual com executor e revisores independentes; logs preservados, sem ready_for_human. Os resultados de CI do novo SHA ficam registrados no PR; 7/7 do SHA anterior não substitui a nova execução.
+
+Pendência: obter o contrato oficial verificável dos envelopes e caracterizá-lo antes da adaptação. Não inferir campos nem liberar retransmissão. Sem merge, deploy, produção, mensagens ou chamadas fiscais reais.
+
+Rollback: suspender o ato e corrigir prospectivamente preservando reservas/evidências. Reverter esta separação restauraria a promoção indevida de assinatura a origem; não é uma recuperação funcional segura. O fechamento não modifica dados existentes.
+
+Regressão adicional de portal e portão fiscal: 68/68 testes aprovados. O PostgreSQL descartável foi encerrado após os testes, com seus arquivos preservados.
+
 ## Causa e impacto
 
 A base devolvia accepted para qualquer HTTP 200. Escritório, cliente e assistente promoviam esse aceite a cancelled sem interpretar evento fiscal. A reprodução anterior à correção passou 28 testes; a expectativa insegura foi substituída por inconclusivo. Não há evidência de ocorrência produtiva investigada nesta entrega.
@@ -10,7 +56,8 @@ NFS-e é dona da decisão, reserva, identidade, custódia e projeção. Nenhuma 
 
 ## Contrato oficial
 
-- [Manual Integrado API nacional v1.2/out2025](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/manual-contribuintes-emissor-publico-api-sistema-nacional-nfse-v1-2-out2025.pdf), §1.5.
+- [Manual Integrado API nacional v1.2/out2025](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/manual-contribuintes-emissor-publico-api-sistema-nacional-nfs-e-v1-2-out2025.pdf), §1.5.
+- [Manual ADN v1.0, 12/02/2026](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/manual-contribuintes-apis-adn-sistema-nacional-nfse.pdf), §1.1.1: retorno de todos os eventos.
 - [Anexo II eventos v1.01-20260122](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/anexo_ii-sefin_adn-pedregevt_evt-snnfse-v1-01-20260122.xlsx/@@download/file): evento/pedido e tabela de eventos únicos. nSeqEvento=001 para os quatro tipos abaixo.
 - XSD tiposEventos_v1.01.xsd já versionado: descrições, motivos e campos condicionais.
 
