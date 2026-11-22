@@ -17,7 +17,7 @@ it('paga sem envio continua pendente de envio; barras e lista usam empresas e ei
   expect(screen.getByRole('button',{name:'Pago 1/1 empresas'})).toBeEnabled();expect(screen.getByRole('button',{name:'Enviado 0/1 empresas'})).toBeEnabled();expect(coverage.getByText('Pagamento já confirmado')).toBeInTheDocument();
   fireEvent.keyDown(document,{key:'Escape'});
   fireEvent.click(screen.getByRole('button',{name:'Enviado 0/1 empresas'}));
-  const modal = within(screen.getByRole('dialog'));
+  const modal = within(screen.getByRole('region',{name:/^Tabela contextual:/}));
   expect(await modal.findByText('não enviada')).toBeInTheDocument();
   fireEvent.click(modal.getByText('Detalhes do documento'));
   expect(modal.getByText('Confirmada pelo contador')).toBeInTheDocument();
@@ -28,7 +28,7 @@ it('Obrigações integra Apurar sem perder destino; troca de competência fecha 
   const view = render(<OperationsPage companies={companies} competencia="2026-10" />);
   expect(statusApresentacao(companies[0].fluxoCarteira)).toMatchObject({chave:'apurar',etapaOriginal:'obrigacoes'});
   fireEvent.click(screen.getByRole('button', { name: 'Apuração' }));
-  expect(within(screen.getByRole('dialog')).getByRole('link',{name:'Abrir obrigações'})).toHaveAttribute('href', '/companies/a/obrigacoes?competencia=2026-10');
+  expect(within(screen.getByRole('region',{name:/^Tabela contextual:/})).getByRole('link',{name:'Abrir obrigações'})).toHaveAttribute('href', '/companies/a/obrigacoes?competencia=2026-10');
   view.rerender(<OperationsPage companies={companies} competencia="2026-09" />);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
@@ -37,7 +37,7 @@ it('loading e erro não exibem distribuição antiga; vazio é distinto de falha
   expect(screen.getByRole('button', { name: 'Pago — empresas' })).toBeDisabled();
   view.rerender(<OperationsPage companies={[]} competencia="2026-10" />);
   fireEvent.click(screen.getByRole('button', { name: 'Pago 0/0 empresas' }));
-  expect(within(screen.getByRole('dialog')).getByText('Nenhuma empresa neste conjunto.')).toBeInTheDocument();
+  expect(within(screen.getByRole('region',{name:/^Tabela contextual:/})).getByText('Nenhuma empresa neste conjunto.')).toBeInTheDocument();
   view.rerender(<OperationsPage companies={companies} competencia="2026-10" error="Falha de leitura" />);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Pago — empresas' })).toBeDisabled();
@@ -89,7 +89,7 @@ it.each([
  expect(result.items[0].guideSummary.items.filter(i=>i.parcela)).toHaveLength(parcelas.length);
  render(<OperationsPage api={{getCompanyGuides:async()=>[]}} companies={[company]} competencia="2026-10"/>);
  fireEvent.click(screen.getByRole('button',{name:/^Disponível [01]\/1 empresas$/}));
- const modal=within(screen.getByRole('dialog'));
+ const modal=within(screen.getByRole('region',{name:/^Tabela contextual:/}));
  for(const p of parcelas) {expect(await modal.findByText(new RegExp(`Parcela ${p.numeroParcela} · 2026-10`))).toBeInTheDocument();expect(result.items[0].guideSummary.items.find(i=>i.key===p.id).pagamento).toBe(p.pagamentoConfirmado?'Confirmado':'Não confirmado');}
 });
 it('dispensa não confirma pagamento e cobertura de outra competência não comprova eixos',()=>{
@@ -111,7 +111,7 @@ it('pagamento não aplicável fica fora do denominador e da lista de faltantes',
  render(<OperationsPage companies={list} competencia="2026-10"/>);
  fireEvent.click(screen.getByRole('button',{name:'Pago 0/1 empresas'}));
  fireEvent.click(screen.getByRole('button',{name:'Filtros 0'}));fireEvent.change(screen.getByLabelText('Situação da etapa'),{target:{value:'pending'}});fireEvent.click(screen.getByRole('button',{name:'Aplicar'}));
- const modal=within(screen.getByRole('dialog'));
+ const modal=within(screen.getByRole('region',{name:/^Tabela contextual:/}));
  expect(modal.getByText('Alfa')).toBeInTheDocument();
  expect(modal.queryByText('Dispensada')).not.toBeInTheDocument();
 });
@@ -129,8 +129,8 @@ it('INSS em revisão concorda entre Empresas, progresso e filtros sem apagar fec
  expect(within(screen.getByRole('region',{name:'Operações'})).getByRole('button',{name:'Contabilização'})).toBeInTheDocument();
  expect(resumirEtapasOperacoes(projetarOperacoesEmpresas(list,'2026-10').rows,[],[manual]).metrics.concluido.done).toHaveLength(0);
  fireEvent.click(screen.getByRole('button',{name:'Disponível 0/1 empresas'}));
- expect(within(screen.getByRole('dialog')).getByText('Alfa')).toBeInTheDocument();
- expect(within(screen.getByRole('dialog')).getByText(/INSS · Documento para revisão/)).toBeInTheDocument();
+ expect(within(screen.getByRole('region',{name:/^Tabela contextual:/})).getByText('Alfa')).toBeInTheDocument();
+ expect(within(screen.getByRole('region',{name:/^Tabela contextual:/})).getByText(/INSS · Documento para revisão/)).toBeInTheDocument();
  expect(company.fluxoCarteira.status.chave).toBe('concluido');
  expect(company.guideCompliance.inss.state).toBe('enviada');
 });
@@ -138,9 +138,9 @@ it('barras independem da posição e explicam o filtro superior e os desconhecid
  const api={getOperationEvidence:async()=>({ok:true,competencia:'2026-10',items:[],total:0})};
  const company={...companies[0],fluxoCarteira:{...companies[0].fluxoCarteira,status:{chave:'apuracao'},tarefas:[{etapa:'apuracao',concluida:false},{etapa:'contabilizacao',concluida:true},{etapa:'importacao',concluida:true}]}};
  const view=render(<OperationsPage api={api} companies={[company]} competencia="2026-10"/>);
- const progress=screen.getByRole('group',{name:/^Receitas /});
- expect(progress).toHaveAttribute('aria-description',expect.stringContaining('Indicador informativo'));
- expect(screen.queryByRole('button',{name:/^Receitas /})).not.toBeInTheDocument();
+ const progress=screen.getByRole('button',{name:/^Receitas /});
+ expect(progress).toHaveAttribute('aria-description',expect.stringContaining('Abrir tabela de empresas'));
+ fireEvent.click(progress); expect(screen.getByRole('region',{name:'Tabela contextual: Receitas'})).toBeVisible();
  view.unmount();
  render(<OperationsPage api={api} companies={[company]} competencia="2026-10"/>);
  const confirmed=await screen.findByRole('button',{name:'Confirmado — empresas'});
@@ -149,7 +149,7 @@ it('barras independem da posição e explicam o filtro superior e os desconhecid
  expect(await screen.findByText('Não foi possível conferir as evidências da competência.',{exact:false,selector:'[role="alert"]'})).toBeVisible();
  const metric=resumirEtapasOperacoes(projetarOperacoesEmpresas([company],'2026-10').rows,[]).metrics.confirmado;
  expect(metric.done).toHaveLength(0);expect(metric.total).toBe(1);expect(metric.unknown).toHaveLength(1);
- fireEvent.click(screen.getByRole('button',{name:'Contabilização'}));expect(within(screen.getByRole('dialog')).getByText('Alfa')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Contabilização'}));expect(within(screen.getByRole('region',{name:/^Tabela contextual:/})).getByText('Alfa')).toBeInTheDocument();
  company.fluxoCarteira.tarefas[2].concluida=false;
  expect(resumirEtapasOperacoes([{company,fluxo:company.fluxoCarteira}]).metrics.contabilizacao.done).toHaveLength(0);
 });
@@ -194,7 +194,7 @@ it('sem API de evidências mantém Confirmado indisponível e não oferece aprov
 it('Transmitido usa valores vinculados; cálculo atual e extrato sem vínculo permanecem fontes distintas no detalhe',async()=>{
  const api={getApuracaoSnapshot:jest.fn(async()=>({snapshot:{portalClientId:'a',competencia:'2026-10',estado:'transmitida',idempotencyKey:'calc-a',numeroDeclaracao:'123',dasSimuladoSerpro:72,dasRetornadoSerpro:74}})),getAuditoriaNotas:jest.fn(async()=>({auditoria:{competencia:'2026-10',totalAchados:0,perguntas:[]}})),getPgdasHistorico:jest.fn(async()=>({competencia:'2026-10',atualId:'v1',versoes:[{id:'v1',numeroDeclaracao:'123',atual:true,dasTotal:73}]})),getOperationsTransmissionDocuments:jest.fn(async()=>({ok:true,companyId:'a',competencia:'2026-10',items:[{companyId:'a',competencia:'2026-10',releaseId:'release-a',versionId:'v1',calculoId:'calc-historico',proofHash:'proof-a',numeroDeclaracao:'123',receitaBruta:1000,dasTotal:73,documentos:{extrato:true,recibo:true}}],unavailable:[]}))};
  const view=render(<OperationsPage api={api} companies={companies} competencia="2026-10"/>);
- fireEvent.click(screen.getByRole('button',{name:/^Transmitido /}));const dialog=within(screen.getByRole('dialog'));
+ fireEvent.click(screen.getByRole('button',{name:/^Transmitido /}));const dialog=within(screen.getByRole('region',{name:/^Tabela contextual:/}));
  expect(dialog.getByRole('columnheader',{name:'Receita transmitida'})).toBeInTheDocument();expect(dialog.getByRole('columnheader',{name:'Tributos'})).toBeInTheDocument();
  await dialog.findByText(/73,00/);expect(dialog.getByText(/1\.000,00/)).toBeInTheDocument();expect(dialog.queryByText(/72,00|74,00/)).not.toBeInTheDocument();expect(dialog.getByText(/Cálculo: calc-historico/)).toBeInTheDocument();expect(dialog.getAllByRole('table')).toHaveLength(1);
  expect(api.getOperationsTransmissionDocuments).toHaveBeenCalledWith('a','2026-10');expect(api.getApuracaoSnapshot).not.toHaveBeenCalled();expect(api.getPgdasHistorico).not.toHaveBeenCalled();

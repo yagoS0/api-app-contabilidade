@@ -1,0 +1,365 @@
+[
+  {
+    "width": 1440,
+    "data": {
+      "footer": {
+        "tag": "DIV",
+        "cls": "operacoes-stage-footer",
+        "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+        "x": 88.25,
+        "right": 1336.75,
+        "width": 1248.5,
+        "scroll": 1249,
+        "client": 1249,
+        "overflowX": "visible",
+        "display": "flex",
+        "flexWrap": "wrap",
+        "minWidth": "0px"
+      },
+      "children": [
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "text": "0 selecionadas · 0 fora da busca",
+          "x": 579.484375,
+          "right": 788.609375,
+          "width": 209.125,
+          "scroll": 209,
+          "client": 209,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-secondary btn-md",
+          "text": "Atualizar conferências",
+          "x": 800.609375,
+          "right": 974.109375,
+          "width": 173.5,
+          "scroll": 172,
+          "client": 172,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-secondary btn-md",
+          "text": "Calcular selecionadas",
+          "x": 986.109375,
+          "right": 1154.953125,
+          "width": 168.84375,
+          "scroll": 167,
+          "client": 167,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-primary btn-md",
+          "text": "Conferir selecionadas",
+          "x": 1166.953125,
+          "right": 1336.75,
+          "width": 169.796875,
+          "scroll": 168,
+          "client": 168,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        }
+      ],
+      "ancestors": [
+        {
+          "tag": "DIV",
+          "cls": "operacoes-guide-footer-slot",
+          "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+          "x": 88.25,
+          "right": 1336.75,
+          "width": 1248.5,
+          "scroll": 1249,
+          "client": 1249,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        },
+        {
+          "tag": "DIV",
+          "cls": "operacoes-contextual-footer",
+          "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+          "x": 88.25,
+          "right": 1336.75,
+          "width": 1248.5,
+          "scroll": 1249,
+          "client": 1249,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        },
+        {
+          "tag": "SECTION",
+          "cls": "operacoes-contextual",
+          "text": "Calculado\nCompetência 2026-10\n\nCompetência 2026-10 · Conferir registra a revisão, sem transmitir.\n\nB",
+          "x": 71.25,
+          "right": 1353.75,
+          "width": 1282.5,
+          "scroll": 1281,
+          "client": 1281,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        }
+      ]
+    }
+  },
+  {
+    "width": 390,
+    "data": {
+      "footer": {
+        "tag": "DIV",
+        "cls": "operacoes-stage-footer",
+        "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+        "x": 31.75,
+        "right": 343.25,
+        "width": 311.5,
+        "scroll": 312,
+        "client": 312,
+        "overflowX": "visible",
+        "display": "flex",
+        "flexWrap": "wrap",
+        "minWidth": "0px"
+      },
+      "children": [
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "text": "0 selecionadas · 0 fora da busca",
+          "x": 134.125,
+          "right": 343.25,
+          "width": 209.125,
+          "scroll": 209,
+          "client": 209,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-secondary btn-md",
+          "text": "Atualizar conferências",
+          "x": 169.75,
+          "right": 343.25,
+          "width": 173.5,
+          "scroll": 172,
+          "client": 172,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-secondary btn-md",
+          "text": "Calcular selecionadas",
+          "x": 174.40625,
+          "right": 343.25,
+          "width": 168.84375,
+          "scroll": 167,
+          "client": 167,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-primary btn-md",
+          "text": "Conferir selecionadas",
+          "x": 173.453125,
+          "right": 343.25,
+          "width": 169.796875,
+          "scroll": 168,
+          "client": 168,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        }
+      ],
+      "ancestors": [
+        {
+          "tag": "DIV",
+          "cls": "operacoes-guide-footer-slot",
+          "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+          "x": 31.75,
+          "right": 343.25,
+          "width": 311.5,
+          "scroll": 312,
+          "client": 312,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        },
+        {
+          "tag": "DIV",
+          "cls": "operacoes-contextual-footer",
+          "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+          "x": 31.75,
+          "right": 343.25,
+          "width": 311.5,
+          "scroll": 312,
+          "client": 312,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        },
+        {
+          "tag": "SECTION",
+          "cls": "operacoes-contextual",
+          "text": "Calculado\nCompetência 2026-10\n\nCompetência 2026-10 · Conferir registra a revisão, sem transmitir.\n\nB",
+          "x": 18.75,
+          "right": 356.25,
+          "width": 337.5,
+          "scroll": 336,
+          "client": 336,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        }
+      ]
+    }
+  },
+  {
+    "width": 360,
+    "data": {
+      "footer": {
+        "tag": "DIV",
+        "cls": "operacoes-stage-footer",
+        "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+        "x": 30.25,
+        "right": 314.75,
+        "width": 284.5,
+        "scroll": 285,
+        "client": 285,
+        "overflowX": "visible",
+        "display": "flex",
+        "flexWrap": "wrap",
+        "minWidth": "0px"
+      },
+      "children": [
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "text": "0 selecionadas · 0 fora da busca",
+          "x": 105.625,
+          "right": 314.75,
+          "width": 209.125,
+          "scroll": 209,
+          "client": 209,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-secondary btn-md",
+          "text": "Atualizar conferências",
+          "x": 141.25,
+          "right": 314.75,
+          "width": 173.5,
+          "scroll": 172,
+          "client": 172,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-secondary btn-md",
+          "text": "Calcular selecionadas",
+          "x": 145.90625,
+          "right": 314.75,
+          "width": 168.84375,
+          "scroll": 167,
+          "client": 167,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "btn btn-primary btn-md",
+          "text": "Conferir selecionadas",
+          "x": 144.953125,
+          "right": 314.75,
+          "width": 169.796875,
+          "scroll": 168,
+          "client": 168,
+          "overflowX": "visible",
+          "display": "flex",
+          "flexWrap": "nowrap",
+          "minWidth": "auto"
+        }
+      ],
+      "ancestors": [
+        {
+          "tag": "DIV",
+          "cls": "operacoes-guide-footer-slot",
+          "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+          "x": 30.25,
+          "right": 314.75,
+          "width": 284.5,
+          "scroll": 285,
+          "client": 285,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        },
+        {
+          "tag": "DIV",
+          "cls": "operacoes-contextual-footer",
+          "text": "0 selecionadas · 0 fora da busca\nAtualizar conferências\nCalcular selecionadas\nConferir selecionadas",
+          "x": 30.25,
+          "right": 314.75,
+          "width": 284.5,
+          "scroll": 285,
+          "client": 285,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        },
+        {
+          "tag": "SECTION",
+          "cls": "operacoes-contextual",
+          "text": "Calculado\nCompetência 2026-10\n\nCompetência 2026-10 · Conferir registra a revisão, sem transmitir.\n\nB",
+          "x": 17.25,
+          "right": 327.75,
+          "width": 310.5,
+          "scroll": 309,
+          "client": 309,
+          "overflowX": "visible",
+          "display": "block",
+          "flexWrap": "nowrap",
+          "minWidth": "0px"
+        }
+      ]
+    }
+  }
+]

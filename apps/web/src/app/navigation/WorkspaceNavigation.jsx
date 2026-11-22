@@ -23,7 +23,18 @@ export function WorkspaceHomeLink() {
 export function WorkspaceNavigationProvider({ children }) {
   const location = useLocation();
   const action = useNavigationType();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const operationsReturn = useRef(null);
+  useLayoutEffect(() => {
+    if (location.pathname === '/login') operationsReturn.current = null;
+    else if (location.pathname === '/companies') {
+      operationsReturn.current = new URLSearchParams(location.search).get('visao') === 'operacoes'
+        ? `/companies${location.search}` : null;
+    }
+  }, [location.pathname, location.search]);
+  const navigate = useCallback((target, options) => routerNavigate(
+    target === '/companies' && operationsReturn.current ? operationsReturn.current : target, options,
+  ), [routerNavigate]);
   const editors = useRef(new Map());
   const intent = useRef(null);
   const operationRef = useRef(null);
@@ -165,6 +176,7 @@ export function WorkspaceNavigationProvider({ children }) {
     else navigate(fallback, { replace: true });
   }, [navigate]);
   const resetSession = useCallback(() => {
+    operationsReturn.current = null;
     editors.current.forEach(lease => lease.read().invalidate?.());
     editors.current.clear(); clearIntent(false);
     if (blockerRef.current.state === 'blocked') blockerRef.current.reset();

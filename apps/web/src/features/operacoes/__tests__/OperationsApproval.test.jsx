@@ -230,9 +230,9 @@ test('três empresas selecionadas em paralelo; fechar não inicia detalhes, prov
  const many=Array.from({length:8},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`,myRole:'ACCOUNTANT'}}));
  api.getOperationEvidence=jest.fn(async competencia=>({items:many.map(({company})=>({regime:'SIMPLES',companyId:company.companyId,competencia,revision:'r1',status:'CONFIRMED',pending:[],calculation:{calculoId:'calculo-1',dasValor:100}})),total:8,competencia}));
  const view=render(<OperationsApproval api={api} rows={many} competencia="2026-09" stage="confirmado"/>);
- await waitFor(()=>expect(screen.getByLabelText('Selecionar elegíveis exibidas')).toBeEnabled());
+ await waitFor(()=>expect(screen.getByLabelText(/Selecionar todas as elegíveis do filtro/)).toBeEnabled());
  expect(api.getCompanyOperation).not.toHaveBeenCalled();
- fireEvent.click(screen.getByLabelText('Selecionar elegíveis exibidas'));fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas',exact:true}));
+ fireEvent.click(screen.getByLabelText(/Selecionar todas as elegíveis do filtro/));fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas',exact:true}));
  expect(api.getCompanyOperation.mock.calls.map(([id])=>id)).toEqual(['0','1','2']);view.unmount();
  await act(async()=>pending.forEach((resolve,i)=>resolve({companyId:String(i),competencia:'2026-09',revision:'r1',pending:[]})));
  expect(api.getCompanyOperation).toHaveBeenCalledTimes(3);expect(api.getApuracaoSnapshot).not.toHaveBeenCalled();expect(api.getOperationsTransmissionDocuments).not.toHaveBeenCalled();expect(api.saveCompanyOperation).not.toHaveBeenCalled();
@@ -243,8 +243,8 @@ test('troca de competência descarta a fila selecionada antiga antes de ler evid
  const many=Array.from({length:5},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`,myRole:'ACCOUNTANT'}}));
  api.getOperationEvidence=jest.fn(async competencia=>({items:many.map(({company})=>({regime:'SIMPLES',companyId:company.companyId,competencia,revision:competencia,status:'CONFIRMED',pending:[],calculation:{calculoId:'calculo-1',dasValor:100}})),total:5,competencia}));
  const view=render(<OperationsApproval api={api} rows={many} competencia="2026-09" stage="confirmado"/>);
- await waitFor(()=>expect(screen.getByLabelText('Selecionar elegíveis exibidas')).toBeEnabled());
- fireEvent.click(screen.getByLabelText('Selecionar elegíveis exibidas'));fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas',exact:true}));
+ await waitFor(()=>expect(screen.getByLabelText(/Selecionar todas as elegíveis do filtro/)).toBeEnabled());
+ fireEvent.click(screen.getByLabelText(/Selecionar todas as elegíveis do filtro/));fireEvent.click(screen.getByRole('button',{name:'Transmitir selecionadas',exact:true}));
  expect(api.getCompanyOperation).toHaveBeenCalledTimes(3);
  view.rerender(<OperationsApproval api={api} rows={many} competencia="2026-10" stage="confirmado"/>);
  await waitFor(()=>expect(api.getOperationEvidence).toHaveBeenCalledTimes(2));await act(async()=>pending.forEach(resolve=>resolve()));

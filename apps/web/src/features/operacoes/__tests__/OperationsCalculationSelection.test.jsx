@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { OperationsApproval } from '../OperationsApproval';
 import { resumirEtapasOperacoes } from '../operacoes';
 
@@ -16,6 +16,30 @@ function fixture() { return {
   saveOperationsExternal: jest.fn(), executeCompanyOperation: jest.fn(), saveCompanyOperation: jest.fn(),
 }; }
 beforeAll(() => { if (!crypto.randomUUID) crypto.randomUUID = () => 'request-fixture'; });
+
+test('cálculo contextual mantém foco e impede fechamento durante execução única', async () => {
+  const api = fixture();
+  let complete;
+  api.executeOperationsCalculation.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+  const tableContext = { page: 0, order: 'stage', query: '', filter: 'all', setPage: jest.fn(), setOrder: jest.fn(), setQuery: jest.fn(), setFilter: jest.fn() };
+  render(<OperationsApproval api={api} rows={rows} competencia={competencia} stage="calculado" embedded contextual tableContext={tableContext} />);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Selecionar Sem cálculo' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Sem cálculo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Calcular selecionadas' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cálculo (1)' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cálculo (1)' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Calcular selecionadas' });
+  fireEvent.keyDown(document, { key: 'Escape' }); fireEvent.click(dialog); fireEvent.keyDown(document, { key: 'Tab' });
+  expect(dialog).toContainElement(document.activeElement);
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(1);
+  await act(async () => complete({ companyId: 'a', competencia, status: 'CALCULATED' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Voltar' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
 test('empresa sem cálculo pode ser selecionada; conferência permanece bloqueada e cálculo limpa seleção', async () => {
   const api = fixture();
   render(<OperationsApproval api={api} rows={rows} competencia={competencia} stage="calculado" embedded />);
@@ -38,8 +62,8 @@ test('empresa sem cálculo pode ser selecionada; conferência permanece bloquead
 test('seleção preserva empresa fora da busca e não confunde seleção com aptidão para transmissão', async () => {
   const api = fixture();
   render(<OperationsApproval api={api} rows={rows} competencia={competencia} stage="calculado" embedded />);
-  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar elegíveis exibidas' }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: /Selecionar todas as elegíveis do filtro/ })).toBeEnabled());
+  fireEvent.click(screen.getByRole('checkbox', { name: /Selecionar todas as elegíveis do filtro/ }));
   fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar empresa' }), { target: { value: 'Sem cálculo' } });
   expect(screen.getByText('2 selecionadas · 1 fora da busca')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Conferir selecionadas' })).toBeDisabled();

@@ -274,3 +274,12 @@ test.each([
   expect(router.state.location.pathname).toBe('/origem');expect(screen.getByLabelText('a')).toHaveValue('rascunho');expect(save).not.toHaveBeenCalled();
  });
 });
+ test('retorno pela marca conserva contexto de Operações e novo login o descarta', () => {
+  const route = '/companies?visao=operacoes&competencia=2026-10&operacoesCompetencia=2026-10&operacoesEtapa=enviado&operacoesLista=all&operacoesBusca=Alfa&operacoesOrdem=name&operacoesPagina=2';
+  setup(route);
+  fireEvent.click(screen.getByText('Notas'));
+  fireEvent.click(screen.getByRole('link', { name: 'Altan — página principal' }));
+  expect(screen.getByLabelText('rota').textContent).toBe(route);
+  fireEvent.click(screen.getByText('Novo login'));
+  expect(screen.getByLabelText('rota').textContent).toBe('/companies');
+});
