@@ -2266,19 +2266,21 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           cMotivo: req.body?.cMotivo,
           justificativa: req.body?.justificativa,
           companyId: legacyCompanyId,
+          revalidarAutorizacao: async () => {
+            const userId = req.auth?.user?.id;
+            const deny = () => { throw Object.assign(new Error('Autorização do cancelamento não está vigente.'), { code: 'NFSE_CANCELAMENTO_AUTORIZACAO', antesDoPost: true }); };
+            if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false })) || req.auth?.user?.id !== userId) deny();
+            let permitido = false;
+            await requireClientCompanyAccess()(req, res, () => { permitido = true; });
+            if (!permitido || await resolveLegacyCompanyId(portalClientId) !== legacyCompanyId) deny();
+            if (!(await ensureEmissaoNfseAutorizada(req, res, legacyCompanyId, { log })).ok) deny();
+          },
           log,
         });
-        // ⚠ O NOSSO REGISTRO DA EMISSÃO ACOMPANHA — a mesma linha que a porta do escritório já
-        // fazia. É `ServiceInvoice`, NOSSA tabela: deixá-la dizendo `issued` depois de nós termos
-        // cancelado seria a nossa base mentindo sobre um ato nosso.
-        //
-        // ⚠⚠ E ISTO **NÃO** É ESCREVER EM `PortalInvoice`. Aquela é a projeção do ADN, e gravá-la à
-        // mão é o que o cabeçalho de `notasEmitidasNaoConfirmadas.js` proíbe: a captura traz o
-        // evento de cancelamento e é ela a autoridade sobre `statusEfetivo`.
-        //
-        // ⚠ `updateByChaveAcesso` devolve `null` quando não há linha nossa — o caso normal de uma
-        // nota emitida fora do portal. Não é erro, e não muda o desfecho.
-        await NfseRepository.updateByChaveAcesso(nota.chaveAcesso, { status: "cancelled" });
+        if (result?.confirmacaoFiscal !== true) {
+          throw Object.assign(new Error('Cancelamento fiscal não comprovado.'), { camada: 'TRANSPORTE', codigo: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+        }
+        // A composição NFS-e já confirmou e persistiu a evidência. A projeção ADN não é escrita aqui.
 
         return res.json({
           ok: true,
@@ -2292,6 +2294,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           providerData: result?.providerData ?? null,
         });
       } catch (err) {
+        if (res.headersSent) return;
         if (responderErroCancelamento(res, err)) return;
         log.error({ err: err?.message, companyId: portalClientId }, "Cancelamento do cliente falhou");
         return res.status(500).json({ ok: false, error: "internal_error" });

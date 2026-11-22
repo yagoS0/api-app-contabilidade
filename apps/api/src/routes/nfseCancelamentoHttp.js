@@ -38,6 +38,9 @@ import { CAMADA } from "../application/nfse/desfechoEmissao.js";
 
 /** As recusas NOSSAS, nomeadas — nenhuma delas chegou a sair da máquina. */
 const RECUSAS_LOCAIS = Object.freeze({
+  NFSE_EVENTO_NAO_HOMOLOGADO: { status: 422, error: 'nfse_evento_nao_homologado' },
+  NFSE_CANCELAMENTO_AUTORIZACAO: { status: 403, error: 'forbidden' },
+  NFSE_CANCELAMENTO_CONCORRENTE: { status: 409, error: 'nfse_cancelamento_concorrente' },
   NFSE_CHAVE_REQUIRED: { status: 400, error: "chave_required" },
   NFSE_TIPO_EVENTO_REQUIRED: { status: 400, error: "tipo_evento_required" },
   NFSE_JUSTIFICATIVA_REQUIRED: { status: 400, error: "justificativa_required" },
@@ -111,6 +114,7 @@ export function responderErroCancelamento(res, err) {
       // única das três em que ele é `false`: nas outras duas ou nada saiu da máquina, ou o sistema
       // nacional analisou e recusou — nos dois casos a nota certamente NÃO foi cancelada.
       podeTentarDeNovo: err.camada !== CAMADA.TRANSPORTE,
+      ...(err.situacao ? { situacao: err.situacao } : {}),
       providerData: err.providerData ?? null,
     });
     return true;

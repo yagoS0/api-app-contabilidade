@@ -27,6 +27,10 @@ jest.mock("../../../config.js", () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
+// Persistência é porta simulada aqui; concorrência e CAS usam PostgreSQL na suíte específica.
+jest.mock("../../../modules/nfse/infrastructure/prisma/cancelamentoFiscal.js", () => ({
+  criarPersistenciaCancelamento: () => ({ reservar: jest.fn(async () => ({ nova: true })), marcarDespacho: jest.fn(), registrarResultado: jest.fn(), registrarFalha: jest.fn() }),
+}));
 jest.mock("axios", () => ({ __esModule: true, default: { create: jest.fn() } }));
 
 // A assinatura de verdade exigiria chave privada versionada — o que não se faz. O que importa aqui
@@ -93,6 +97,7 @@ function cancelar(over = {}) {
     justificativa: JUSTIFICATIVA_OK,
     cMotivo: "1",
     companyId: "company-1",
+    revalidarAutorizacao: async () => {},
     log,
     ...over,
   });
@@ -106,6 +111,15 @@ function xmlAssinado() {
 beforeEach(() => {
   jest.clearAllMocks();
   montarCenario();
+});
+
+// Antes: HTTP200 promovido a accepted (reprodução registrada). Depois: sem XML não há prova.
+describe("P0.2 — HTTP200 não é confirmação fiscal", () => {
+  it.each([{}, { ok: true }, { status: "pending" }])("mantém %j inconclusivo", async data => {
+    montarCenario({ respostaProvedor: () => ({ status: 200, data }) });
+    await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+    expect(postMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("⚠⚠ o `cMotivo` NÃO é mais arbitrado — e a recusa acontece ANTES de qualquer I/O", () => {
@@ -146,7 +160,7 @@ describe("⚠⚠ as duas listas não se misturam", () => {
   );
 
   it.each(["1", "2", "9"])("`%s` é aceito e sai NO XML como veio, sem zero à esquerda", async (codigo) => {
-    await cancelar({ cMotivo: codigo });
+    await expect(cancelar({ cMotivo: codigo })).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     expect(xmlAssinado()).toContain(`<cMotivo>${codigo}</cMotivo>`);
     // ⚠ Um `padStart(2,"0")` aqui mandaria "01" — código de outra lista, rejeição de schema.
     expect(xmlAssinado()).not.toContain(`<cMotivo>0${codigo}</cMotivo>`);
@@ -183,7 +197,7 @@ describe("⚠ a justificativa tem TAMANHO, e ele é conferido ANTES de assinar",
   });
 
   it("exatamente 15 passa", async () => {
-    await cancelar({ justificativa: "a".repeat(15) });
+    await expect(cancelar({ justificativa: "a".repeat(15) })).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     expect(postMock).toHaveBeenCalled();
   });
 
@@ -208,7 +222,7 @@ describe("⚠ a justificativa tem TAMANHO, e ele é conferido ANTES de assinar",
 
 describe("o XML do cancelamento", () => {
   it("é `e101101`, com o `xDesc` que o XSD enumera e a chave da nota", async () => {
-    await cancelar();
+    await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     const xml = xmlAssinado();
     expect(xml).toContain("<e101101>");
     // `tiposEventos_v1.01.xsd:226-231` enumera EXATAMENTE esta string.
@@ -218,7 +232,7 @@ describe("o XML do cancelamento", () => {
   });
 
   it("⚠ NÃO monta o evento de substituição", async () => {
-    await cancelar();
+    await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     expect(xmlAssinado()).not.toContain("e105102");
     expect(xmlAssinado()).not.toContain("chSubstituta");
   });
@@ -227,7 +241,7 @@ describe("o XML do cancelamento", () => {
 describe("⚠ a EMPRESA vem do chamador quando ele a resolveu — e `ServiceInvoice` não é consultada", () => {
   it("com `companyId`, a nota capturada do ADN (sem linha nossa) cancela normalmente", async () => {
     prisma.serviceInvoice.findFirst.mockResolvedValue(null); // não existe emissão nossa
-    await cancelar();
+    await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     expect(prisma.serviceInvoice.findFirst).not.toHaveBeenCalled();
     expect(prisma.company.findUnique).toHaveBeenCalledWith({ where: { id: "company-1" } });
     expect(postMock).toHaveBeenCalled();
@@ -235,7 +249,7 @@ describe("⚠ a EMPRESA vem do chamador quando ele a resolveu — e `ServiceInvo
 
   it("SEM `companyId`, o caminho antigo continua: procura em `ServiceInvoice`", async () => {
     prisma.serviceInvoice.findFirst.mockResolvedValue({ id: "si-1", companyId: "company-1" });
-    await cancelar({ companyId: null });
+    await expect(cancelar({ companyId: null })).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     expect(prisma.serviceInvoice.findFirst).toHaveBeenCalled();
     expect(postMock).toHaveBeenCalled();
   });
@@ -256,10 +270,10 @@ describe("⚠⚠ AS TRÊS CAMADAS — e a do TRANSPORTE não convida a repetir",
     };
   }
 
-  it("4xx do sistema nacional ⇒ camada RECEITA (analisou e recusou)", async () => {
+  it("4xx sem evento fiscal comprovado continua inconclusivo", async () => {
     montarCenario({ respostaProvedor: falha({ status: 422, data: { erro: "E0044" } }) });
     const err = await cancelar().catch((e) => e);
-    expect(err.camada).toBe(CAMADA.RECEITA);
+    expect(err.camada).toBe(CAMADA.TRANSPORTE);
   });
 
   it("5xx ⇒ camada TRANSPORTE — desfecho DESCONHECIDO, nunca recusa", async () => {
@@ -278,11 +292,17 @@ describe("⚠⚠ AS TRÊS CAMADAS — e a do TRANSPORTE não convida a repetir",
     montarCenario({ respostaProvedor: falha({ status: 500 }) });
     const err = await cancelar().catch((e) => e);
     // Ela manda NÃO reenviar e consultar a situação da nota…
-    expect(err.correcao).toMatch(/N[ÃA]O envie o cancelamento de novo/i);
-    expect(err.correcao).toMatch(/consulte a situação da nota/i);
+    expect(err.correcao).toMatch(/Não repita a transmissão/i);
+    expect(err.correcao).toMatch(/Confira os eventos da nota/i);
     // …e NÃO fala de numeração: cancelar não consome número de DPS.
     expect(err.correcao).not.toMatch(/n[úu]mero novo/i);
     expect(err.correcao).not.toMatch(/buraco permanente/i);
     expect(err.correcao).not.toMatch(/Id da DPS/i);
   });
+});
+
+
+it('substituição manual não contorna a comprovação fiscal nem transmite', async () => {
+  await expect(cancelar({ tipoEvento: 'e105102', cMotivo: '01', chaveSubstituta: '4'.repeat(50) })).rejects.toMatchObject({ code: 'NFSE_EVENTO_NAO_HOMOLOGADO', antesDoPost: true });
+  expect(postMock).not.toHaveBeenCalled();
 });

@@ -489,19 +489,18 @@ async function executarCancelamento({ acao, log, client, antesDeExecutar, deps =
       cMotivo: p.cMotivo,
       justificativa: p.justificativa,
       companyId: legacyCompanyId,
+      acaoId: acao.id,
+      revalidarAutorizacao: async () => {
+        const permissao = await deps.autorizarPermissaoDaAcao({ acao, client });
+        const fiscal = await deps.autorizarEmissaoDoCliente({ portalClientId: acao.portalClientId, userId: acao.userId, client });
+        if (!permissao?.ok || !fiscal?.ok) throw Object.assign(new Error('Autorização atual não comprovada.'), { antesDoPost: true, code: 'NFSE_CANCELAMENTO_AUTORIZACAO' });
+        await antesDeExecutar?.();
+        if (await deps.resolveLegacyCompanyId(acao.portalClientId) !== legacyCompanyId) throw Object.assign(new Error('Vínculo empresarial alterado.'), { antesDoPost: true, code: 'NFSE_CANCELAMENTO_AUTORIZACAO' });
+      },
       log,
     });
-    // ⚠ O NOSSO registro da emissão acompanha — a mesma linha da rota `POST /client/.../cancelar`.
-    // É `ServiceInvoice` (nossa tabela), NUNCA `PortalInvoice` (projeção do ADN, que a captura
-    // atualiza). `updateByChaveAcesso` devolve null quando a nota não é nossa — não é erro.
-    try {
-      await deps.NfseRepository.updateByChaveAcesso(p.chaveAcesso, { status: "cancelled" });
-    } catch (err) {
-      // O provedor já aceitou. Falha na nossa projeção não desfaz o ato fiscal nem autoriza retry.
-      log?.error?.({ codigo: err?.code || "SINCRONIZACAO_CANCELAMENTO", notaId: p.notaId }, "assistente: cancelamento aceito, atualização local pendente");
-      return finalizar({ texto: `O sistema nacional aceitou o cancelamento da nota ${p.numero || ""}. Não consegui atualizar o registro no portal; a equipe vai conferir. Não é preciso pedir o cancelamento novamente.`, filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } });
-    }
-    return finalizar({ texto: `Pedido de cancelamento da nota ${p.numero || ""} enviado e aceito. A nota passa a constar como cancelada assim que o sistema nacional processar.`, filaHumana: false, resultado: { status: r?.status || "accepted" } });
+    if (r?.confirmacaoFiscal !== true) throw Object.assign(new Error('Cancelamento não comprovado.'), { camada: CAMADA.TRANSPORTE, codigo: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+    return finalizar({ texto: `Cancelamento fiscal da nota ${p.numero || ""} confirmado pelo evento do sistema nacional.`, filaHumana: false, resultado: { status: 'cancelled', confirmacaoFiscal: true } });
   } catch (err) {
     const camada = err?.camada || null;
     if (camada === CAMADA.TRANSPORTE || (iniciouChamada && err?.antesDoPost !== true && camada !== CAMADA.NOSSA && camada !== CAMADA.RECEITA)) {

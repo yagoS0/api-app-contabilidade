@@ -1,3 +1,4 @@
+import { executarCancelamentoFiscal } from '../../composition/nfseCancelamento.js';
 import { validarAmbienteNfse } from './ambienteNfse.js';
 import { situacaoDoPeriodo } from "../notas/pendenciasDoPeriodo.js";
 import { fingerprintConfirmacaoEmissao, exigirFingerprintConfirmado } from './fingerprintConfirmacaoEmissao.js';
@@ -1519,6 +1520,8 @@ export class NfseService {
     // `resolveLegacyCompanyId` na emissão — resolver e autorizar acontecem fora do serviço, e o id
     // já conferido desce por parâmetro. Ausente, o comportamento é exatamente o de antes.
     companyId = null,
+    revalidarAutorizacao = null,
+    acaoId = null,
     log,
   }) {
     if (!integrationReady()) {
@@ -1663,118 +1666,31 @@ export class NfseService {
     }
 
     validarConfiguracaoDoAmbiente();
-    let certificados, client;
-    try {
-      certificados = await resolverCertificadosDaEmpresa(empresaDoEvento);
-      client = buildAxiosClient(certificados.transporte);
-    } catch (err) {
-      // Somente configuração/certificado: ainda não houve chamada ao autorizador.
-      err.antesDoPost = true;
-      throw err;
-    }
-    const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, "");
-    const requestUrl = `${client.defaults.baseURL}${nfsePath}/${encodeURIComponent(
-      chaveAcesso
-    )}/eventos`;
-
-    try {
-      const payload = buildEventoPayload({
-        tipoEvento,
-        justificativa,
-        chaveSubstituta,
-        numeroSubstituta,
-      });
-      const eventoXml = buildEventoXml({
-        tipoEvento,
-        justificativa,
-        cnpjAutor: autor,
-        chaveAcesso,
-        cMotivo,
-        chaveSubstituta,
-      });
-      const signedEventoXml = signEventoXml(eventoXml, certificados.assinatura);
-      const eventFormat = NFSE_EVENT_FORMAT === "gzipB64" ? "gzipB64" : "xml";
-      const eventField = NFSE_EVENT_FIELD || "pedidoRegistroEventoXmlGZipB64";
-      const eventPayloadValue =
-        eventFormat === "gzipB64"
-          ? gzipSync(Buffer.from(signedEventoXml, "utf-8")).toString("base64")
-          : signedEventoXml;
-      const requestBody = { [eventField]: eventPayloadValue };
-      log.info(
-        {
-          url: requestUrl,
-          headers: {
-            "content-type": "application/json",
-            accept: "application/json",
-          },
-          payload: {
-            tipoEvento: payload.tipoEvento,
-            justificativa: maskSensitive(payload.justificativa),
-            chaveSubstituta: payload.chaveSubstituta
-              ? maskSensitive(payload.chaveSubstituta)
-              : undefined,
-            numeroSubstituta: payload.numeroSubstituta || undefined,
-            ambiente: payload.ambiente,
-            eventField,
-            eventFormat,
-          },
+    if (String(tipoEvento).toLowerCase() === 'e101101') {
+      if (normalizeDigits(autor) !== normalizeDigits(companyDoEvento.cnpj)) {
+        throw Object.assign(new Error('Autor do evento diverge da empresa.'), { code: 'NFSE_CNPJ_AUTOR_REQUIRED', antesDoPost: true });
+      }
+      return executarCancelamentoFiscal({
+        contexto: { companyId: empresaDoEvento, chaveAcesso, cnpj: companyDoEvento.cnpj,
+          ambiente: NFSE_ENV === 'producao' ? 'producao' : 'homologacao', acaoId },
+        revalidarAutorizacao,
+        prepararTransporte: async () => {
+          const certificados = await resolverCertificadosDaEmpresa(empresaDoEvento);
+          const client = buildAxiosClient(certificados.transporte);
+          const eventoXml = buildEventoXml({ tipoEvento, justificativa, cnpjAutor: autor, chaveAcesso, cMotivo, chaveSubstituta });
+          const signedEventoXml = signEventoXml(eventoXml, certificados.assinatura);
+          const eventField = NFSE_EVENT_FIELD || 'pedidoRegistroEventoXmlGZipB64';
+          const requestBody = { [eventField]: NFSE_EVENT_FORMAT === 'gzipB64'
+            ? gzipSync(Buffer.from(signedEventoXml, 'utf-8')).toString('base64') : signedEventoXml };
+          const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, '');
+          return {
+            enviar: async () => (await client.post(`${nfsePath}/${encodeURIComponent(chaveAcesso)}/eventos`, requestBody)).data,
+            consultar: async () => (await clientEventosDaEmpresa(client).get(`/NFSe/${encodeURIComponent(chaveAcesso)}/Eventos`)).data,
+          };
         },
-        "NFSe: enviando evento ao provedor nacional"
-      );
-      const { data: response } = await client.post(
-        `${nfsePath}/${encodeURIComponent(chaveAcesso)}/eventos`,
-        requestBody
-      );
-      return {
-        status: "accepted",
-        message: "Evento registrado com sucesso.",
-        providerData: response,
-      };
-    } catch (err) {
-      const axiosErr = err?.response;
-      const providerData = axiosErr?.data;
-      const providerDetail =
-        providerData && typeof providerData === "object"
-          ? JSON.stringify(providerData)
-          : providerData;
-      const reason =
-        axiosErr?.data?.message ||
-        axiosErr?.data?.error ||
-        axiosErr?.data?.detail ||
-        providerDetail ||
-        err.message ||
-        "Falha ao registrar evento";
-
-      log.error(
-        {
-          err: reason,
-          status: axiosErr?.status,
-          data: providerData,
-          baseUrl: NFSE_BASE_URL,
-          url: requestUrl,
-        },
-        "Falha ao enviar evento NFS-e ao provedor nacional"
-      );
-      // ⚠⚠ AS TRÊS CAMADAS, PELA MESMA FUNÇÃO DA EMISSÃO — `classificarFalha`. Até 19/08/2026
-      // toda falha daqui saía como um `NFSE_EVENT_FAILED` plano, e a rota a traduzia em 422: um
-      // timeout de rede e uma recusa fiscal do sistema nacional chegavam à tela com o MESMO rosto.
-      // É o defeito que a emissão já pagou e consertou — e ele importa mais no cancelamento, porque
-      // aqui o desfecho desconhecido não é "o número ficou retido", é "a nota pode estar cancelada".
-      //
-      // ⚠ NÃO É UM SEGUNDO MAPA: a leitura de 4xx × 5xx × rede é a mesma, importada.
-      const desfecho = classificarFalha(err);
-      const error = new Error(desfecho.mensagem || reason);
-      error.code = "NFSE_EVENT_FAILED";
-      error.camada = desfecho.camada;
-      error.codigo = desfecho.codigo;
-      // ⚠ A `correcao` da emissão fala de NUMERAÇÃO ("não reemita com número novo") e não serve
-      // aqui: cancelar não consome número. O texto do cancelamento mora em `nfseCancelamentoHttp.js`,
-      // junto do mapa HTTP, e é ele que diz para NÃO reenviar.
-      error.correcao =
-        desfecho.camada === CAMADA.TRANSPORTE ? CORRECAO_TRANSPORTE_EVENTO : desfecho.correcao;
-      error.providerData = providerData;
-      throw error;
+      });
     }
+    throw Object.assign(new Error('O envio manual de cancelamento por substituição não está homologado. Nenhum evento foi transmitido.'), { code: 'NFSE_EVENTO_NAO_HOMOLOGADO', antesDoPost: true });
   }
   static async syncFromProvider({ companyId, filters = {}, log }) {
     const company = await prisma.company.findUnique({

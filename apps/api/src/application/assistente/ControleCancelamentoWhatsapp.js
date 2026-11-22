@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-const erroAceito = () => Object.assign(new Error('O cancelamento desta nota já foi aceito. Confira o resultado existente; não é necessário cancelar novamente.'), { code: 'NFSE_CANCELAMENTO_JA_ACEITO', codigo: 'NFSE_CANCELAMENTO_JA_ACEITO' });
+const erroAceito = () => Object.assign(new Error('Há um pedido anterior desta nota. O aceite de transporte não comprova cancelamento fiscal; confira os eventos antes de continuar.'), { code: 'NFSE_CANCELAMENTO_JA_ACEITO', codigo: 'NFSE_CANCELAMENTO_JA_ACEITO' });
 const erro = () => Object.assign(new Error('A equipe precisa conferir o cancelamento anterior desta nota antes de qualquer nova tentativa.'), { code: 'NFSE_RESULTADO_INDETERMINADO', codigo: 'NFSE_RESULTADO_INDETERMINADO' });
 export function chaveCancelamento(acao) {
   if (!acao?.portalClientId || !acao.payload?.chaveAcesso) throw Object.assign(new Error('Cancelamento sem identidade fiscal.'), { code: 'NFSE_CANCELAMENTO_SEM_CHAVE', antesDoPost: true });
@@ -32,7 +32,7 @@ export async function reservarCancelamento(acao, client) {
     catch (e) { if (e.code === 'P2002') throw erro(); throw e; }
   }
   return async resultado => {
-    const status = resultado?.status === 'accepted' ? 'ACEITO' : resultado?.indeterminado === false ? 'RECUSADO' : 'INDETERMINADO';
+    const status = resultado?.confirmacaoFiscal === true ? 'CONFIRMADO' : resultado?.status === 'accepted' ? 'ACEITO' : resultado?.indeterminado === false ? 'RECUSADO' : 'INDETERMINADO';
     const r = await client.appSetting.updateMany({ where: { key, value: { equals: value } },
       data: { value: { ...value, status, resultado, atualizadoEm: new Date().toISOString() } } });
     if (r.count !== 1) throw erro();

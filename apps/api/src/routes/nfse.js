@@ -309,16 +309,22 @@ export function createNfseRouter({ ensureAuthorized, log }) {
         numeroSubstituta,
         cMotivo,
         cnpjAutor,
+        companyId: existing.companyId,
+        revalidarAutorizacao: async () => {
+          const userId = req.auth?.user?.id;
+          const deny = () => { throw Object.assign(new Error('Autorização do cancelamento não está vigente.'), { code: 'NFSE_CANCELAMENTO_AUTORIZACAO', antesDoPost: true }); };
+          if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false })) || req.auth?.user?.id !== userId) deny();
+          if (!(await ensureLegacyCompanyAccess(req, res, existing.companyId)).ok) deny();
+          if (!(await ensureEmissaoNfseAutorizada(req, res, existing.companyId, { log })).ok) deny();
+        },
         log,
       });
 
-      const newStatus =
-        String(tipoEvento).toLowerCase() === "e105102"
-          ? "cancelled_substitution"
-          : "cancelled";
-      const updated = await NfseRepository.updateByChaveAcesso(chaveAcesso, {
-        status: newStatus,
-      });
+      if (String(tipoEvento).toLowerCase() === 'e101101' && result.confirmacaoFiscal !== true) {
+        throw Object.assign(new Error('Cancelamento fiscal não comprovado.'), { camada: 'TRANSPORTE', codigo: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+      }
+      const newStatus = 'cancelled';
+      const updated = result.nfse;
 
       return res.json({
         ok: true,
@@ -337,6 +343,7 @@ export function createNfseRouter({ ensureAuthorized, log }) {
       // um timeout de rede e uma recusa fiscal chegavam à tela com o mesmo rosto. Agora
       // `sendEvent` classifica com o MESMO `classificarFalha` da emissão, e o TRANSPORTE responde
       // **502 com `podeTentarDeNovo: false`**: desfecho desconhecido não convida a repetir.
+      if (res.headersSent) return;
       if (responderErroCancelamento(res, err)) return;
       log.error({ err }, "Falha ao registrar evento NFS-e");
       return res.status(500).json({ error: "internal_error" });
