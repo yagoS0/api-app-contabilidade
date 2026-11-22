@@ -1,0 +1,52 @@
+name: NFS-e cancelamento fiscal
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/src/**'
+      - 'apps/api/prisma/**'
+      - 'package*.json'
+      - '.github/workflows/nfse-cancelamento-fiscal.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cancelamento-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      RUN_NFSE_CANCELAMENTO_POSTGRES: '1'
+      DATABASE_URL: postgresql://cancelamento_test:synthetic_ci_only@127.0.0.1:55491/cancelamento_governance_test
+      ALTAN_GOVERNANCE_TEST_DATABASE_URL: postgresql://cancelamento_test:synthetic_ci_only@127.0.0.1:55491/cancelamento_governance_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: PostgreSQL 16 descartável restrito ao loopback
+        run: |
+          docker run --detach --name cancelamento-test --network host \
+            -e POSTGRES_USER=cancelamento_test -e POSTGRES_PASSWORD=synthetic_ci_only \
+            -e POSTGRES_DB=cancelamento_governance_test postgres:16 \
+            -c listen_addresses=127.0.0.1 -c port=55491
+          for attempt in $(seq 1 30); do
+            if docker exec cancelamento-test pg_isready -h 127.0.0.1 -p 55491 -U cancelamento_test -d cancelamento_governance_test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - run: npm ci --include=dev
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Preparar exclusivamente o PostgreSQL descartável
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Confirmação fiscal, isolamento e concorrência sem provedor real
+        run: >-
+          npm test -w @contabilidade/api -- --runInBand --runTestsByPath
+          src/application/nfse/__tests__/cancelamentoFiscal.postgres.test.js
