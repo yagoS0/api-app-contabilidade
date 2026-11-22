@@ -253,3 +253,21 @@ test('Pago separa confirmados de OPEN visíveis e não oferece bloqueio de envio
  expect(screen.getByRole('heading',{name:'Alfa · 2026-10'})).toHaveFocus();expect(screen.getByText('Confirmada pelo cliente — declaração, não comprovante bancário')).toBeVisible();expect(screen.getByRole('link',{name:'Abrir Guias'})).toHaveAttribute('href','/companies/a/guides?competencia=2026-10');expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Voltar'}));await waitFor(()=>expect(trigger).toHaveFocus());expect(screen.queryByRole('region',{name:'Detalhes do pagamento'})).not.toBeInTheDocument();expect(api.send).not.toHaveBeenCalled();
  });
+
+test.each(['disponivel','enviado','pago'])('tags em %s preservam estado acessível sem legenda documental repetida',async stage=>{
+ const api={getCompanyGuides:jest.fn(async()=>[{...guide,envio:{canais:[{canal:'EMAIL',status:'enviado'},{canal:'WHATSAPP',status:'lido'}]}}])};
+ render(<OperationsGuides companyRows api={api} rows={[row]} competencia="2026-10" stage={stage}/>);
+ const tag=await screen.findByRole('button',{name:stage==='disponivel'?'DAS · Disponível · Alfa':stage==='pago'?'DAS · Paga · Alfa':'DAS · lida (1/2 canais) · Alfa'});
+ expect(tag).toHaveClass('operacoes-guide-tag-valid');expect(tag).toHaveAttribute('title');
+ expect(tag.textContent).not.toMatch(/Disponível|Indisponível/);
+ if(stage==='enviado'){expect(tag).toHaveTextContent('lida (1/2 canais)');expect(tag.title).toContain('e-mail: enviada');expect(tag.title).toContain('WhatsApp: lida');}
+ if(stage==='pago')expect(tag).toHaveTextContent('Paga');
+});
+
+test('tag faltante conserva nome e estado acessível; erro documental continua visível',async()=>{
+ const api={getCompanyGuides:jest.fn(async()=>[{...guide,status:'ERROR'}])};
+ render(<OperationsGuides companyRows api={api} rows={[{...row,guideSummary:{items:[{key:'inss',label:'INSS',disponivel:false,dispensada:false}]}}]} competencia="2026-10" stage="disponivel"/>);
+ const error=await screen.findByRole('button',{name:'DAS · Erro de processamento · Alfa'});
+ expect(error).toHaveClass('operacoes-guide-tag-error');expect(error).toHaveTextContent('Erro de processamento');
+ const missing=screen.getByRole('img',{name:'INSS · Indisponível'});expect(missing).toHaveTextContent(/^INSS$/);expect(missing).toHaveAttribute('title','INSS · Indisponível');
+});

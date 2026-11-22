@@ -167,3 +167,20 @@ describe("⚠ o desenho é fechado e distinguível sem cor", () => {
       .not.toBe(DESENHO_ENVIO[SITUACAO_ENVIO.ENTREGUE].icone);
   });
 });
+
+describe('contagem de leitura não herda entrega ou aceitação de outro canal', () => {
+ it.each([
+  ['enviado','lido', SITUACAO_ENVIO.LIDA, 'lida (1/2 canais)'],
+  ['enviado','entregue', SITUACAO_ENVIO.ENTREGUE, 'entregue (1/2 canais)'],
+  ['lido','lido', SITUACAO_ENVIO.LIDA, 'lida (2/2 canais)'],
+ ])('EMAIL %s e WHATSAPP %s', (email,whatsapp,situacao,resumo) => {
+  const result=lerEnvioDaGuia(comCanais([{canal:'EMAIL',status:email},{canal:'WHATSAPP',status:whatsapp}]));
+  expect(result.situacao).toBe(situacao);expect(result.resumo).toBe(resumo);
+  expect(result.titulo).toContain('e-mail:');expect(result.titulo).toContain('WhatsApp:');
+ });
+ it.each(['falhou','indeterminado'])('leitura não esconde %s em outro canal', status => {
+  const result=lerEnvioDaGuia(comCanais([{canal:'EMAIL',status},{canal:'WHATSAPP',status:'lido'}]));
+  expect(result.situacao).toBe(status==='falhou'?SITUACAO_ENVIO.PARCIAL:SITUACAO_ENVIO.INDETERMINADA);
+  expect(result.resumo).not.toMatch(/^lida/);
+ });
+});
