@@ -1,5 +1,7 @@
 # NFS-e — primeira entrega das correções prioritárias
 
+> Atualização de 22/11/2026: registro histórico preservado. Os prazos de dezembro e o tratamento temporal genérico de Simples2027 abaixo foram substituídos pelo [P0.1 — calendário IBS/CBS](nfse-calendario-ibscbs-p01-20261122.md), conforme Ato7/2026. Consulte a matriz completa antes/depois nesse documento. Esta atualização não homologa XML2027 nem autoriza publicação; resultados de testes abaixo pertencem à entrega de 10/10, não ao P0.1.
+
 Primeira entrega implementada e validada localmente em 10/10/2026, sobre HEAD `7061b2f`, preservando alterações de outros trabalhos. Referência: `plano-conformidade-emissao-nfse-2026-10-06.md`. Não houve publicação, migração de produção, transmissão de NFS-e ou consultas fiscais pagas.
 
 ## Implementado

@@ -1,9 +1,9 @@
 import { verificarNfse } from '../verificarNfse.js';
 const cnpj = '11111111000111';
 const cadastro = { periodos: [{ inicio: '2026-01-01', fim: null, regime: 'LUCRO_PRESUMIDO', forma: 'REGULAR', situacao: 'CONFIRMADA' }] };
-const xml = ({ regime = '1', competencia = '2026-12-01', bloco = true, cst = '000', nbs = '115021000' } = {}) => `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01"><infNFSe><DPS><infDPS><dCompet>${competencia}</dCompet><prest><CNPJ>${cnpj}</CNPJ><regTrib><opSimpNac>${regime}</opSimpNac></regTrib></prest><serv><cServ><cTribNac>171901</cTribNac>${nbs ? `<cNBS>${nbs}</cNBS>` : ''}</cServ></serv>${bloco ? `<IBSCBS><cIndOp>100301</cIndOp><valores><trib><gIBSCBS><CST>${cst}</CST><cClassTrib>000001</cClassTrib></gIBSCBS></trib></valores></IBSCBS>` : ''}</infDPS></DPS></infNFSe></NFSe>`;
+const xml = ({ regime = '1', competencia = '2026-12-01', bloco = true, codigoServico = '171901', cst = '000', nbs = '115021000' } = {}) => `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01"><infNFSe><DPS><infDPS><dCompet>${competencia}</dCompet><prest><CNPJ>${cnpj}</CNPJ><regTrib><opSimpNac>${regime}</opSimpNac></regTrib></prest><serv><cServ><cTribNac>${codigoServico}</cTribNac>${nbs ? `<cNBS>${nbs}</cNBS>` : ''}</cServ></serv>${bloco ? `<IBSCBS><cIndOp>100301</cIndOp><valores><trib><gIBSCBS><CST>${cst}</CST><cClassTrib>000001</cClassTrib></gIBSCBS></trib></valores></IBSCBS>` : ''}</infDPS></DPS></infNFSe></NFSe>`;
 const nota = patch => ({ id: 'n', numero: '1', competencia: new Date('2026-12-01'), papel: 'EMIT', statusEfetivo: 'autorizada', xmlRaw: xml(), ...patch });
-const run = (patch, contexto = { cadastro, cnpj }) => verificarNfse(nota(patch), contexto);
+const run = (patch, contexto = { cadastro, cnpj, configuracaoFiscal: { categoriaObrigacaoIbscbs: 'SERVICO_ISS' } }) => verificarNfse(nota(patch), contexto);
 const codigos = r => r.achados.map(a => a.codigo);
 test('bloco nacional válido passa somente nas regras cobertas', () => expect(run().status).toBe('SEM_ACHADOS'));
 test('reutiliza incompatibilidade CST/classificação do emissor', () => expect(codigos(run({ xmlRaw: xml({ cst: '200' }) }))).toContain('NFSE_IBSCBS_CST_INCOMPATIVEL'));
@@ -37,7 +37,7 @@ test('não atribui a data de emissão a uma nota sem competência', () => {
 });
 test('cancelada está fora da conferência sem exigir XML', () => expect(run({ statusEfetivo: 'cancelada', xmlRaw: null })).toMatchObject({ status: 'EXCLUIDA', achados: [] }));
 test('indeterminação de operação não vira dispensa ou erro fiscal presumido', () => {
-  const r = run({ competencia: new Date('2026-10-01'), xmlRaw: xml({ competencia: '2026-10-01', bloco: false }) });
+  const r = run({ competencia: new Date('2026-10-01'), xmlRaw: xml({ competencia: '2026-10-01', bloco: false }) }, { cadastro, cnpj });
   expect(r.status).toBe('REVISAO');
   expect(codigos(r)).toContain('OBRIGACAO_INDETERMINADA');
   expect(codigos(r)).not.toContain('NFSE_IBSCBS_OBRIGATORIO_AUSENTE');
@@ -48,8 +48,37 @@ test('reaproveita categoria preservada na própria emissão para o prazo de outu
   expect(codigos(r)).toContain('NFSE_IBSCBS_OBRIGATORIO_AUSENTE');
   expect(codigos(r)).not.toContain('OBRIGACAO_INDETERMINADA');
 });
-test('Simples 2027 continua pendente de regras da operação, mesmo com opção confirmada', () => {
+test('Simples 2027 sem categoria histórica continua indeterminado', () => {
   const r = run({ competencia: new Date('2027-01-01'), xmlRaw: xml({ competencia: '2027-01-01', regime: '3' }) }, { cnpj,
     cadastro: { periodos: [{ ...cadastro.periodos[0], inicio: '2027-01-01', regime: 'SIMPLES' }] } });
   expect(codigos(r)).toContain('OBRIGACAO_INDETERMINADA');
+});
+
+test.each(['010301', '010501', '010901', '160101'])('conferência respeita adiamento do subitem %s', codigoServico => {
+  for (const competencia of ['2026-12-01', '2027-01-01', '2027-02-28', '2027-03-01', '2027-03-02']) {
+    const documento = nota({ competencia: new Date(competencia), xmlRaw: xml({ competencia, codigoServico, bloco: false }) });
+    const original = documento.xmlRaw;
+    const r = verificarNfse(documento, { cadastro, cnpj });
+    expect(codigos(r).includes('NFSE_IBSCBS_OBRIGATORIO_AUSENTE')).toBe(competencia >= '2027-03-01');
+    expect(codigos(r)).not.toContain('OBRIGACAO_INDETERMINADA');
+    expect(documento.xmlRaw).toBe(original);
+  }
+});
+
+test.each(['SERVICO_ISS', 'PLATAFORMA_DIGITAL'])('Simples: calendário da categoria histórica %s', categoria => {
+  for (const competencia of ['2026-12-31', '2027-01-01', '2027-01-02', '2027-02-28', '2027-03-01', '2027-03-02']) {
+    const r = run({ competencia: new Date(competencia), xmlRaw: xml({ competencia, regime: '3', bloco: false }) }, {
+      cnpj, cadastro: { periodos: [{ ...cadastro.periodos[0], regime: 'SIMPLES' }] },
+      configuracaoFiscal: { categoriaObrigacaoIbscbs: categoria },
+    });
+    const inicio = categoria === 'SERVICO_ISS' ? '2027-01-01' : '2027-03-01';
+    expect(codigos(r)).not.toContain('NFSE_IBSCBS_OBRIGATORIO_AUSENTE');
+    expect(codigos(r).includes('OBRIGACAO_INDETERMINADA')).toBe(competencia >= inicio);
+  }
+});
+
+test('dezembro sem categoria não presume obrigação nem dispensa após o adiamento', () => {
+  const r = run({ xmlRaw: xml({ bloco: false }) }, { cadastro, cnpj });
+  expect(codigos(r)).toContain('OBRIGACAO_INDETERMINADA');
+  expect(codigos(r)).not.toContain('NFSE_IBSCBS_OBRIGATORIO_AUSENTE');
 });
