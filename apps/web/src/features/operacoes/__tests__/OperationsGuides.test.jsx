@@ -1,8 +1,82 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OperationsGuides } from '../OperationsGuides';
 import { reconcileOperationGuides } from '../operationsDetails';
 const row={company:{companyId:'a',razao:'Alfa'},guideSummary:{items:[{key:'das',guideId:'g1',label:'DAS'}]}};
 const guide={companyId:'a',guideId:'g1',competencia:'2026-10',tipo:'DAS',status:'PROCESSED',valor:100,vencimento:'2026-11-20T00:00:00Z',versaoPagamento:'v1',paymentStatus:'PAID',paymentStatusSource:'CLIENTE',paymentConfirmedAt:'2026-10-30T02:00:00Z',envio:{canais:[{canal:'WHATSAPP',destino:'destino sintético',status:'indeterminado',podeTentarDeNovo:false}]}};
+
+test('modal agrupa várias guias em uma empresa e abre somente a guia escolhida',async()=>{
+ const api={getCompanyGuides:jest.fn(async()=>[{...guide,paymentStatus:'OPEN',envio:{canais:[]}},{...guide,guideId:'inss',tipo:'INSS',paymentStatus:'OPEN',envio:{canais:[]}}]),sendGuidesTask:jest.fn()};
+ render(<OperationsGuides companyRows api={api} rows={[row]} competencia="2026-10" stage="disponivel"/>);
+ const tag=await screen.findByRole('button',{name:'INSS · Disponível · Alfa'});
+ const table=screen.getByRole('region',{name:'Empresas · Guias disponivel'});
+ expect(within(table).getAllByRole('row')).toHaveLength(2);
+ expect(within(table).getAllByRole('button',{name:/Disponível · Alfa/})).toHaveLength(2);
+ tag.focus();fireEvent.click(tag);
+ expect(screen.getByRole('heading',{name:'Alfa · Detalhes da guia'})).toHaveFocus();
+ expect(screen.getByRole('region',{name:'Guias disponivel'})).toHaveTextContent('INSS');
+ expect(within(screen.getByRole('region',{name:'Guias disponivel'})).queryByText('DAS')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Voltar às empresas'}));await waitFor(()=>expect(tag).toHaveFocus());
+ expect(api.sendGuidesTask).not.toHaveBeenCalled();
+});
+
+test('cabeçalho do modal seleciona filtro inteiro e nunca empresa sem guia enviável',async()=>{
+ const many=Array.from({length:32},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`,myRole:'ACCOUNTANT'}}));
+ const api={getCompanyGuides:jest.fn(async id=>id==='31'?[]:[{...guide,companyId:id,guideId:`g-${id}`,paymentStatus:'OPEN',envio:{canais:[]}}]),sendGuidesTask:jest.fn()};
+ render(<OperationsGuides companyRows api={api} rows={many} filteredRows={many} visibleRows={many.slice(0,30)} competencia="2026-10" stage="disponivel"/>);
+ const all=screen.getByRole('checkbox',{name:'Selecionar todas as empresas elegíveis do filtro'});
+ await waitFor(()=>expect(all).toBeEnabled());fireEvent.click(all);
+ expect(screen.getByText('31 empresas selecionadas')).toBeInTheDocument();
+ expect(screen.getByText('31 selecionadas · 1 em outras páginas')).toBeInTheDocument();
+ expect(screen.getAllByRole('checkbox',{name:/^Selecionar Empresa/}).filter(el=>el.checked)).toHaveLength(30);
+ expect(api.sendGuidesTask).not.toHaveBeenCalled();
+});
+
+test('tag recalculada depende de registro explícito; composição da confirmação não usa valores nominais',async()=>{
+ const api={getCompanyGuides:jest.fn(async()=>[{...guide,valorRecalculado:150}]),getOperationsGuideEvidence:jest.fn(async()=>({companyId:'a',competencia:'2026-10',items:[{guideId:'g1',recalculo:null,pagamento:{origem:'SERPRO',oficialComprovado:false,valorPago:null,composicao:[]}}]}))};
+ render(<OperationsGuides companyRows api={api} rows={[row]} competencia="2026-10" stage="pago"/>);
+ const tag=await screen.findByRole('button',{name:'DAS · Paga · Alfa'});fireEvent.click(tag);
+ expect(screen.queryByText(/Guia recalculada/)).not.toBeInTheDocument();
+ expect(screen.getByText('SERPRO · evidência a conferir')).toBeInTheDocument();
+ expect(screen.getByText('Valor pago: Não disponível')).toBeInTheDocument();
+ expect(screen.getByText('Principal').nextElementSibling).toHaveTextContent('Não disponível');
+ expect(screen.queryByText('Confirmada na Receita')).not.toBeInTheDocument();
+});
+
+test('Pagas pagina empresas com pagamento real, inclusive parcial, preservando erro de leitura',async()=>{
+ const many=Array.from({length:32},(_,i)=>({company:{companyId:String(i),razao:`Empresa ${i}`}}));
+ const api={getCompanyGuides:jest.fn(async id=>{if(id==='2')throw Error('Leitura indisponível');return id==='31'?[{...guide,companyId:id},{...guide,companyId:id,guideId:'aberta',paymentStatus:'OPEN'}]:[];})};
+ render(<OperationsGuides companyRows api={api} rows={many} filteredRows={many} visibleRows={many.slice(0,30)} competencia="2026-10" stage="pago"/>);
+ await screen.findByRole('button',{name:'DAS · Paga · Empresa 31'});
+ const table=screen.getByRole('region',{name:'Empresas · Guias pago'});
+ expect(within(table).getAllByRole('row')).toHaveLength(3);
+ expect(within(table).getByRole('alert')).toHaveTextContent('Leitura indisponível');
+ expect(within(table).queryByText('Empresa 0')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Próxima'})).not.toBeInTheDocument();
+});
+
+test('pagamento declarado mostra valor com sua origem; envio incerto não recebe tag verde',async()=>{
+ const api={getCompanyGuides:jest.fn(async()=>[guide]),getOperationsGuideEvidence:jest.fn(async()=>({companyId:'a',competencia:'2026-10',items:[{guideId:'g1',pagamento:{origem:'CLIENTE',valorPago:null,valorDeclarado:100}}]}))};
+ const view=render(<OperationsGuides companyRows api={api} rows={[row]} competencia="2026-10" stage="pago"/>);
+ await screen.findByText('Declarado pelo cliente');
+ expect(within(screen.getByRole('region',{name:'Empresas · Guias pago'})).getByText('R$ 100,00')).toBeInTheDocument();
+ view.rerender(<OperationsGuides companyRows api={api} rows={[row]} competencia="2026-10" stage="enviado"/>);
+ const tag=await screen.findByRole('button',{name:/^DAS · .*indeterminado.* · Alfa$/});
+ expect(tag).not.toHaveClass('operacoes-guide-tag-valid');
+ expect(api.getCompanyGuides).toHaveBeenCalledTimes(1);
+});
+test('tipo de confirmação filtra documentos e empresas sem executar consulta ou baixa',async()=>{
+ const a={...row,company:{...row.company,razao:'Alfa'}},b={company:{companyId:'b',razao:'Beta'}};
+ const api={getCompanyGuides:jest.fn(async id=>id==='a'?[guide,{...guide,guideId:'inss',tipo:'INSS',paymentStatusSource:'MANUAL'}]:[{...guide,companyId:'b',paymentStatusSource:'SERPRO'}]),getOperationsGuideEvidence:jest.fn(async id=>({companyId:id,competencia:'2026-10',items:id==='a'?[{guideId:'g1',pagamento:{origem:'CLIENTE'}},{guideId:'inss',recalculo:{guiaId:'inss'},pagamento:{origem:'MANUAL'}}]:[{guideId:'g1',pagamento:{origem:'SERPRO'}}]})),buscarPagamentoGuia:jest.fn()};
+ render(<OperationsGuides companyRows api={api} rows={[a,b]} competencia="2026-10" stage="pago"/>);
+ await screen.findByRole('button',{name:'INSS · Recalculada · Paga · Alfa'});
+ const filter=screen.getByLabelText('Tipo de confirmação');
+ fireEvent.change(filter,{target:{value:'manual'}});
+ expect(screen.getByRole('button',{name:'INSS · Recalculada · Paga · Alfa'})).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'DAS · Paga · Alfa'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('rowheader',{name:/^Beta/})).not.toBeInTheDocument();
+ fireEvent.change(filter,{target:{value:'serpro'}});expect(screen.getByRole('rowheader',{name:/^Beta/})).toBeInTheDocument();expect(screen.queryByRole('rowheader',{name:/^Alfa/})).not.toBeInTheDocument();
+ fireEvent.change(filter,{target:{value:'recalculated'}});expect(screen.getByRole('button',{name:'INSS · Recalculada · Paga · Alfa'})).toBeInTheDocument();expect(api.buscarPagamentoGuia).not.toHaveBeenCalled();
+});
 test('documentos conciliam só por identidade e período; duplicata é erro',()=>{
  const result=reconcileOperationGuides([guide,{...guide,guideId:'outro',companyId:'b'},{...guide,guideId:'mes-anterior',competencia:'2026-09'}],row,'2026-10');expect(result.guides).toEqual([guide]);expect(result.missing).toEqual([]);expect(reconcileOperationGuides([{...guide,guideId:'igual-valor'}],row,'2026-10').missing).toHaveLength(1);expect(()=>reconcileOperationGuides([guide,guide],row,'2026-10')).toThrow(/repetido/);
 });
@@ -23,7 +97,7 @@ test.each([
  const api={getCompanyGuides:jest.fn(async()=>[{...guide,paymentStatus,paymentStatusSource}]),send:jest.fn()};render(<OperationsGuides api={api} rows={[row]} competencia="2026-10" stage="enviado"/>);await screen.findByText('DAS');expect(screen.getByText(/Pagamento não confirmado/)).toBeInTheDocument();expect(screen.getByText(new RegExp(origin))).toBeInTheDocument();expect(screen.queryByText(/Confirmada na Receita|Confirmada pelo cliente|Confirmada pelo contador/)).not.toBeInTheDocument();expect(screen.getByText(/Resultado incerto/)).toBeInTheDocument();expect(api.send).not.toHaveBeenCalled();
 });
 test.each([
- ['SERPRO','Confirmada na Receita'],
+ ['SERPRO','SERPRO · evidência a conferir'],
  ['CLIENTE','Confirmada pelo cliente — declaração, não comprovante bancário'],
  ['MANUAL','Confirmada pelo contador'],
  [null,'Origem não informada'],
@@ -34,7 +108,7 @@ test.each([
 
 test('data legada de pagamento não substitui instante de confirmação ausente no DTO',async()=>{
  const api={getCompanyGuides:jest.fn(async()=>[guide]),getOperationsGuideEvidence:jest.fn(async()=>({companyId:'a',competencia:'2026-10',items:[{guideId:'g1',pagamento:{status:'PAID',origem:'CLIENTE',dataCivil:'2026-10-30',registradoEm:null,valorPago:null},envios:[],tentativas:[]}],nextOffset:null}))};
- render(<OperationsGuides api={api} rows={[row]} competencia="2026-10" stage="pago"/>);await screen.findByText('DAS');fireEvent.click(screen.getByRole('button',{name:/Detalhes do pagamento de DAS/}));expect(screen.getByText('Confirmação: A verificar')).toBeInTheDocument();expect(screen.getByText('Data do pagamento: 30/10/2026')).toBeInTheDocument();expect(screen.getByText('Não disponível')).toBeInTheDocument();expect(screen.queryByText(/29\/10\/2026/)).not.toBeInTheDocument();
+ render(<OperationsGuides api={api} rows={[row]} competencia="2026-10" stage="pago"/>);await screen.findByText('DAS');fireEvent.click(screen.getByRole('button',{name:/Detalhes do pagamento de DAS/}));expect(screen.getByText('Confirmação: A verificar')).toBeInTheDocument();expect(screen.getByText('Data do pagamento: 30/10/2026')).toBeInTheDocument();expect(screen.getByText('Valor pago: Não disponível')).toBeInTheDocument();expect(screen.queryByText(/29\/10\/2026/)).not.toBeInTheDocument();
 });
 
 test.each([['ERROR','Erro de processamento'],['NEEDS_REVIEW','Em conferência']])('estado documental %s prevalece sobre projeção Disponível antiga',async(status,label)=>{

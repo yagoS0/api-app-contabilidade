@@ -559,3 +559,82 @@
   .operacoes-contextual .operacoes-acoes .btn { white-space:normal; min-height:44px; }
   .operacoes-contextual-footer { position:static; }
 }
+
+/* Stage dialogs: the shared Modal owns focus, dismissal and busy protection. */
+.operacoes-stage-modal .modal-caixa { width:calc(100vw - 32px); max-width:1200px !important; max-height:calc(100dvh - 32px); display:flex; flex-direction:column; overflow:hidden; }
+.operacoes-stage-modal .modal-corpo { min-height:0; overflow:auto; overscroll-behavior:contain; }
+.operacoes-stage-modal :is(.modal-topo,.modal-rodape) { flex:none; }
+.operacoes-stage-modal .modal-rodape { display:flex; flex-wrap:wrap; gap:12px; }
+.operacoes-stage-modal .operacoes-tabela-scroll { max-width:100%; overflow:auto; }
+.operacoes-stage-modal .operacoes-tabela { min-width:760px; width:100%; border-collapse:collapse; }
+.operacoes-stage-modal .operacoes-tabela th { font-weight:500; }
+.operacoes-stage-modal .operacoes-tabela tbody tr:hover,
+.operacoes-stage-modal .operacoes-tabela tbody tr:focus-within { background:var(--bg-subtle); }
+.operacoes-stage-modal .operacoes-tabela :is(td,th) { vertical-align:middle; }
+.operacoes-stage-modal .operacoes-tabela small { display:block; color:var(--text-muted); }
+.operacoes-guide-tags { display:flex; flex-wrap:wrap; gap:6px; }
+.operacoes-guide-tag { display:inline-flex; flex-direction:column; align-items:flex-start; border:1px solid var(--border); background:var(--bg-surface); color:var(--text); border-radius:6px; padding:6px 8px; font:inherit; text-align:left; }
+button.operacoes-guide-tag { cursor:pointer; }
+.operacoes-guide-tag-valid { border-color:var(--state-ok); }
+.operacoes-guide-tag-error { border-color:var(--state-danger); }
+.operacoes-guide-tag-recalculated { border-style:dashed; }
+.operacoes-stage-modal .modal-titulo { font-size:1.125rem; font-weight:600; }
+.operacoes-stage-modal .modal-topo { display:flex; gap:12px; align-items:flex-start; }
+.operacoes-stage-modal .modal-titulo { min-width:0; flex:1; white-space:normal; overflow-wrap:anywhere; }
+.operacoes-stage-modal .modal-fechar { flex:none; width:44px; height:44px; }
+.operacoes-stage-modal .operacoes-tabela :is(th,td) { min-width:0; padding:12px; font-size:.875rem; line-height:1.45; }
+.operacoes-stage-modal .operacoes-tabela thead th { text-transform:none; letter-spacing:normal; color:var(--text-muted); white-space:nowrap; }
+.operacoes-stage-modal .operacoes-tabela :is(th[scope=row],th[scope=rowgroup]) { min-width:190px; max-width:270px; font-weight:500; overflow-wrap:break-word; }
+.operacoes-stage-modal .operacoes-tabela .operacoes-coluna-selecao { min-width:44px; width:44px; padding:8px; }
+.operacoes-stage-modal .operacoes-tabela p { margin:4px 0; font-size:inherit; font-weight:400; }
+.operacoes-stage-modal .operacoes-tabela strong { font-weight:500; }
+.operacoes-stage-modal .operacoes-valor { display:block; margin-top:4px; font-variant-numeric:tabular-nums; }
+.operacoes-stage-modal .operacoes-stage-filters { display:flex; gap:12px; align-items:end; margin:0 0 12px; flex-wrap:wrap; }
+.operacoes-stage-modal label.operacoes-rotinas-filtros { display:grid; gap:5px; margin:0; flex:1 1 200px; font-size:.8rem; }
+.operacoes-stage-modal .operacoes-search-row { margin:0 0 12px; }
+.operacoes-stage-modal .operacoes-guide-selection { margin:0 0 12px; gap:8px; }
+.operacoes-stage-modal .operacoes-guide-selection label { display:flex; align-items:center; gap:8px; flex:none; }
+.operacoes-stage-modal .operacoes-guide-selection select { max-width:190px; }
+.operacoes-stage-modal .operacoes-guide-selection > span { font-size:.8rem; color:var(--text-muted); }
+.operacoes-stage-modal .operacoes-row-actions { display:flex; flex-wrap:wrap; gap:6px; min-width:135px; }
+.operacoes-stage-modal .operacoes-guide-fact { margin:0 0 8px; line-height:1.4; }
+.operacoes-stage-modal .operacoes-guide-fact:last-child { margin-bottom:0; }
+.operacoes-stage-modal .operacoes-guide-tag { min-height:40px; transition:background .15s,border-color .15s; }
+.operacoes-stage-modal button.operacoes-guide-tag:hover:not(:disabled) { background:var(--bg-subtle); border-color:var(--border-focus); }
+.operacoes-stage-modal .operacoes-stage-footer { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:0; }
+.operacoes-stage-modal .modal-rodape { padding:12px 16px; }
+.operacoes-stage-modal .modal-rodape nav { display:flex; align-items:center; gap:8px; margin:0 auto 0 0; }
+.operacoes-stage-modal .modal-rodape nav span { font-size:.8rem; }
+.operacoes-payment-composition { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.operacoes-payment-composition div { padding:12px; background:var(--bg-subtle); border-radius:var(--radius); }
+.operacoes-payment-composition dt { color:var(--text-muted); font-size:.8rem; }
+.operacoes-payment-composition dd { margin:6px 0 0; font-variant-numeric:tabular-nums; }
+.operacoes-stage-modal .operacoes-detail-table { width:100%; min-width:0; table-layout:fixed; }
+.operacoes-stage-modal .operacoes-detail-table th { width:40%; white-space:normal; overflow-wrap:normal; word-break:normal; }
+.operacoes-stage-modal .operacoes-detail-table :is(th,td) { overflow-wrap:anywhere; }
+.operacoes-stage-modal .operacoes-tabela:not(.operacoes-detail-table) td { min-width:95px; }
+.operacoes-stage-modal .operacoes-tabela:not(.operacoes-detail-table) td.operacoes-coluna-selecao { min-width:44px; }
+.operacoes-stage-modal :is(button,input,select,a):focus-visible { outline:2px solid var(--border-focus); outline-offset:3px; }
+@media(max-width:760px) {
+ .operacoes-stage-modal .modal-caixa { width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
+ .operacoes-stage-modal .modal-corpo { padding:12px; }
+ .operacoes-stage-modal :is(button,a.btn,select) { min-height:44px; }
+ .operacoes-stage-modal .operacoes-desktop-cell { display:table-cell; }
+ .operacoes-stage-modal .modal-rodape { max-height:40dvh; overflow:auto; }
+ .operacoes-stage-modal .modal-topo { padding:12px; }
+ .operacoes-stage-modal .modal-rodape { padding:10px 12px; }
+ .operacoes-stage-modal .operacoes-stage-filters { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+ .operacoes-stage-modal .operacoes-stage-filters label.operacoes-rotinas-filtros { display:grid; grid-template-columns:90px minmax(0,1fr); align-items:center; }
+ .operacoes-stage-modal .operacoes-guide-selection label { flex-basis:auto; }
+ .operacoes-stage-modal .operacoes-guide-selection select { width:auto; }
+ .operacoes-stage-modal .operacoes-stage-footer { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .operacoes-stage-modal .operacoes-stage-footer > :is(nav,span) { grid-column:1/-1; }
+ .operacoes-stage-modal .modal-rodape nav { display:grid; grid-template-columns:auto minmax(0,1fr) auto; width:100%; }
+ .operacoes-stage-modal .modal-rodape nav span { text-align:center; }
+ .operacoes-stage-modal .operacoes-guide-footer { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+ .operacoes-stage-modal .operacoes-guide-footer > span { grid-column:1/-1; font-size:.8rem; }
+ .operacoes-stage-modal .operacoes-guide-footer .btn { white-space:normal; }
+}
+.operacoes-stage-modal .operacoes-company-guides tbody :is(th,td) {
+  vertical-align: top;
+}

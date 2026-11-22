@@ -100,7 +100,7 @@ test('lista de Transmitido pagina 30 de todas as empresas; não usa numerador co
   await waitFor(() => expect(dialog.queryByText('Lendo documentos salvos…')).not.toBeInTheDocument());
   const firstPage = dialog.getAllByRole('rowheader').map(el => el.textContent.split('Vínculo')[0]);
   expect(firstPage).toHaveLength(30);
-  fireEvent.click(dialog.getByRole('button', { name: 'Próxima' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Próxima' }));
   const secondPage = dialog.getAllByRole('rowheader').map(el => el.textContent.split('Vínculo')[0]);
   expect(secondPage).toHaveLength(1);
   expect(new Set([...firstPage, ...secondPage]).size).toBe(31);

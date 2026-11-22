@@ -8,9 +8,15 @@ const transmissionResponse = (companyId, competencia) => ({ ok: true, companyId,
 test('linked transmission table uses dedicated historical DTO and navigation does not rectify', async () => {
  const api = { ...apiFor(), getOperationsTransmissionDocuments: jest.fn(async (id, period) => transmissionResponse(id, period)), downloadOperationsTransmissionDocuments: jest.fn() };
  render(<OperationsTransmissionTable api={api} rows={transmissionRows} visibleRows={transmissionRows} competencia="2026-10" />);
- await waitFor(() => expect(screen.getAllByText(/Declaração 123/)).toHaveLength(2));
+ await waitFor(() => expect(screen.getByRole('checkbox',{name:'Selecionar extrato de Empresa a'})).toBeEnabled());
  expect(screen.getAllByText(/1.200,00/)).toHaveLength(2);
  for (const link of screen.getAllByRole('link', { name: 'Retificar' })) expect(link.getAttribute('href')).toContain('competencia=2026-10');
+ for (const id of ['a','b']) {
+   fireEvent.click(screen.getByRole('button',{name:`Detalhes da transmissão de Empresa ${id}`}));
+   expect(within(screen.getByRole('region',{name:'Detalhes da transmissão'})).getByText('123')).toBeInTheDocument();
+   expect(screen.getByText('calc-historico')).toBeInTheDocument();
+   fireEvent.click(screen.getByRole('button',{name:'Voltar'}));
+ }
  expect(api.getApuracaoSnapshot).not.toHaveBeenCalled(); expect(api.executeCompanyOperation).not.toHaveBeenCalled();
  expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();
 });

@@ -1,4 +1,5 @@
-import { OperationsContextualTable, OperationsTablePagination } from './OperationsContextualTable';
+import { OperationsStageModal } from './OperationsStageModal';
+import { OperationsTablePagination } from './OperationsContextualTable';
 import { useOperationsTableContext, orderOperationsRows } from './useOperationsTableContext';
 import { OperationsProcurationTable } from './OperationsProcurationTable';
 import { OperationsGuides } from './OperationsGuides';
@@ -26,6 +27,7 @@ import { operationDate, operationInstant } from './operationsDetails';
 
 const quadros = [['apuracoes', 'Apurações pendentes', 'empresas'], ['faltantes', 'Guias faltantes', 'obrigações'], ['envios', 'Envios pendentes', 'obrigações'], ['erros', 'Erros de envio de guias', 'itens'], ['revisoes', 'Revisões pendentes', 'itens'], ['concluidas', 'Empresas concluídas', 'empresas']];
 const nome = c => c.razao || c.razaoSocial || c.nome || c.cnpj;
+const regime = row => ({SIMPLES:'Simples Nacional',PRESUMIDO:'Lucro Presumido',REAL:'Lucro Real'})[row.operation?.regime || row.company.regime || row.company.regimeTributario] || 'Regime a conferir';
 const EMPTY_COMPANIES = [];
 const panelNames = { apurar: 'Apurar', guias: 'Guias', contabilizacao: 'Contabilização', concluido: 'Concluído', calculado: 'Calculado', confirmado: 'Confirmado', transmitido: 'Transmitido', disponivel: 'Disponível', enviado: 'Enviado', pago: 'Pago', ...Object.fromEntries(CHECKLIST_OPERACOES) };
 
@@ -56,6 +58,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
   const tableContext = useOperationsTableContext(navigation, competencia, panelNames);
   const { query, setQuery, setPage, filter: stageFilter, setFilter: setStageFilter } = tableContext;
   const panel = { key: tableContext.key, mode: tableContext.mode, competencia, title: tableContext.mode === 'warnings' ? `Avisos de ${panelNames[tableContext.key]}` : tableContext.key === 'apurar' ? 'Apuração' : panelNames[tableContext.key] };
+  const stageOpen = tableContext.open;
   const [filtersOpen,setFiltersOpen]=useState(false),[filterDraft,setFilterDraft]=useState('all');
   const filterTrigger=useRef(null),filterHeading=useRef(null);
   useEffect(()=>{if(filtersOpen)filterHeading.current?.focus();},[filtersOpen]);
@@ -73,7 +76,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
   useEffect(() => { setCalculationRow(null); setFiltersOpen(false); setApprovalOpen(false); setProcuracao(null); setSelection(null); }, [competencia, api]);
 
   const show = (key, title, mode = 'all') => { if (busy || approvalBusy) return; setCalculationRow(null); setGuideReviewing(false); setFiltersOpen(false); tableContext.select(key, mode); };
-  const closePanel = () => { setGuideReviewing(false); setCalculationRow(null); };
+  const closePanel = () => { tableContext.update({open:false}); setGuideReviewing(false); setCalculationRow(null); };
   const [chart, setChart] = useState(null);
   const [selection, setSelection] = useState(null);
   const [approvalOpen, setApprovalOpen] = useState(false), [approvalStage, setApprovalStage] = useState('confirmado');
@@ -151,7 +154,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
         <section className="operacoes-etapa operacoes-contabilizacao" aria-label="Contabilização">
           <h2 className="operacoes-etapa-cabecalho"><button className="operacoes-titulo" aria-label="Contabilização" onClick={() => show('contabilizacao','Contabilização','all')} disabled={unavailable || busy || approvalBusy} aria-pressed={panel.key === "contabilizacao"}>Contabilização</button></h2>
           <div className="operacoes-etapa-indicadores">
-          {CHECKLIST_OPERACOES.map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} disabled={busy || approvalBusy} unavailable={unavailable} active={panel.key === key} onClick={() => show(key,label)} />)}
+          {CHECKLIST_OPERACOES.map(([key,label]) => <Progress key={key} label={label} color="var(--state-ok)" metric={summary.metrics[key]} disabled={busy || approvalBusy} unavailable={unavailable} active={panel.key === key} />)}
           </div>
         </section>
         <div className="operacoes-quatro-pizzas">{[['parcelas','Parcelamento'],['fiscal','Situação fiscal'],['certificado','Certificado'],['procuracao','Procuração']].map(([key,title]) => <Pizza key={key} title={title} groups={distribution[key]} unavailable={unavailable} onSelect={group => setChart({ key, group, competencia })} />)}</div>
@@ -159,37 +162,35 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
       <OperationsRoutineCompanies api={api} companies={companies} competencia={competencia} loading={loading} error={error} onRefreshCompanies={refresh} />
       <OperationsDasPendencias api={api} companies={companies} competencia={competencia} unavailable={unavailable} />
     </div>
-    <div id="operacoes-tabela-contextual">
-    <OperationsContextualTable title={panel.title} competencia={competencia} loading={loading || (requiresManualEvidence && manualInss.loading)} error={error || (requiresManualEvidence && manualInss.error)} suspended={Boolean(calculationRow) || guideSuspended} footer={<div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>}>
-      {approvalPanel ? <OperationsApproval embedded contextual tableContext={tableContext} footerTarget={guideFooter} stage={panel.key} evidence={evidence} key={`${competencia}:${panel.key}`} api={api} rows={rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <>
+    <div id="operacoes-tabela-contextual">{stageOpen && <>
+    <OperationsStageModal busy={busy || approvalBusy} onClose={closePanel} title={panel.title} competencia={competencia} loading={loading || (requiresManualEvidence && manualInss.loading)} error={error || (requiresManualEvidence && manualInss.error)} suspended={Boolean(calculationRow) || guideSuspended} footer={<><div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>{!approvalPanel && panel.key!=='pago' && !guideReviewing && <OperationsTablePagination page={page} total={filtered.length} onPage={setPage} disabled={busy}/>}</>}>
+      {approvalPanel ? <OperationsApproval embedded contextual modalStage tableContext={tableContext} footerTarget={guideFooter} stage={panel.key} evidence={evidence} key={`${competencia}:${panel.key}`} api={api} rows={rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <>
       <div hidden={guideReviewing}>
-        <small className="operacoes-panel-context">Competência {competencia}</small>
         <div className="operacoes-search-row"><label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
           {!['apurar','concluido'].includes(panel.key) && <Button ref={filterTrigger} variant="secondary" disabled={busy} aria-expanded={filtersOpen} onClick={()=>{setFilterDraft(effectiveStageFilter);setFiltersOpen(true);}}>Filtros {effectiveStageFilter==='all'?0:1}</Button>}
-          <label className="operacoes-rotinas-filtros">Ordenar empresas<select value={tableContext.order} disabled={busy} onChange={e=>tableContext.setOrder(e.target.value)}><option value="stage">Ordem da etapa</option><option value="name">Nome A–Z</option><option value="name-desc">Nome Z–A</option></select></label></div>
+          </div>
         {filtersOpen && <section className="operacoes-filter-panel" aria-label="Filtros da etapa"><h3 ref={filterHeading} tabIndex={-1}>Filtros</h3><label>Situação da etapa<select aria-label="Situação da etapa" value={filterDraft} onChange={e=>setFilterDraft(e.target.value)}><option value="all">Todas as empresas deste conjunto</option><option value="done">{panel.key==='calculado'?'Calculadas':'Com conclusão comprovada'}</option><option value="pending">{panel.key==='calculado'?'Não calculadas':'Pendentes'}</option>{attentionFilterAvailable&&<option value="error">Atenção ou bloqueio</option>}<option value="unknown">A verificar</option></select></label><div className="operacoes-acoes"><Button variant="secondary" onClick={closeFilters}>Voltar</Button><Button onClick={()=>{setStageFilter(filterDraft);closeFilters();}}>Aplicar</Button></div></section>}
-      </div>{panel.key === 'transmitido' && <OperationsTransmissionTable key={competencia} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} footerTarget={guideFooter} onDetailChange={setGuideReviewing} onBusyChange={setBusy} />}
-      {panel.key === 'transmitido' ? null : guidePanel ? <OperationsGuides onPreviewChange={setGuideReviewing} key={`${competencia}:${panel.key}`} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} stage={panel.key} filteredRows={filtered} footerTarget={guideFooter} onSuspendChange={setGuideSuspended} onBusyChange={setBusy} onManualInss={row => { closePanel(); setSelection({ group: 'revisoes', id: `${row.company.companyId}:inss-detalhe`, manualCompanyId: row.company.companyId, competencia }); setPreview(false); setResult(null); }} /> : <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas da etapa" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th>{compactCalculationPanel && <th className="operacoes-acao-curta">Ação</th>}{compactCalculationPanel ? <th>{panelNames[panel.key]}</th> : accountingPanel ? CHECKLIST_OPERACOES.map(([key,label]) => <th key={key}>{label}</th>) : <><th>Calculado</th><th>Confirmado</th><th>Transmitido</th></>}{!compactCalculationPanel && <th>Evidências e ações</th>}</tr></thead><tbody>{filtered.slice(page * 30, page * 30 + 30).map(row => <tr key={row.company.companyId}>
-        <th scope="row">{nome(row.company)}{compactCalculationPanel && <>
+      </div>{panel.key === 'transmitido' && <OperationsTransmissionTable filteredRows={filtered} key={competencia} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} footerTarget={guideFooter} onDetailChange={setGuideReviewing} onBusyChange={setBusy} />}
+      {panel.key === 'transmitido' ? null : guidePanel ? <OperationsGuides companyRows onPreviewChange={setGuideReviewing} key={`${competencia}:${panel.key}`} api={api} rows={panelRows} visibleRows={filtered.slice(page * 30, page * 30 + 30)} competencia={competencia} stage={panel.key} filteredRows={filtered} footerTarget={guideFooter} onSuspendChange={setGuideSuspended} onBusyChange={setBusy} onManualInss={row => { closePanel(); setSelection({ group: 'revisoes', id: `${row.company.companyId}:inss-detalhe`, manualCompanyId: row.company.companyId, competencia }); setPreview(false); setResult(null); }} /> : <div className="operacoes-tabela-scroll" role="region" aria-label="Empresas da etapa" tabIndex={0}><table className="operacoes-tabela"><thead><tr><th>Empresa</th>{compactCalculationPanel && <th className="operacoes-acao-curta">Ação</th>}{compactCalculationPanel ? <th>{panelNames[panel.key]}</th> : accountingPanel ? CHECKLIST_OPERACOES.map(([key,label]) => <th key={key}>{label}</th>) : <><th>Calculado</th><th>Confirmado</th><th>Transmitido</th></>}{!compactCalculationPanel && <th>Evidências e ações</th>}</tr></thead><tbody>{filtered.slice(page * 30, page * 30 + 30).map(row => <tr key={row.company.companyId}>
+        <th scope="row">{nome(row.company)}<small>{regime(row)}</small><small>{row.company.cnpj || 'CNPJ não informado'}</small>{compactCalculationPanel && <>
           {row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}
           {row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}
         </>}</th>
         {compactCalculationPanel && <td className="operacoes-acao-curta"><Button size="sm" variant="secondary" aria-label={`Ver evidências de ${nome(row.company)}`} onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Detalhes</Button></td>}
         {compactCalculationPanel ? <td>{statusText(row.axes[panel.key])}</td> : accountingPanel ? CHECKLIST_OPERACOES.map(([key]) => <td key={key}>{statusText(row.axes[key])}{row.fluxo.contabilizacao?.checklistAutomatico?.[key] ? ' · automática' : ''}</td>) : ['calculado','confirmado','transmitido'].map(key => <td key={key}>{statusText(row.axes[key])}</td>)}
 
-        {!compactCalculationPanel && <td>{accountingPanel ? <><p>Fechamento: {row.fluxo.contabilizacao?.rotulo || 'A verificar'} · Importação ERP: {row.fluxo.contabilizacao?.importados ?? '—'}/{row.fluxo.contabilizacao?.total ?? '—'}</p>{row.fluxo.contabilizacao?.conferenciaDesatualizada && <p role="status">Conferência desatualizada · revise a correção do mês fechado.</p>}</> : <><p>Revisão: {row.operation?.revision || 'A verificar'}</p>{row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}{row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}<Button size="sm" variant="secondary" onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Ver evidências de {nome(row.company)}</Button></>}
-          <details><summary>Subetapas e evidências</summary><ul>{(row.fluxo.tarefas || []).map(t => <li key={t.chave}>{t.titulo} · {t.concluida ? 'Concluída' : 'Pendente'}{t.revisar ? ' · Revisar dados alterados' : ''}</li>)}</ul></details>
+        {!compactCalculationPanel && <td>{accountingPanel ? <>{row.fluxo.contabilizacao?.conferenciaDesatualizada && <p role="status">Conferência desatualizada · revise a correção do mês fechado.</p>}</> : <><p>Revisão: {row.operation?.revision || 'A verificar'}</p>{row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}{row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}<Button size="sm" variant="secondary" onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Ver evidências de {nome(row.company)}</Button></>}
+          {!accountingPanel && <details><summary>Subetapas e evidências</summary><ul>{(row.fluxo.tarefas || []).map(t => <li key={t.chave}>{t.titulo} · {t.concluida ? 'Concluída' : 'Pendente'}{t.revisar ? ' · Revisar dados alterados' : ''}</li>)}</ul></details>}
           <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,accountingPanel ? 'lancamentos' : 'cadastroFiscal')}>{accountingPanel ? 'Abrir lançamentos' : 'Abrir apuração'}</InternalLink>
           {!accountingPanel && <><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,'obrigacoes')}>Abrir obrigações</InternalLink>{['ACCOUNTANT','FIRM_ADMIN'].includes(row.company.myRole) && <Button size="sm" variant="secondary" disabled={!row.operation} onClick={() => { setApprovalStage("confirmado"); setApprovalRows([row]); closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}</>}
           </div>
         </td>}
       </tr>)}</tbody></table></div>}
       {!filtered.length && <p>Nenhuma empresa neste conjunto.</p>}
-      {!guideReviewing && <OperationsTablePagination page={page} total={filtered.length} onPage={setPage} disabled={busy} />}
       </>}
-    </OperationsContextualTable>
+    </OperationsStageModal></>}
     </div>
-    {busy && !active && !guideSuspended && <Modal titulo="Operação em andamento" ocupado><p role="status">Aguarde a conclusão da operação antes de navegar. Não repita a ação.</p></Modal>}
+    {busy && !stageOpen && !active && !guideSuspended && <Modal titulo="Operação em andamento" ocupado><p role="status">Aguarde a conclusão da operação antes de navegar. Não repita a ação.</p></Modal>}
     {calculationRow && panel?.competencia === competencia && !unavailable && <Modal titulo={`Evidências de ${nome(calculationRow.company)}`} tamanho="lg" className="operacoes-dialogo" aoFechar={() => setCalculationRow(null)} rodape={<Button variant="secondary" onClick={() => setCalculationRow(null)}>Voltar à tabela de empresas</Button>}>
       <h3 ref={calculationHeading} tabIndex={-1}>Cálculo e auditoria de {nome(calculationRow.company)}</h3>
       <p>Competência {competencia}</p>

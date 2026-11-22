@@ -1,4 +1,12 @@
-import { createOperationsGuideEvidence } from '../OperationsGuideEvidence.js';
+import { createOperationsGuideEvidence, operationGuideComposition } from '../OperationsGuideEvidence.js';
+test('partial known composition cannot exceed its own or confirmed total',()=>{
+ expect(operationGuideComposition({principal:200,juros:null,multa:null,total:100},100)).toEqual([]);
+ expect(operationGuideComposition({principal:100,juros:5,multa:null,total:null},100)).toEqual([]);
+ expect(operationGuideComposition([{principal:60},{principal:50}],100)).toEqual([]);
+ expect(operationGuideComposition({principal:80,juros:null,multa:null,total:100},100)).toEqual([{principal:80,juros:null,multa:null,total:100}]);
+ expect(operationGuideComposition({principal:0,total:0},0)).toEqual([{principal:0,juros:null,multa:null,total:0}]);
+});
+import { versaoPagamentoGuia } from '../../guides/ConfirmacaoPagamentoClienteService.js';
 jest.mock('../../guides/EnvioGuiaService.js',()=>({CANAL:{WHATSAPP:'WHATSAPP'},materializarEnvioDeEmailLegado:async()=>({materializou:false}),marcarEnviado:jest.fn(async()=>{}),marcarFalhou:jest.fn(async()=>{}),marcarIndeterminado:jest.fn(async()=>{})}));
 jest.mock('../../whatsapp/ConversaWhatsappService.js',()=>({garantirConversa:async()=>({id:'conv'})}));
 jest.mock('../../whatsapp/HistoricoArquivoWhatsappService.js',()=>({prepararHistoricoGuia:async()=>{},reconciliarTentativaGuia:async()=>{}}));
@@ -156,4 +164,77 @@ test('own persisted SENDING is accepted; another owner changing its timestamp or
  await guard.beforeDispatch({guide:source,canal:'EMAIL',pdfBytes:source.pdfBytes});
  f.guide.emailAttempts++;
  await expect(guard.beginDispatch({guide:source,canal:'EMAIL',pdfBytes:source.pdfBytes})).rejects.toMatchObject({status:409});
+});
+
+test('composition projection preserves explicit zero and missing evidence without deriving principal', () => {
+ expect(operationGuideComposition({composicao:{principal:100,juros:0}})).toEqual([{principal:100,juros:0,multa:null,total:null}]);
+ expect(operationGuideComposition({composicao:[{principal:'',juros:false,multa:'2.50'}]})).toEqual([{principal:null,juros:null,multa:2.5,total:null}]);
+ expect(operationGuideComposition({total:100})).toEqual([{principal:null,juros:null,multa:null,total:100}]);
+ expect(operationGuideComposition({rawPayload:'PRIVATE'})).toEqual([]);
+});
+
+test('payment composition reads persisted aliases and items without counting aggregate twice', () => {
+ expect(operationGuideComposition({fields:{valorPrincipal:'100.25',valorJuros:0,valorMulta:'2.50',valorTotal:'102.75'}})).toEqual([{principal:100.25,juros:0,multa:2.5,total:102.75}]);
+ expect(operationGuideComposition({composicao:{principal:999,itens:[{principal:40,juros:1,multa:0,total:41},{principal:60,juros:0,multa:2,total:62}]}},103)).toEqual([{principal:40,juros:1,multa:0,total:41},{principal:60,juros:0,multa:2,total:62}]);
+ expect(operationGuideComposition({composicao:{principal:100,juros:5,multa:0,total:100}})).toEqual([]);
+ expect(operationGuideComposition([{principal:90,juros:5,multa:0,total:95}],100)).toEqual([]);
+ expect(operationGuideComposition({principal:-1,juros:0,multa:0})).toEqual([{principal:null,juros:0,multa:0,total:null}]);
+});
+
+test('SERPRO legacy status remains distinct from an identified payment receipt', async () => {
+ const f=fixture();Object.assign(f.guide,{paymentStatus:'PAID',paymentStatusSource:'SERPRO',serproLastCheckResult:'NOT_FOUND'});
+ let payment=(await f.service.read(f.input)).items[0].pagamento;
+ expect(payment).toMatchObject({oficialComprovado:false,valorPago:null,dataCivil:null,composicao:[],composicaoOrigem:null});
+ f.guide.extracted={comprovante:{confiavel:true,total:90,principal:80,juros:5,multa:5,dataArrecadacao:'02/11/2026'},composicao:{principal:100,juros:20,multa:5,total:125}};
+ const item=(await f.service.read(f.input)).items[0];payment=item.pagamento;
+ expect(payment).toMatchObject({oficialComprovado:true,valorPago:90,composicao:[{principal:80,juros:5,multa:5,total:90}],composicaoOrigem:'COMPROVANTE_SERPRO'});
+ expect(item.composicao).toEqual([{principal:100,juros:20,multa:5,total:125}]);
+ expect(f.db.guide.update).not.toHaveBeenCalled();expect(f.db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('CLIENTE composition comes only from the exact confirmed document and does not invent bank amount', async () => {
+ const f=fixture();Object.assign(f.guide,{paymentStatus:'PAID',paymentStatusSource:'CLIENTE',extracted:{composicao:{principal:100,juros:0,multa:0,total:100}}});
+ const confirmation={id:'confirmation',companyId:'c',guideId:'g',versaoGuia:versaoPagamentoGuia(f.guide),origem:'CLIENTE',estadoBaixa:'PENDENTE',pagoEm:'2026-10-20T00:00:00.000Z',confirmadoEm:'2026-10-22T12:00:00.000Z',documento:{valor:'100',composicao:{principal:95,juros:5,multa:0,total:100}}};
+ f.records.set('contabil:cliente:confirmacao:c:confirmation',confirmation);
+ let item=(await f.service.read(f.input)).items[0];
+ expect(item.pagamento).toMatchObject({valorPago:null,valorDeclarado:100,oficialComprovado:false,dataCivil:'2026-10-20T00:00:00.000Z',registradoEm:'2026-10-22T12:00:00.000Z',composicao:[{principal:95,juros:5,multa:0,total:100}],composicaoOrigem:'CONFIRMACAO_CLIENTE'});
+ confirmation.versaoGuia='outdated';f.records.set('contabil:cliente:confirmacao:c:confirmation',confirmation);
+ item=(await f.service.read(f.input)).items[0];expect(item.pagamento).toMatchObject({valorPago:null,valorDeclarado:null,composicao:[],composicaoOrigem:null,dataCivil:null});
+ expect(f.db.guide.update).not.toHaveBeenCalled();expect(f.db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test.each([null, undefined, '', ' ', false, -1, 'invalid'])('CLIENTE declared amount %p is unknown, never replaced by nominal guide value', async value => {
+ const f=fixture();Object.assign(f.guide,{paymentStatus:'PAID',paymentStatusSource:'CLIENTE'});
+ f.records.set('contabil:cliente:confirmacao:c:declaration',{id:'declaration',companyId:'c',guideId:'g',versaoGuia:versaoPagamentoGuia(f.guide),origem:'CLIENTE',estadoBaixa:'PENDENTE',documento:{valor:value}});
+ expect((await f.service.read(f.input)).items[0].pagamento).toMatchObject({valorPago:null,valorDeclarado:null,oficialComprovado:false});
+});
+
+test('declared explicit zero is preserved, but non-client official/manual statuses do not inherit declaration', async () => {
+ const f=fixture();Object.assign(f.guide,{paymentStatus:'PAID',paymentStatusSource:'CLIENTE',valor:0});
+ const record={id:'declaration',companyId:'c',guideId:'g',versaoGuia:versaoPagamentoGuia(f.guide),origem:'CLIENTE',estadoBaixa:'PENDENTE',documento:{valor:'0'}};
+ f.records.set('contabil:cliente:confirmacao:c:declaration',record);
+ expect((await f.service.read(f.input)).items[0].pagamento).toMatchObject({valorPago:null,valorDeclarado:0,oficialComprovado:false});
+ for(const source of ['MANUAL','SERPRO']){
+  f.guide.paymentStatusSource=source;
+  expect((await f.service.read(f.input)).items[0].pagamento).toMatchObject({valorDeclarado:null,valorPago:null,oficialComprovado:false});
+ }
+});
+
+test('parcel payment composition requires the same company and guide, and the paid amount', async () => {
+ const f=fixture();Object.assign(f.guide,{paymentStatus:'PAID',paymentStatusSource:'SERPRO',parcela:{guiaId:'g',portalClientId:'c',pagamentoStatus:'CONFIRMADO',pagamentoEvidencia:{resultado:'CONFIRMADO',comprovante:{principal:90,juros:5,multa:0,total:95}},valorPago:95,pagamentoEm:new Date('2026-10-20')}});
+ let payment=(await f.service.read(f.input)).items[0].pagamento;
+ expect(payment).toMatchObject({oficialComprovado:true,composicao:[{principal:90,juros:5,multa:0,total:95}],composicaoOrigem:'PARCELA_SERPRO'});
+ f.guide.parcela.valorPago=100;expect((await f.service.read(f.input)).items[0].pagamento.composicao).toEqual([]);
+ f.guide.parcela.portalClientId='foreign';payment=(await f.service.read(f.input)).items[0].pagamento;
+ expect(payment).toMatchObject({oficialComprovado:false,composicao:[],composicaoOrigem:null,valorPago:null});
+});
+
+test('recalculation evidence is identified explicitly, never inferred from charges or different amount', async () => {
+ const f=fixture();f.guide.extracted={principal:100,juros:10,multa:0,total:110};
+ expect((await f.service.read(f.input)).items[0].recalculo).toBeNull();
+ f.guide.extracted.recalculoGuia={guiaId:'g',recalculadoEm:'2026-10-22T12:00:00.000Z',valorAnterior:100,valorAtual:110,especie:'DAS_SIMPLES'};
+ expect((await f.service.read(f.input)).items[0].recalculo).toMatchObject({guiaId:'g',valorAnterior:100,valorAtual:110,especie:'DAS_SIMPLES'});
+ f.guide.extracted.recalculoGuia.guiaId='foreign';expect((await f.service.read(f.input)).items[0].recalculo).toBeNull();
+ f.guide.extracted.recalculoGuia={guiaId:'g',recalculadoEm:'invalid'};expect((await f.service.read(f.input)).items[0].recalculo).toBeNull();
+ expect(f.db.guide.update).not.toHaveBeenCalled();expect(f.db.appSetting.create).not.toHaveBeenCalled();
 });

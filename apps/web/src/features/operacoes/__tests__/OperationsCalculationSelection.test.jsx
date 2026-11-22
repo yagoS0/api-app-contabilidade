@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OperationsApproval } from '../OperationsApproval';
 import { resumirEtapasOperacoes } from '../operacoes';
 
@@ -56,6 +56,30 @@ test('empresa sem cálculo pode ser selecionada; conferência permanece bloquead
   fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
   await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Selecionar Sem cálculo' })).not.toBeChecked());
   await waitFor(() => expect(screen.getByRole('region', { name: 'Cálculos para conferência' })).toHaveFocus());
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
+test('linha do modal Calculado usa motor existente só para a empresa escolhida e Conferir navega sem comando', async () => {
+  const api = fixture();
+  const tableContext = { page:0, query:'', order:'stage', filter:'all', setPage:jest.fn(), setQuery:jest.fn(), setFilter:jest.fn() };
+  render(<OperationsApproval api={api} rows={rows} competencia={competencia} stage="calculado" embedded contextual modalStage tableContext={tableContext}/>);
+  await waitFor(() => expect(screen.getByRole('checkbox',{name:'Selecionar Sem cálculo'})).toBeEnabled());
+  const row = screen.getByText('Sem cálculo',{exact:true}).closest('tr');
+  expect(within(row).getAllByRole('button')).toHaveLength(1);
+  expect(within(row).getByRole('link',{name:'Conferir'})).toHaveAttribute('href','/companies/a/cadastro-fiscal?competencia=2026-10');
+  expect(api.getCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeOperationsCalculation).not.toHaveBeenCalled();
+  fireEvent.click(within(row).getByRole('button',{name:'Calcular'}));
+  const confirm = await screen.findByRole('button',{name:'Confirmar cálculo (1)'});
+  await waitFor(() => expect(confirm).toBeEnabled());
+  expect(api.previewOperationsCalculation).toHaveBeenCalledTimes(1);
+  expect(api.previewOperationsCalculation).toHaveBeenCalledWith('a','2026-10');
+  expect(api.executeOperationsCalculation).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(1));
+  expect(api.executeOperationsCalculation.mock.calls[0][0]).toBe('a');
+  expect(api.executeOperationsCalculation.mock.calls[0][1]).toBe('2026-10');
   expect(api.saveCompanyOperation).not.toHaveBeenCalled();
   expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
