@@ -207,28 +207,23 @@ describe("nota nova nasce com os campos fiscais", () => {
 // 2. ⚠ A EXTRAÇÃO NÃO PODE DERRUBAR A CAPTURA
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 //
-// Capturar a nota é o que não pode ser perdido; o campo derivado é secundário e se reconstrói do
-// `xmlRaw` a qualquer momento. Onde falhar, a coluna fica NULA e o motivo é registrado — o mesmo
-// desfecho que o backfill dá a `NAO_E_NFSE` e companhia.
-describe("a captura sobrevive a XML ruim", () => {
+// Campo derivado continua secundário quando a identidade da nota foi comprovada.
+// O P0 de isolamento recusa XML sem vínculo antes da persistência: chave sozinha não basta.
+describe("captura preserva identidade e tolera falha de campos derivados", () => {
   const NADA_LIDO = Object.fromEntries(IDS_DOS_CAMPOS.map((id) => [id, null]));
 
-  it("XML ilegível: a NOTA ENTRA, as colunas ficam nulas e o motivo é nomeado", async () => {
-    const r = await capturar("nao e xml <<<", { NSU: "11", ChaveAcesso: "3".repeat(50) });
-    expect(r.status).toBe("upserted"); // ⚠ a nota não foi perdida
-    expect(__store.notas).toHaveLength(1);
-    expect(__store.notas[0]).toMatchObject(NADA_LIDO);
-    expect(__store.notas[0].camposFiscaisMotivo).toBe(MOTIVO.XML_ILEGIVEL);
-    expect(__store.notas[0].camposFiscaisExtraidosEm).toBeInstanceOf(Date);
+  it("XML ilegível sem identidade comprovada não entra apenas por conter chave", async () => {
+    await expect(capturar("nao e xml <<<", { NSU: "11", ChaveAcesso: "3".repeat(50) }))
+      .rejects.toMatchObject({ code: 'ADN_VINCULO_DOCUMENTAL_INCONCLUSIVO' });
+    expect(__store.notas).toHaveLength(0);
   });
 
-  it("documento que NÃO é NFS-e chega pelo caminho da NFS-e: entra com `NAO_E_NFSE`", async () => {
+  it("documento de outro leiaute sem participantes não é presumido como da empresa", async () => {
     const nfe = '<?xml version="1.0"?><nfeProc versao="4.00"><NFe><infNFe Id="NFe33">'
       + "<ide><nNF>77</nNF></ide></infNFe></NFe></nfeProc>";
-    const r = await capturar(nfe, { NSU: "12", ChaveAcesso: "4".repeat(50) });
-    expect(r.status).toBe("upserted");
-    expect(__store.notas[0]).toMatchObject(NADA_LIDO);
-    expect(__store.notas[0].camposFiscaisMotivo).toBe(MOTIVO.NAO_E_NFSE);
+    await expect(capturar(nfe, { NSU: "12", ChaveAcesso: "4".repeat(50) }))
+      .rejects.toMatchObject({ code: 'ADN_VINCULO_DOCUMENTAL_INCONCLUSIVO' });
+    expect(__store.notas).toHaveLength(0);
   });
 
   it("⚠ a extração LANÇANDO não derruba a captura — nota gravada, motivo `EXTRACAO_LANCOU`", async () => {

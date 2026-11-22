@@ -3,6 +3,23 @@ import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 import { parseXmlMetadata } from "../../application/nfse/AdnXmlMetadata.js";
 import { parseDate } from "../../utils/date.js";
+import { validarVinculoDocumentoAdn } from "../../modules/nfse/public.js";
+
+function exigirVinculo(cnpjConsulta, document) {
+  const vinculo = validarVinculoDocumentoAdn(cnpjConsulta, document);
+  if (!vinculo.pertence) {
+    const error = new Error("adn_documento_outro_cnpj");
+    error.code = "ADN_DOCUMENTO_OUTRO_CNPJ";
+    throw error;
+  }
+  return vinculo;
+}
+
+function conflitoIdentidade() {
+  const error = new Error("adn_identidade_documental_conflitante");
+  error.code = "ADN_IDENTIDADE_DOCUMENTAL_CONFLITANTE";
+  return error;
+}
 
 function normalizeAdnStatus({ tipoDocumento, tipoEvento, situacao }) {
   const td = String(tipoDocumento || "").toUpperCase();
@@ -134,7 +151,8 @@ export class AdnRepository {
     });
   }
 
-  static async upsertDocument(data) {
+  static async upsertDocument(data, { cnpjConsulta } = {}) {
+    const vinculo = exigirVinculo(cnpjConsulta, data);
     const existing = await prisma.adnDocument.findUnique({
       where: { nsu: BigInt(data.nsu) },
     });
@@ -164,17 +182,37 @@ export class AdnRepository {
       situacao: data.situacao ?? undefined,
     };
 
-    if (existing) {
-      const updated = await prisma.adnDocument.update({
-        where: { id: existing.id },
+    const updateExisting = async (previous) => {
+      const anterior = exigirVinculo(cnpjConsulta, previous);
+      // NSU é global no legado: nunca o use para substituir outra identidade fiscal.
+      if ((previous.chaveAcesso || null) !== (data.chaveAcesso || null)
+        || anterior.prestador !== vinculo.prestador || anterior.tomador !== vinculo.tomador
+        || (previous.numeroNfse && data.numeroNfse && previous.numeroNfse !== data.numeroNfse)) {
+        throw conflitoIdentidade();
+      }
+      let updated;
+      try {
+        updated = await prisma.adnDocument.update({
+        where: { id: previous.id, updatedAt: previous.updatedAt,
+          cnpjPrestador: previous.cnpjPrestador, cnpjTomador: previous.cnpjTomador,
+          chaveAcesso: previous.chaveAcesso },
         data: Object.fromEntries(
           Object.entries(updateData).filter(([, value]) => value !== undefined)
         ),
       });
+      } catch (error) {
+        if (error?.code !== 'P2025') throw error;
+        const conflict = new Error('adn_atualizacao_concorrente');
+        conflict.code = 'ADN_ATUALIZACAO_CONCORRENTE';
+        throw conflict;
+      }
       return { action: "updated", document: serializeDocument(updated) };
-    }
+    };
+    if (existing) return updateExisting(existing);
 
-    const created = await prisma.adnDocument.create({
+    let created;
+    try {
+      created = await prisma.adnDocument.create({
       data: {
         nsu: BigInt(data.nsu),
         chaveAcesso: data.chaveAcesso || null,
@@ -195,11 +233,20 @@ export class AdnRepository {
         valorIss: data.valorIss ?? null,
         situacao: data.situacao || null,
       },
-    });
+      });
+    } catch (error) {
+      if (error?.code !== 'P2002') throw error;
+      // Revalida o vencedor da corrida local; não repete transporte nem lote.
+      const concurrent = await prisma.adnDocument.findUnique({ where: { nsu: BigInt(data.nsu) } });
+      if (!concurrent) throw error;
+      return updateExisting(concurrent);
+    }
     return { action: "created", document: serializeDocument(created) };
   }
 
-  static async updateByChaveAcesso(chaveAcesso, data) {
+  static async updateByChaveAcesso(chaveAcesso, data, { cnpjConsulta } = {}) {
+    const vinculo = exigirVinculo(cnpjConsulta, data);
+    if (!chaveAcesso) throw conflitoIdentidade();
     const updateData = {
       situacao: data.situacao ?? undefined,
       tipoEvento: data.tipoEvento ?? undefined,
@@ -217,7 +264,10 @@ export class AdnRepository {
       tomadorNome: data.tomadorNome ?? undefined,
     };
     const updated = await prisma.adnDocument.updateMany({
-      where: { chaveAcesso },
+      where: { chaveAcesso,
+        OR: [{ cnpjPrestador: vinculo.empresa }, { cnpjTomador: vinculo.empresa }],
+        ...(vinculo.prestador ? { cnpjPrestador: vinculo.prestador } : {}),
+        ...(vinculo.tomador ? { cnpjTomador: vinculo.tomador } : {}) },
       data: Object.fromEntries(
         Object.entries(updateData).filter(([, value]) => value !== undefined)
       ),
@@ -434,10 +484,10 @@ export class AdnRepository {
         : {}),
       ...(cursorObj
         ? {
-            OR: [
+            AND: [{ OR: [
               { updatedAt: { lt: cursorObj.updatedAt } },
               { updatedAt: cursorObj.updatedAt, id: { lt: cursorObj.id } },
-            ],
+            ] }],
           }
         : {}),
     };
