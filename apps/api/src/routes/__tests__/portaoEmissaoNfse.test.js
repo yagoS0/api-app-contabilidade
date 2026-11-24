@@ -39,7 +39,7 @@ jest.mock("../../application/nfse/NfseService.js", () => ({
   NfseService: {
     conciliarTentativa: jest.fn(async () => ({ estado: "OUTRA", message: "Número ocupado", recuperada: false })),
     issue: jest.fn(async () => ({ status: "issued", nfse: { id: "nf-1" } })),
-    sendEvent: jest.fn(async () => ({ providerData: {} })),
+    sendEvent: jest.fn(async () => ({ confirmacaoFiscal: true, status: "cancelled", providerData: {}, nfse: { id: "nf-1", status: "cancelled" } })),
     syncFromProvider: jest.fn(async () => ({ ok: true })),
   },
 }));

@@ -1,0 +1,37 @@
+{
+  "summary": "P0.2: confirmação fiscal de cancelamento com contratos SEFIN/ADN, agregação de eventos e custódia concorrente, sem retransmissão incerta.",
+  "risk": "high",
+  "baseCommit": "07e24a2bf60d93d49960c170043b77478497ab0b",
+  "domains": [
+    "accounting",
+    "api",
+    "ci",
+    "commercial",
+    "communication",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "NFS-e é proprietária. Aceite HTTP deixa de equivaler a cancelamento. Escritório, portal e assistente consomem confirmação fiscal comum. Sem mudança tributária, schema, calendário IBS/CBS ou sincronização ADN. Nenhum ato fiscal real autorizado.",
+  "tests": [
+    "24/11: base inicial153/153; candidata final328/328 em9 suítes, incluindo24 PostgreSQL16 descartável. Duas expectativas HTTP intermediárias corrigidas para exigir novos limites e AcceptJSON.",
+    "Regressão isolamento ADN do313:87/87 em12 suítes; sem mudanças na sincronização geral.",
+    "Segurança independente:98/98 inicialmente; após limite agregado incluir descompactações com falha,99/99 na suíte focal pelo principal e Segurança (subconjunto, não somar aos328). Arquitetura independente5/5.",
+    "Governança:40/40 aprovados; registro de impacto válido. Diagnose:5020 base/5020 candidata, zero acréscimos; 5 testes arquiteturais locais aprovados.",
+    "CI integral do SHA final deve ser comprovada no PR; não reutilizar a CI do09f8886."
+  ],
+  "reviewProcess": "24/11: controlador2026-11-24T19-05-51-276Z-1bad8bcb concluiuexecutor, mas seu subprocessoNode encontrouEPERM. Principal interrompeu nosgates e registroucontinuaçãoalternativa; semready_for_human. Revisores independentes Fiscal, Segurança e Arquitetura detectaram divergênciascontratuais, promoção de histórico parcial, corrida de custódia e DTO. Corrigidos; pareceres técnicos favoráveis condicionadosàCI final. Nenhum revisor aprovou código próprio. Histórico anterior preservado no documento doP0.2.",
+  "rollback": "Sem migração. Reverter código reabre confirmação indevida e não é rollback produtivo seguro. Reservas/evidências devem ser preservadas; qualquer publicação ou contenção produtiva exige autorização própria.",
+  "humanDecisions": [
+    "Revisão humana do PR e SHA final antes de integração; deploy separado."
+  ],
+  "limitations": [
+    "Contratos recebidos e versionados, mas não homologados por operação fiscal real. SEFIN recebido como texto; URL exata da exportação e hash de arquivo original não comprovados. ADN produção restrita não comprova paridade produtiva.",
+    "Certificado XML embutido comprova integridade; a procedência depende do transporte HTTPS/mTLS oficial, com proxy e redirects bloqueados. Não valida independentemente toda cadeia ICP-Brasil/revogação do assinante XML.",
+    "AppSetting não impõe imutabilidade no banco; reservas/evidências existentes preservadas. NAO_ENVIADO não libera retransmissão automática. Eventos fora dos quatro tipos existentes permanecem inconclusivos.",
+    "Controlador interrompido, sem ready_for_human; testes e pareceres alternativos registrados. Sem merge, deploy, schema, migração, fiscal real ou alteração de outro domínio."
+  ]
+}

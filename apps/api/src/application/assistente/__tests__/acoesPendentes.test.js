@@ -83,7 +83,7 @@ function clienteFalso({ acoes = [], guide = GUIA } = {}) {
 function depsFalsos(over = {}) {
   return {
     ...DEPS_PADRAO,
-    NfseService: { issue: jest.fn(async () => ({ status: "issued", nfse: { numeroNfse: "77" } })), sendEvent: jest.fn(async () => ({ status: "accepted" })) },
+    NfseService: { issue: jest.fn(async () => ({ status: "issued", nfse: { numeroNfse: "77" } })), sendEvent: jest.fn(async () => ({ status: "cancelled", confirmacaoFiscal: true })) },
     NfseRepository: { updateByChaveAcesso: jest.fn(async () => ({ id: "si1" })) },
     resolveLegacyCompanyId: jest.fn(async () => "legacy-1"),
     autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: true, via: "CLIENTE" })),
@@ -294,15 +294,31 @@ describe("o recálculo — as 4 travas da rota, de novo, ANTES da chamada PAGA",
   });
 });
 
-describe("o cancelamento — o NOSSO registro acompanha", () => {
-  it("marca a ServiceInvoice pela chave, como a rota do cliente faz", async () => {
+describe("o cancelamento — comprovação e escrita pertencem à NFS-e", () => {
+  it("consome confirmação sem repetir escrita pela chave", async () => {
     const chave = "5".repeat(50);
     const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.CANCELAR_NFSE, payload: { chaveAcesso: chave, cMotivo: "2", justificativa: "serviço não prestado ao cliente", numero: "12" } })] });
     const deps = depsFalsos();
     const r = await confirmarEExecutar({ acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio, deps });
     expect(deps.NfseService.sendEvent.mock.calls[0][0]).toMatchObject({ chaveAcesso: chave, tipoEvento: "e101101", companyId: "legacy-1" });
-    expect(deps.NfseRepository.updateByChaveAcesso).toHaveBeenCalledWith(chave, { status: "cancelled" });
+    expect(deps.NfseRepository.updateByChaveAcesso).not.toHaveBeenCalled();
     expect(r.executou).toBe(true);
+  });
+  it.each(['autorizarPermissaoDaAcao', 'autorizarEmissaoDoCliente'])('revogação de %s após preparação impede POST de cancelamento', async politica => {
+    const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.CANCELAR_NFSE, payload: { chaveAcesso: '5'.repeat(50), cMotivo: '2', justificativa: 'serviço não prestado ao cliente', numero: '12' } })] });
+    const deps = depsFalsos();
+    const post = jest.fn();
+    deps.NfseService.sendEvent.mockImplementation(async ({ revalidarAutorizacao }) => {
+      if (politica === 'autorizarPermissaoDaAcao') client.contatoWhatsapp.findMany.mockResolvedValue([]);
+      else deps.autorizarEmissaoDoCliente.mockResolvedValue({ ok: false, codigo: 'REVOGADO' });
+      await revalidarAutorizacao();
+      post();
+      return { confirmacaoFiscal: true, status: 'cancelled' };
+    });
+    const r = await confirmarEExecutar({ acaoId: 'ap1', conversaId: 'cv1', portalClientId: 'pc-1', agora: AGORA, client, log: silencio, deps });
+    expect(post).not.toHaveBeenCalled();
+    expect(deps.NfseRepository.updateByChaveAcesso).not.toHaveBeenCalled();
+    expect(r.resultado).toMatchObject({ codigo: 'NFSE_CANCELAMENTO_AUTORIZACAO', indeterminado: false });
   });
 });
 
@@ -401,6 +417,6 @@ it('replay de cancelamento aceito recupera resposta persistida sem anunciar ince
  const client=clienteFalso({acoes:[pendencia({tipo:TIPOS.CANCELAR_NFSE,payload:{chaveAcesso:'7'.repeat(50),cMotivo:'2',justificativa:'Serviço não prestado'}})]});
  const deps=depsFalsos();const args={acaoId:'ap1',conversaId:'cv1',portalClientId:'pc-1',agora:AGORA,client,log:silencio,deps};
  const primeiro=await confirmarEExecutar(args);const replay=await confirmarEExecutar(args);
- expect(replay).toMatchObject({executou:false,codigo:'RESULTADO_RECUPERADO',texto:primeiro.texto,resultado:{status:'accepted'}});
+ expect(replay).toMatchObject({executou:false,codigo:'RESULTADO_RECUPERADO',texto:primeiro.texto,resultado:{status:'cancelled',confirmacaoFiscal:true}});
  expect(deps.NfseService.sendEvent).toHaveBeenCalledTimes(1);
 });

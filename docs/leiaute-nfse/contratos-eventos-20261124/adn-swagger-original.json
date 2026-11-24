@@ -1,0 +1,1983 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "API NFS-e - ADN Contribuinte",
+    "description": "# Apresentação\r\n Bem-vindo a documentação técnica da API do Projeto Nota Fiscal de Serviços Eletrônica (NFS-e) que trata a distribuição de documentos fiscais para os contribuintes.\r\n Aqui você encontrará informações detalhadas sobre os endpoints, parâmetros, respostas e exemplos de uso.\r\n\r\n  # Padrões técnicos\r\n A API NFS-e utiliza a arquitetura RESTful que segue os seguintes padrões técnicos:\r\n\r\n- **Protocolo de comunicação** : TLS 1.2 ou superior com autenticação mútua\r\n\r\n- **Formato para troca de mensagens** : JSON\r\n\r\n- **Formato dos documentos** : XML 1.0 (https://www.w3.org/TR/REC-xml)\r\n\r\n- **Codificação de caracteres** : UTF-8\r\n\r\n- **Certificado digital** : Emitido por Autoridade Certificadora ICP-Brasil, tipo A1 ou A3, CNPJ ou CPF, com \"Autenticação do Cliente\"\r\n\r\n- **Padrão de assinatura dos documentos XML** : XMLDSIG (https://www.w3.org/TR/xmldsig-core/)\r\n\r\n- **Padrão de compactação dos documentos XML para troca de mensagens** : GZip com representao base64binary\r\n\r\n  # Mensagens de erro\r\n Os erros e alertas são retornados nas propriedades **Erros** e **Alertas** do corpo da resposta, no formato `Codigo` + `Descricao`. Lista das mensagens específicas da distribuição para contribuintes:\r\n\r\n| Código | HTTP | Descrição |\r\n|--------|------|-----------|\r\n| E2210 | 400 | Certificado de transmissão inválido. |\r\n| E2211 | 400 | Certificado de transmissão revogado. |\r\n| E2212 | 400 | Certificado de transmissão - erro na cadeia de certificação. |\r\n| E2213 | 400 | Certificado de transmissão expirado. |\r\n| E2214 | 400 | Certificado de transmissão - erro de acesso à LCR. |\r\n| E2220 | 404 | Nenhum documento localizado - não existem documentos fiscais para o contribuinte a partir do NSU informado. |\r\n| E2230 | 404 | Nenhum documento localizado - não existe documento fiscal para o contribuinte com o NSU informado. |\r\n| E2240 | 404 | Nenhum documento localizado - não existem documentos fiscais para a chave de acesso informada. |\r\n| E2241 | 404 | Chave de acesso da NFS-e não referencia o contribuinte solicitante e por isso não pode ser compartilhada. |\r\n| E2243 | 400 | O CNPJ informado na consulta deve ter o mesmo CNPJ base do contribuinte solicitante. |\r\n| E2244 | 400 | Somente um dos campos cnpjConsulta ou cpfConsulta deve ser preenchido. |\r\n| E2245 | 400 | Não há procuração da inscrição {0} para a inscrição {1}. |\r\n| E2246 | 400 | O CNPJ informado na consulta é inválido (dígito verificador). |\r\n| E2247 | 400 | O CPF informado na consulta é inválido (dígito verificador). |\r\n| E999 | 400 | Falha não tratada. A descrição traz um identificador para acionamento do suporte. |\r\n\r\n\r\n\r\n",
+    "version": "v1",
+    "x-logo": {
+      "url": "/contribuintes/images/logo_nfse_vertical.png",
+      "altText": "Logo da API",
+      "backgroundColor": "#FFFFFF"
+    }
+  },
+  "paths": {
+    "/DFe/{NSU}": {
+      "get": {
+        "tags": [
+          "DistribuicaoContribuinte"
+        ],
+        "summary": "Retorna documentos fiscais de serviço a partir do NSU informado (exclusive)",
+        "description": "<br>**Consulta do próprio contribuinte:** sem informar cnpjConsulta/cpfConsulta, são retornados os documentos do contribuinte identificado pelo certificado de transmissão.<br />\r\n<br>**Consulta por CNPJ do mesmo CNPJ base:** cnpjConsulta deve ser sempre informado com 14 dígitos (CNPJ completo, com dígito verificador válido). Se os 8 primeiros dígitos (CNPJ base) coincidirem com o CNPJ base do certificado de transmissão, a consulta é autorizada sem necessidade de procuração.<br />\r\n<br>**Consulta mediante procuração:** é necessária para consultar os documentos de outro contribuinte, ou seja:<br />\r\n<br>* **cnpjConsulta** (14 dígitos) com CNPJ base diferente do CNPJ base do certificado de transmissão; ou\r\n<br>* **cpfConsulta** (11 dígitos) diferente do CPF do certificado de transmissão.<br />\r\n<br>Nesses casos, a inscrição consultada deve ter outorgado procuração válida ao titular do certificado. Sem procuração, a requisição é rejeitada com o erro E2245. As procurações devem ser cadastradas pelo outorgante no Portal de Serviços da Receita Federal (https://servicos.receitafederal.gov.br/).<br />\r\n<br>**Atenção:** os parâmetros cnpjConsulta e cpfConsulta não podem ser informados juntos. Se ambos forem preenchidos, a requisição é rejeitada com o erro E2244.<br />\r\n<br>Lista completa de mensagens de erro: [Mensagens de erro](#section/Mensagens-de-erro)<br />\r\n<br>**Tipo da consulta:** a resposta informa, na propriedade TipoConsulta, como a consulta foi autorizada: InscricaoCertificado (documentos do próprio titular do certificado), CnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (consulta de outra inscrição mediante procuração). Nas respostas de rejeição, o valor padrão é InscricaoCertificado.",
+        "parameters": [
+          {
+            "name": "NSU",
+            "in": "path",
+            "description": "NSU a partir do qual os documentos serão retornados (exclusive)",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cnpjConsulta",
+            "in": "query",
+            "description": "Opcional. CNPJ completo (sempre 14 dígitos) a ser consultado; deve ter o mesmo CNPJ base (8 primeiros dígitos) do certificado ou, caso contrário, exige procuração",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lote",
+            "in": "query",
+            "description": "Se verdadeiro, retorna até o tamanho máximo do lote; se falso, retorna apenas um documento",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "cpfConsulta",
+            "in": "query",
+            "description": "Opcional. CPF (11 dígitos) a ser consultado; exige que seja o CPF do certificado ou que haja procuração",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso. Os documentos a partir do NSU informado são retornados em LoteDFe.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"NFSE","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xtNPT07PRB7MAjYPXARAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8156178-03:00"},{"NSU":2,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"EVENTO","TipoEvento":"CANCELAMENTO","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8156272-03:00"}],"Alertas":[],"Erros":[],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8155562-03:00"}
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"NFSE","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xtNPT07PRB7MAjYPXARAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8156178-03:00"},{"NSU":2,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"EVENTO","TipoEvento":"CANCELAMENTO","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8156272-03:00"}],"Alertas":[],"Erros":[],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8155562-03:00"}
+              },
+              "text/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"NFSE","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xtNPT07PRB7MAjYPXARAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8156178-03:00"},{"NSU":2,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"EVENTO","TipoEvento":"CANCELAMENTO","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8156272-03:00"}],"Alertas":[],"Erros":[],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8155562-03:00"}
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8155562-03:00</DataHoraProcessamento>\n  <StatusProcessamento>DOCUMENTOS_LOCALIZADOS</StatusProcessamento>\n  <LoteDFe>\n    <DistribuicaoNSU>\n      <NSU>1</NSU>\n      <ChaveAcesso>12345678901234567890123456789012345678901234</ChaveAcesso>\n      <TipoDocumento>NFSE</TipoDocumento>\n      <TipoEvento xsi:nil=\"true\" />\n      <ArquivoXml>H4sIAAAAAAAAA7OpyM0xtNPT07PRB7MAjYPXARAAAAA=</ArquivoXml>\n      <DataHoraGeracao>2026-11-24T15:38:04.8156178-03:00</DataHoraGeracao>\n    </DistribuicaoNSU>\n    <DistribuicaoNSU>\n      <NSU>2</NSU>\n      <ChaveAcesso>12345678901234567890123456789012345678901234</ChaveAcesso>\n      <TipoDocumento>EVENTO</TipoDocumento>\n      <TipoEvento>e101101</TipoEvento>\n      <ArquivoXml>H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=</ArquivoXml>\n      <DataHoraGeracao>2026-11-24T15:38:04.8156272-03:00</DataHoraGeracao>\n    </DistribuicaoNSU>\n  </LoteDFe>\n  <Alertas />\n  <Erros />\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8155562-03:00</DataHoraProcessamento>\n  <StatusProcessamento>DOCUMENTOS_LOCALIZADOS</StatusProcessamento>\n  <LoteDFe>\n    <DistribuicaoNSU>\n      <NSU>1</NSU>\n      <ChaveAcesso>12345678901234567890123456789012345678901234</ChaveAcesso>\n      <TipoDocumento>NFSE</TipoDocumento>\n      <TipoEvento xsi:nil=\"true\" />\n      <ArquivoXml>H4sIAAAAAAAAA7OpyM0xtNPT07PRB7MAjYPXARAAAAA=</ArquivoXml>\n      <DataHoraGeracao>2026-11-24T15:38:04.8156178-03:00</DataHoraGeracao>\n    </DistribuicaoNSU>\n    <DistribuicaoNSU>\n      <NSU>2</NSU>\n      <ChaveAcesso>12345678901234567890123456789012345678901234</ChaveAcesso>\n      <TipoDocumento>EVENTO</TipoDocumento>\n      <TipoEvento>e101101</TipoEvento>\n      <ArquivoXml>H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=</ArquivoXml>\n      <DataHoraGeracao>2026-11-24T15:38:04.8156272-03:00</DataHoraGeracao>\n    </DistribuicaoNSU>\n  </LoteDFe>\n  <Alertas />\n  <Erros />\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+              }
+            }
+          },
+          "400": {
+            "description": "Requisição rejeitada (ex.: certificado de transmissão inválido, cnpjConsulta e cpfConsulta informados simultaneamente, CNPJ base diferente do solicitante, ausência de procuração para o CNPJ/CPF consultado ou falha não tratada). Os motivos são detalhados em Erros.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Certificado inválido": {
+                    "summary": "Certificado de transmissão inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2210","Descricao":"Certificado de transmissão inválido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.815849-03:00"}
+                  },
+                  "cnpjConsulta e cpfConsulta informados": {
+                    "summary": "Os parâmetros cnpjConsulta e cpfConsulta são mutuamente exclusivos",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2244","Descricao":"Somente um dos campos cnpjConsulta ou cpfConsulta deve ser preenchido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159169-03:00"}
+                  },
+                  "CNPJ base diferente do solicitante": {
+                    "summary": "CNPJ consultado (14 dígitos) cujo CNPJ base (8 primeiros dígitos) difere do CNPJ base do certificado do solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2243","Descricao":"O CNPJ informado na consulta deve ter o mesmo CNPJ Base do Contribuinte solicitante."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159405-03:00"}
+                  },
+                  "CNPJ consultado inválido": {
+                    "summary": "CNPJ consultado (14 dígitos) com dígito verificador inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2246","Descricao":"O CNPJ informado na consulta é inválido (dígito verificador)."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159591-03:00"}
+                  },
+                  "CPF consultado inválido": {
+                    "summary": "CPF consultado com dígito verificador inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2247","Descricao":"O CPF informado na consulta é inválido (dígito verificador)."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159778-03:00"}
+                  },
+                  "Sem procuração para o CNPJ consultado": {
+                    "summary": "CNPJ consultado (14 dígitos) de outro CNPJ base, sem procuração para o solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2245","Descricao":"Não há procuração da inscrição 12345678000190 para a inscrição 98765432000110."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8160122-03:00"}
+                  },
+                  "Sem procuração para o CPF consultado": {
+                    "summary": "CPF consultado sem procuração para o solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2245","Descricao":"Não há procuração da inscrição 12345678000190 para a inscrição 55566677788."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8160349-03:00"}
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Certificado inválido": {
+                    "summary": "Certificado de transmissão inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2210","Descricao":"Certificado de transmissão inválido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.815849-03:00"}
+                  },
+                  "cnpjConsulta e cpfConsulta informados": {
+                    "summary": "Os parâmetros cnpjConsulta e cpfConsulta são mutuamente exclusivos",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2244","Descricao":"Somente um dos campos cnpjConsulta ou cpfConsulta deve ser preenchido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159169-03:00"}
+                  },
+                  "CNPJ base diferente do solicitante": {
+                    "summary": "CNPJ consultado (14 dígitos) cujo CNPJ base (8 primeiros dígitos) difere do CNPJ base do certificado do solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2243","Descricao":"O CNPJ informado na consulta deve ter o mesmo CNPJ Base do Contribuinte solicitante."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159405-03:00"}
+                  },
+                  "CNPJ consultado inválido": {
+                    "summary": "CNPJ consultado (14 dígitos) com dígito verificador inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2246","Descricao":"O CNPJ informado na consulta é inválido (dígito verificador)."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159591-03:00"}
+                  },
+                  "CPF consultado inválido": {
+                    "summary": "CPF consultado com dígito verificador inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2247","Descricao":"O CPF informado na consulta é inválido (dígito verificador)."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159778-03:00"}
+                  },
+                  "Sem procuração para o CNPJ consultado": {
+                    "summary": "CNPJ consultado (14 dígitos) de outro CNPJ base, sem procuração para o solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2245","Descricao":"Não há procuração da inscrição 12345678000190 para a inscrição 98765432000110."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8160122-03:00"}
+                  },
+                  "Sem procuração para o CPF consultado": {
+                    "summary": "CPF consultado sem procuração para o solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2245","Descricao":"Não há procuração da inscrição 12345678000190 para a inscrição 55566677788."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8160349-03:00"}
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Certificado inválido": {
+                    "summary": "Certificado de transmissão inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2210","Descricao":"Certificado de transmissão inválido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.815849-03:00"}
+                  },
+                  "cnpjConsulta e cpfConsulta informados": {
+                    "summary": "Os parâmetros cnpjConsulta e cpfConsulta são mutuamente exclusivos",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2244","Descricao":"Somente um dos campos cnpjConsulta ou cpfConsulta deve ser preenchido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159169-03:00"}
+                  },
+                  "CNPJ base diferente do solicitante": {
+                    "summary": "CNPJ consultado (14 dígitos) cujo CNPJ base (8 primeiros dígitos) difere do CNPJ base do certificado do solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2243","Descricao":"O CNPJ informado na consulta deve ter o mesmo CNPJ Base do Contribuinte solicitante."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159405-03:00"}
+                  },
+                  "CNPJ consultado inválido": {
+                    "summary": "CNPJ consultado (14 dígitos) com dígito verificador inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2246","Descricao":"O CNPJ informado na consulta é inválido (dígito verificador)."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159591-03:00"}
+                  },
+                  "CPF consultado inválido": {
+                    "summary": "CPF consultado com dígito verificador inválido",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2247","Descricao":"O CPF informado na consulta é inválido (dígito verificador)."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8159778-03:00"}
+                  },
+                  "Sem procuração para o CNPJ consultado": {
+                    "summary": "CNPJ consultado (14 dígitos) de outro CNPJ base, sem procuração para o solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2245","Descricao":"Não há procuração da inscrição 12345678000190 para a inscrição 98765432000110."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8160122-03:00"}
+                  },
+                  "Sem procuração para o CPF consultado": {
+                    "summary": "CPF consultado sem procuração para o solicitante",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2245","Descricao":"Não há procuração da inscrição 12345678000190 para a inscrição 55566677788."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8160349-03:00"}
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Certificado inválido": {
+                    "summary": "Certificado de transmissão inválido",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8160585-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2210</cMsg>\n      <xDesc>Certificado de transmissão inválido.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "cnpjConsulta e cpfConsulta informados": {
+                    "summary": "Os parâmetros cnpjConsulta e cpfConsulta são mutuamente exclusivos",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8161119-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2244</cMsg>\n      <xDesc>Somente um dos campos cnpjConsulta ou cpfConsulta deve ser preenchido.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "CNPJ base diferente do solicitante": {
+                    "summary": "CNPJ consultado (14 dígitos) cujo CNPJ base (8 primeiros dígitos) difere do CNPJ base do certificado do solicitante",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8161698-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2243</cMsg>\n      <xDesc>O CNPJ informado na consulta deve ter o mesmo CNPJ Base do Contribuinte solicitante.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "CNPJ consultado inválido": {
+                    "summary": "CNPJ consultado (14 dígitos) com dígito verificador inválido",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8162119-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2246</cMsg>\n      <xDesc>O CNPJ informado na consulta é inválido (dígito verificador).</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "CPF consultado inválido": {
+                    "summary": "CPF consultado com dígito verificador inválido",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8162504-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2247</cMsg>\n      <xDesc>O CPF informado na consulta é inválido (dígito verificador).</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "Sem procuração para o CNPJ consultado": {
+                    "summary": "CNPJ consultado (14 dígitos) de outro CNPJ base, sem procuração para o solicitante",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8162881-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2245</cMsg>\n      <xDesc>Não há procuração da inscrição 12345678000190 para a inscrição 98765432000110.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "Sem procuração para o CPF consultado": {
+                    "summary": "CPF consultado sem procuração para o solicitante",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8163258-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2245</cMsg>\n      <xDesc>Não há procuração da inscrição 12345678000190 para a inscrição 55566677788.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  }
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Certificado inválido": {
+                    "summary": "Certificado de transmissão inválido",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8160585-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2210</cMsg>\n      <xDesc>Certificado de transmissão inválido.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "cnpjConsulta e cpfConsulta informados": {
+                    "summary": "Os parâmetros cnpjConsulta e cpfConsulta são mutuamente exclusivos",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8161119-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2244</cMsg>\n      <xDesc>Somente um dos campos cnpjConsulta ou cpfConsulta deve ser preenchido.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "CNPJ base diferente do solicitante": {
+                    "summary": "CNPJ consultado (14 dígitos) cujo CNPJ base (8 primeiros dígitos) difere do CNPJ base do certificado do solicitante",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8161698-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2243</cMsg>\n      <xDesc>O CNPJ informado na consulta deve ter o mesmo CNPJ Base do Contribuinte solicitante.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "CNPJ consultado inválido": {
+                    "summary": "CNPJ consultado (14 dígitos) com dígito verificador inválido",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8162119-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2246</cMsg>\n      <xDesc>O CNPJ informado na consulta é inválido (dígito verificador).</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "CPF consultado inválido": {
+                    "summary": "CPF consultado com dígito verificador inválido",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8162504-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2247</cMsg>\n      <xDesc>O CPF informado na consulta é inválido (dígito verificador).</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "Sem procuração para o CNPJ consultado": {
+                    "summary": "CNPJ consultado (14 dígitos) de outro CNPJ base, sem procuração para o solicitante",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8162881-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2245</cMsg>\n      <xDesc>Não há procuração da inscrição 12345678000190 para a inscrição 98765432000110.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "Sem procuração para o CPF consultado": {
+                    "summary": "CPF consultado sem procuração para o solicitante",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8163258-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2245</cMsg>\n      <xDesc>Não há procuração da inscrição 12345678000190 para a inscrição 55566677788.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nenhum documento foi localizado para o contribuinte (ou para o CNPJ/CPF consultado) a partir do NSU informado. Detalhes em Erros.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Lote - nenhum documento localizado": {
+                    "summary": "Consulta em lote (lote=true) sem documentos a partir do NSU informado",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2220","Descricao":"Nenhum documento localizado - não existem documentos fiscais para o Contribuinte a partir do NSU informado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8163737-03:00"}
+                  },
+                  "NSU único - nenhum documento localizado": {
+                    "summary": "Consulta de um único documento (lote=false) sem documento para o NSU informado",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2230","Descricao":"Nenhum documento localizado - não existe documento fiscal para o Contribuinte com o NSU informado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8164221-03:00"}
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Lote - nenhum documento localizado": {
+                    "summary": "Consulta em lote (lote=true) sem documentos a partir do NSU informado",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2220","Descricao":"Nenhum documento localizado - não existem documentos fiscais para o Contribuinte a partir do NSU informado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8163737-03:00"}
+                  },
+                  "NSU único - nenhum documento localizado": {
+                    "summary": "Consulta de um único documento (lote=false) sem documento para o NSU informado",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2230","Descricao":"Nenhum documento localizado - não existe documento fiscal para o Contribuinte com o NSU informado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8164221-03:00"}
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Lote - nenhum documento localizado": {
+                    "summary": "Consulta em lote (lote=true) sem documentos a partir do NSU informado",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2220","Descricao":"Nenhum documento localizado - não existem documentos fiscais para o Contribuinte a partir do NSU informado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8163737-03:00"}
+                  },
+                  "NSU único - nenhum documento localizado": {
+                    "summary": "Consulta de um único documento (lote=false) sem documento para o NSU informado",
+                    "value": {"TipoConsulta":"InscricaoCertificado","StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2230","Descricao":"Nenhum documento localizado - não existe documento fiscal para o Contribuinte com o NSU informado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8164221-03:00"}
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Lote - nenhum documento localizado": {
+                    "summary": "Consulta em lote (lote=true) sem documentos a partir do NSU informado",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8164476-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2220</cMsg>\n      <xDesc>Nenhum documento localizado - não existem documentos fiscais para o Contribuinte a partir do NSU informado.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "NSU único - nenhum documento localizado": {
+                    "summary": "Consulta de um único documento (lote=false) sem documento para o NSU informado",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8165193-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2230</cMsg>\n      <xDesc>Nenhum documento localizado - não existe documento fiscal para o Contribuinte com o NSU informado.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  }
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "TipoConsulta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+                        }
+                      ],
+                      "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+                    },
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Lote - nenhum documento localizado": {
+                    "summary": "Consulta em lote (lote=true) sem documentos a partir do NSU informado",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8164476-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2220</cMsg>\n      <xDesc>Nenhum documento localizado - não existem documentos fiscais para o Contribuinte a partir do NSU informado.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  },
+                  "NSU único - nenhum documento localizado": {
+                    "summary": "Consulta de um único documento (lote=false) sem documento para o NSU informado",
+                    "value": "<LoteDistribuicaoNSUResponseConsulta xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8165193-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2230</cMsg>\n      <xDesc>Nenhum documento localizado - não existe documento fiscal para o Contribuinte com o NSU informado.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n  <TipoConsulta>InscricaoCertificado</TipoConsulta>\n</LoteDistribuicaoNSUResponseConsulta>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/NFSe/{ChaveAcesso}/Eventos": {
+      "get": {
+        "tags": [
+          "DistribuicaoContribuinte"
+        ],
+        "summary": "Retorna os Documentos Fiscais de Serviço do tipo Evento vinculados à chave de acesso informada",
+        "parameters": [
+          {
+            "name": "ChaveAcesso",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso. Os eventos vinculados à chave de acesso informada são retornados em LoteDFe.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"EVENTO","TipoEvento":"CANCELAMENTO","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8173463-03:00"}],"Alertas":[],"Erros":[],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8173078-03:00"}
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"EVENTO","TipoEvento":"CANCELAMENTO","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8173463-03:00"}],"Alertas":[],"Erros":[],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8173078-03:00"}
+              },
+              "text/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"12345678901234567890123456789012345678901234","TipoDocumento":"EVENTO","TipoEvento":"CANCELAMENTO","ArquivoXml":"H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=","DataHoraGeracao":"2026-11-24T15:38:04.8173463-03:00"}],"Alertas":[],"Erros":[],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8173078-03:00"}
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8173078-03:00</DataHoraProcessamento>\n  <StatusProcessamento>DOCUMENTOS_LOCALIZADOS</StatusProcessamento>\n  <LoteDFe>\n    <DistribuicaoNSU>\n      <NSU>1</NSU>\n      <ChaveAcesso>12345678901234567890123456789012345678901234</ChaveAcesso>\n      <TipoDocumento>EVENTO</TipoDocumento>\n      <TipoEvento>e101101</TipoEvento>\n      <ArquivoXml>H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=</ArquivoXml>\n      <DataHoraGeracao>2026-11-24T15:38:04.8173463-03:00</DataHoraGeracao>\n    </DistribuicaoNSU>\n  </LoteDFe>\n  <Alertas />\n  <Erros />\n</LoteDistribuicaoNSUResponse>"
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "DOCUMENTOS_LOCALIZADOS"
+                      ],
+                      "type": "string"
+                    },
+                    "LoteDFe": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistribuicaoNSU"
+                      },
+                      "nullable": true
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8173078-03:00</DataHoraProcessamento>\n  <StatusProcessamento>DOCUMENTOS_LOCALIZADOS</StatusProcessamento>\n  <LoteDFe>\n    <DistribuicaoNSU>\n      <NSU>1</NSU>\n      <ChaveAcesso>12345678901234567890123456789012345678901234</ChaveAcesso>\n      <TipoDocumento>EVENTO</TipoDocumento>\n      <TipoEvento>e101101</TipoEvento>\n      <ArquivoXml>H4sIAAAAAAAAA7OpyM0xstPT07PRB7MAvgJkXRAAAAA=</ArquivoXml>\n      <DataHoraGeracao>2026-11-24T15:38:04.8173463-03:00</DataHoraGeracao>\n    </DistribuicaoNSU>\n  </LoteDFe>\n  <Alertas />\n  <Erros />\n</LoteDistribuicaoNSUResponse>"
+              }
+            }
+          },
+          "400": {
+            "description": "Requisição rejeitada (ex.: certificado de transmissão inválido ou falha não tratada). Os motivos são detalhados em Erros.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2210","Descricao":"Certificado de transmissão inválido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8174903-03:00"}
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2210","Descricao":"Certificado de transmissão inválido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8174903-03:00"}
+              },
+              "text/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {"StatusProcessamento":"REJEICAO","Alertas":[],"Erros":[{"Codigo":"E2210","Descricao":"Certificado de transmissão inválido."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8174903-03:00"}
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8174903-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2210</cMsg>\n      <xDesc>Certificado de transmissão inválido.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n</LoteDistribuicaoNSUResponse>"
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "REJEICAO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8174903-03:00</DataHoraProcessamento>\n  <StatusProcessamento>REJEICAO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2210</cMsg>\n      <xDesc>Certificado de transmissão inválido.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n</LoteDistribuicaoNSUResponse>"
+              }
+            }
+          },
+          "404": {
+            "description": "Nenhum evento foi localizado para a chave de acesso informada, ou a NFS-e não referencia o contribuinte solicitante. Detalhes em Erros.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Nenhum evento localizado": {
+                    "summary": "Não existem eventos para a chave de acesso informada",
+                    "value": {"StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2240","Descricao":"Nenhum documento localizado -não existem documentos fiscais para a chave de acesso informada."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8175801-03:00"}
+                  },
+                  "NFS-e não referencia o contribuinte": {
+                    "summary": "A chave de acesso não referencia o contribuinte solicitante e por isso não pode ser compartilhada",
+                    "value": {"StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2241","Descricao":"Chave de acesso da NFS-e não referencia o Contribuinte solicitante e por isso não pode ser compartilhado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8176055-03:00"}
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Nenhum evento localizado": {
+                    "summary": "Não existem eventos para a chave de acesso informada",
+                    "value": {"StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2240","Descricao":"Nenhum documento localizado -não existem documentos fiscais para a chave de acesso informada."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8175801-03:00"}
+                  },
+                  "NFS-e não referencia o contribuinte": {
+                    "summary": "A chave de acesso não referencia o contribuinte solicitante e por isso não pode ser compartilhada",
+                    "value": {"StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2241","Descricao":"Chave de acesso da NFS-e não referencia o Contribuinte solicitante e por isso não pode ser compartilhado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8176055-03:00"}
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Nenhum evento localizado": {
+                    "summary": "Não existem eventos para a chave de acesso informada",
+                    "value": {"StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2240","Descricao":"Nenhum documento localizado -não existem documentos fiscais para a chave de acesso informada."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8175801-03:00"}
+                  },
+                  "NFS-e não referencia o contribuinte": {
+                    "summary": "A chave de acesso não referencia o contribuinte solicitante e por isso não pode ser compartilhada",
+                    "value": {"StatusProcessamento":"NENHUM_DOCUMENTO_LOCALIZADO","Alertas":[],"Erros":[{"Codigo":"E2241","Descricao":"Chave de acesso da NFS-e não referencia o Contribuinte solicitante e por isso não pode ser compartilhado."}],"TipoAmbiente":"HOMOLOGACAO","VersaoAplicativo":"1.0.0.0","DataHoraProcessamento":"2026-11-24T15:38:04.8176055-03:00"}
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Nenhum evento localizado": {
+                    "summary": "Não existem eventos para a chave de acesso informada",
+                    "value": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8176275-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2240</cMsg>\n      <xDesc>Nenhum documento localizado -não existem documentos fiscais para a chave de acesso informada.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n</LoteDistribuicaoNSUResponse>"
+                  },
+                  "NFS-e não referencia o contribuinte": {
+                    "summary": "A chave de acesso não referencia o contribuinte solicitante e por isso não pode ser compartilhada",
+                    "value": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8176673-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2241</cMsg>\n      <xDesc>Chave de acesso da NFS-e não referencia o Contribuinte solicitante e por isso não pode ser compartilhado.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n</LoteDistribuicaoNSUResponse>"
+                  }
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "StatusProcessamento": {
+                      "enum": [
+                        "NENHUM_DOCUMENTO_LOCALIZADO"
+                      ],
+                      "type": "string"
+                    },
+                    "Alertas": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "Erros": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MensagemProcessamento"
+                      },
+                      "nullable": true
+                    },
+                    "TipoAmbiente": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/TipoAmbiente"
+                        }
+                      ]
+                    },
+                    "VersaoAplicativo": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "DataHoraProcessamento": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "Nenhum evento localizado": {
+                    "summary": "Não existem eventos para a chave de acesso informada",
+                    "value": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8176275-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2240</cMsg>\n      <xDesc>Nenhum documento localizado -não existem documentos fiscais para a chave de acesso informada.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n</LoteDistribuicaoNSUResponse>"
+                  },
+                  "NFS-e não referencia o contribuinte": {
+                    "summary": "A chave de acesso não referencia o contribuinte solicitante e por isso não pode ser compartilhada",
+                    "value": "<LoteDistribuicaoNSUResponse xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <TipoAmbiente>2</TipoAmbiente>\n  <VersaoAplicativo>1.0.0.0</VersaoAplicativo>\n  <DataHoraProcessamento>2026-11-24T15:38:04.8176673-03:00</DataHoraProcessamento>\n  <StatusProcessamento>NENHUM_DOCUMENTO_LOCALIZADO</StatusProcessamento>\n  <Alertas />\n  <Erros>\n    <MensagemProcessamento>\n      <cMsg>E2241</cMsg>\n      <xDesc>Chave de acesso da NFS-e não referencia o Contribuinte solicitante e por isso não pode ser compartilhado.</xDesc>\n    </MensagemProcessamento>\n  </Erros>\n</LoteDistribuicaoNSUResponse>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "TipoConsultaDistribuicao": {
+        "enum": [
+          "InscricaoCertificado",
+          "CnpjBase",
+          "Procuracao"
+        ],
+        "type": "string"
+      },
+      "StatusProcessamentoDistribuicao": {
+        "enum": [
+          "REJEICAO",
+          "NENHUM_DOCUMENTO_LOCALIZADO",
+          "DOCUMENTOS_LOCALIZADOS"
+        ],
+        "type": "string"
+      },
+      "TipoDocumentoRequisicao": {
+        "enum": [
+          "NENHUM",
+          "DPS",
+          "PEDIDO_REGISTRO_EVENTO",
+          "NFSE",
+          "EVENTO",
+          "CNC"
+        ],
+        "type": "string"
+      },
+      "TipoEvento": {
+        "enum": [
+          "CANCELAMENTO",
+          "SOLICITACAO_CANCELAMENTO_ANALISE_FISCAL",
+          "CANCELAMENTO_POR_SUBSTITUICAO",
+          "CANCELAMENTO_DEFERIDO_ANALISE_FISCAL",
+          "CANCELAMENTO_INDEFERIDO_ANALISE_FISCAL",
+          "CONFIRMACAO_PRESTADOR",
+          "REJEICAO_PRESTADOR",
+          "CONFIRMACAO_TOMADOR",
+          "REJEICAO_TOMADOR",
+          "CONFIRMACAO_INTERMEDIARIO",
+          "REJEICAO_INTERMEDIARIO",
+          "CONFIRMACAO_TACITA",
+          "ANULACAO_REJEICAO",
+          "CANCELAMENTO_POR_OFICIO",
+          "BLOQUEIO_POR_OFICIO",
+          "DESBLOQUEIO_POR_OFICIO",
+          "TRIBUTOS_NFSE_RECOLHIDOS",
+          "INCLUSAO_NFSE_DAN"
+        ],
+        "type": "string"
+      },
+      "DistribuicaoNSU": {
+        "type": "object",
+        "properties": {
+          "NSU": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "ChaveAcesso": {
+            "type": "string",
+            "nullable": true
+          },
+          "TipoDocumento": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TipoDocumentoRequisicao"
+              }
+            ]
+          },
+          "TipoEvento": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TipoEvento"
+              }
+            ],
+            "nullable": true
+          },
+          "ArquivoXml": {
+            "type": "string",
+            "nullable": true
+          },
+          "DataHoraGeracao": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MensagemProcessamento": {
+        "type": "object",
+        "properties": {
+          "Codigo": {
+            "type": "string",
+            "nullable": true
+          },
+          "Descricao": {
+            "type": "string",
+            "nullable": true
+          },
+          "Complemento": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TipoAmbiente": {
+        "enum": [
+          "PRODUCAO",
+          "HOMOLOGACAO"
+        ],
+        "type": "string"
+      },
+      "LoteDistribuicaoNSUResponseConsulta": {
+        "type": "object",
+        "properties": {
+          "TipoConsulta": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TipoConsultaDistribuicao"
+              }
+            ],
+            "description": "Tipo da consulta realizada: InscricaoCertificado (documentos do titular do certificado),\r\nCnpjBase (CNPJ consultado com o mesmo CNPJ base do certificado) ou Procuracao (outra inscrição, mediante procuração)."
+          },
+          "StatusProcessamento": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StatusProcessamentoDistribuicao"
+              }
+            ]
+          },
+          "LoteDFe": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistribuicaoNSU"
+            },
+            "nullable": true
+          },
+          "Alertas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MensagemProcessamento"
+            },
+            "nullable": true
+          },
+          "Erros": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MensagemProcessamento"
+            },
+            "nullable": true
+          },
+          "TipoAmbiente": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TipoAmbiente"
+              }
+            ]
+          },
+          "VersaoAplicativo": {
+            "type": "string",
+            "nullable": true
+          },
+          "DataHoraProcessamento": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Resposta da distribuição por NSU com informações adicionais sobre a consulta realizada."
+      },
+      "LoteDistribuicaoNSUResponse": {
+        "type": "object",
+        "properties": {
+          "StatusProcessamento": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StatusProcessamentoDistribuicao"
+              }
+            ]
+          },
+          "LoteDFe": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistribuicaoNSU"
+            },
+            "nullable": true
+          },
+          "Alertas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MensagemProcessamento"
+            },
+            "nullable": true
+          },
+          "Erros": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MensagemProcessamento"
+            },
+            "nullable": true
+          },
+          "TipoAmbiente": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TipoAmbiente"
+              }
+            ]
+          },
+          "VersaoAplicativo": {
+            "type": "string",
+            "nullable": true
+          },
+          "DataHoraProcessamento": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

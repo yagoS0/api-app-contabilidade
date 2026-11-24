@@ -45,7 +45,7 @@ jest.mock("../../../infrastructure/db/NfseRepository.js", () => ({
 jest.mock("../../../application/nfse/NfseService.js", () => ({
   NfseService: {
     issue: jest.fn(),
-    sendEvent: jest.fn(async () => ({ status: "accepted", providerData: { ok: true } })),
+    sendEvent: jest.fn(async () => ({ status: "cancelled", confirmacaoFiscal: true, providerData: { eventoId: "synthetic" } })),
   },
 }));
 
@@ -105,7 +105,7 @@ beforeEach(() => {
     tomadorDoc: "44555666000177",
   };
 
-  NfseService.sendEvent.mockResolvedValue({ status: "accepted", providerData: { ok: true } });
+  NfseService.sendEvent.mockResolvedValue({ status: "cancelled", confirmacaoFiscal: true, providerData: { eventoId: "synthetic" } });
 
   prisma.company.findUnique.mockImplementation(async ({ where }) =>
     where?.id === LEGACY_ID ? { id: LEGACY_ID } : null
@@ -393,7 +393,7 @@ describe("⚠⚠ AS TRÊS CAMADAS — e o TRANSPORTE não convida a repetir", ()
 describe("⚠ o NOSSO registro acompanha — e a projeção do ADN NÃO é tocada", () => {
   it("a linha de `ServiceInvoice` vira `cancelled` — a nossa base não mente sobre um ato nosso", async () => {
     await cancelar(usuarioCliente());
-    expect(NfseRepository.updateByChaveAcesso).toHaveBeenCalledWith(CHAVE, { status: "cancelled" });
+    expect(NfseRepository.updateByChaveAcesso).not.toHaveBeenCalled();
   });
 
   it("⚠⚠ `PortalInvoice` NÃO é escrita — quem traz o cancelamento é a captura do ADN", async () => {
@@ -493,10 +493,7 @@ describe("⚠⚠ a nota que ACABAMOS de emitir também cancela", () => {
   it("⚠ e o nosso registro acompanha — a nossa base não pode dizer `issued` depois de cancelarmos", async () => {
     armarNotaNossa();
     await cancelar(usuarioCliente());
-    expect(NfseRepository.updateByChaveAcesso).toHaveBeenCalledWith(
-      CHAVE_NOSSA,
-      expect.objectContaining({ status: "cancelled" })
-    );
+    expect(NfseRepository.updateByChaveAcesso).not.toHaveBeenCalled();
   });
 
   it("⚠⚠ nota nossa JÁ cancelada não vai duas vezes — o segundo pedido volta recusado e se lê como falha", async () => {
@@ -522,4 +519,14 @@ describe("⚠⚠ a nota que ACABAMOS de emitir também cancela", () => {
     expect(r.status).toBe(404);
     expect(NfseService.sendEvent).not.toHaveBeenCalled();
   });
+});
+
+
+it('HTTP200/accepted da fachada sem confirmação não cancela nem anuncia sucesso', async () => {
+  NfseService.sendEvent.mockResolvedValue({ status: 'accepted', providerData: { ok: true } });
+  const r = await cancelar(usuarioCliente());
+  expect(r.status).toBe(502);
+  expect(r.body.ok).toBe(false);
+  expect(r.body.podeTentarDeNovo).toBe(false);
+  expect(NfseRepository.updateByChaveAcesso).not.toHaveBeenCalled();
 });

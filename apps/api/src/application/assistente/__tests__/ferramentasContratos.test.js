@@ -223,7 +223,7 @@ describe("documentos: seleção não para nos primeiros 30 arquivos", () => {
 });
 
 describe("atos confirmados: resultado fiscal aceito sobrevive à falha local", () => {
-  it("cancelamento aceito seguido de erro ao atualizar banco não afirma que nada foi cancelado", async () => {
+  it.each(['aceite sem prova', 'falha ao persistir confirmação', 'confirmação fiscal persistida'])("cancelamento: %s preserva distinção fiscal", async cenario => {
     const reservas = new Map();
     const client = {
       acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
@@ -242,18 +242,28 @@ describe("atos confirmados: resultado fiscal aceito sobrevive à falha local", (
         }),
       },
     };
-    const sendEvent = jest.fn(async () => ({ status: "accepted" }));
+    const sendEvent = jest.fn(async () => {
+      if (cenario === 'falha ao persistir confirmação') throw Object.assign(new Error('Falha ao persistir resultado fiscal'), { camada: 'TRANSPORTE', codigo: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
+      if (cenario === 'confirmação fiscal persistida') return { status: 'cancelled', confirmacaoFiscal: true };
+      return { status: 'accepted' };
+    });
+    const escritaDuplicada = jest.fn(async () => { throw new Error('A escrita pertence à composição NFS-e'); });
     const r = await EXECUTORES.CANCELAR_NFSE({
       acao: { id: "cancelamento-1", portalClientId: "pc-1", payload: { chaveAcesso: NOTA.chaveAcesso, numero: "8" } }, log: silencio, client,
-      deps: { resolveLegacyCompanyId: async () => "legacy-1", NfseService: { sendEvent }, NfseRepository: { updateByChaveAcesso: async () => { throw new Error("banco indisponível"); } } },
+      deps: { resolveLegacyCompanyId: async () => "legacy-1", NfseService: { sendEvent }, NfseRepository: { updateByChaveAcesso: escritaDuplicada } },
     });
     expect(sendEvent).toHaveBeenCalledTimes(1);
-    expect(r).toMatchObject({ filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } });
-    expect(r.texto).toMatch(/aceit/i);
-    expect(r.texto).not.toMatch(/nada foi cancelado|cancelamento não saiu/i);
-    expect([...reservas.values()]).toEqual([expect.objectContaining({ value: expect.objectContaining({
-      acaoId: "cancelamento-1", status: "ACEITO", resultado: expect.objectContaining({ status: "accepted", sincronizacaoPendente: true }),
-    }) })]);
+    expect(escritaDuplicada).not.toHaveBeenCalled();
+    if (cenario === 'confirmação fiscal persistida') {
+      expect(r).toMatchObject({ filaHumana: false, resultado: { status: 'cancelled', confirmacaoFiscal: true } });
+      expect(r.texto).toMatch(/Cancelamento fiscal.*confirmado/);
+      expect([...reservas.values()][0].value.status).toBe('CONFIRMADO');
+    } else {
+      expect(r).toMatchObject({ filaHumana: true, resultado: { indeterminado: true, codigo: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' } });
+      expect(r.texto).not.toMatch(/nada foi cancelado|cancelamento não saiu|cancelamento fiscal.*confirmado/i);
+      expect([...reservas.values()][0].value.status).toBe('INDETERMINADO');
+    }
+
   });
 
   it("erro não classificado da emissão não afirma que a nota foi recusada antes de sair", async () => {
