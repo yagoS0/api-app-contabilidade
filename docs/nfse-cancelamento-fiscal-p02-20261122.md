@@ -2,6 +2,36 @@
 
 Base: `07e24a2bf60d93d49960c170043b77478497ab0b`. Conferência: 22/11/2026.
 
+## Atualização de contratos — 24/11/2026
+
+Esta seção substitui o bloqueio documental descrito nos registros históricos abaixo. Incremento sobre09f8886e8581853d3afe8a3dc6b5552c72c85cc2, no mesmo PR315. [Contratos e proveniência](leiaute-nfse/contratos-eventos-20261124/README.md).
+
+| Endpoint/retorno | Extração e validação | Resultado |
+|---|---|---|
+| SEFIN POST /nfse/{chave}/eventos,201 | Quatro campos obrigatórios, ambiente inteiro, eventoXmlGZipB64 canônico/GZip/UTF-8; XML assinado e origem oficial | Somente evento conclusivo válido confirma |
+| SEFIN GET /nfse/{chave}/eventos/{tipo}/{sequência},200 | Mesmo envelope; tipo/sequência também conferidos com URL | Capacidade interna individual; não cria GET coletivo |
+| ADN GET /NFSe/{chave}/Eventos,200 | DOCUMENTOS_LOCALIZADOS, ambiente textual, LoteDFe; cada EVENTO/ChaveAcesso/TipoEvento/ArquivoXml contra XML | Agregação determinística, não escolhe posição da lista |
+| ADN404 E2240 | NENHUM_DOCUMENTO_LOCALIZADO; LoteDFe pode estar ausente | Ausência; não confirma nem retransmite |
+| ADN404 E2241 | Mesmo status, restrição de vínculo explícita | Recusa de compartilhamento, nunca ausência comprovada |
+| ADN400 | REJEICAO, sem documentos; erros contratuais | Não equivale a indeferimento fiscal |
+| SEFIN erro, envelope vazio/desconhecido, status incompatível, XML cru | Sem prova conclusiva | Inconclusivo; reserva preservada |
+
+Erros e Alertas ADN são opcionais/nulos conforme o contrato. Dados essenciais à comprovação não são inferidos de omissões. Metadados nunca substituem XML, assinatura, empresa, chave e ambiente. O contrato de GET /DFe/{NSU} permanece exclusivamente de distribuição, sem mudança nesta entrega.
+
+Exemplos sintéticos: SEFIN201 com evento101101 válido confirma; ADN200 com solicitação101103 e deferimento105104 confirma; solicitação com105105 fica indeferida. Deferimento e indeferimento juntos, ou mesmo ID com hashes distintos, ficam inconclusivos. Duplicatas idênticas não duplicam prova; ordem não altera decisão. Coleção parcial ou XML alheio impede confirmação e o XML inválido não é custodiado como prova. Ausência posterior não promove prova de lote parcial. Nova evidência atual conclusiva permite recuperação quando não há conflito histórico.
+
+Limites defensivos locais (não são regras tributárias): HTTP12MB, Base642.800.000 caracteres, XML2MB, até100 documentos e8MB descompactados por lote; UTF-8 inválido, Base64 não canônico, GZip truncado/excessivo recusados. Requests específicos pedem JSON e mantêm proxyfalse, maxRedirects0 e timeout15s. Nada muda no cliente Axios global.
+
+Custódia individual e diagnóstico limitado usam AppSetting existente. Transação curta bloqueia a reserva e incrementa revisaoEvidencias; a projeção usa CAS. Uma nova observação entre leitura histórica e CAS invalida a projeção, sem apagar a custódia. Nenhuma transação fica aberta durante rede; nenhuma migração. Reservas existentes só consultam. Confirmação persistida não regride.
+
+ProviderData é deduplicado e ordenado a partir dos eventos conclusivos utilizados, preservando eventoId/hash para uma identidade. Escritório, portal e assistente continuam usando a mesma decisão fiscal. NFS-e permanece dona; nenhum código de Apuração, Guias, Contabilidade, Operações, IBS/CBS ou sincronização geral ADN foi alterado.
+
+Validação local final:328/328 em9 suítes (inclui24 PostgreSQL16, com duas conexões, conflito, rollback, custódia, isolamento, recuperação e idempotência); regressão ADN87/87 em12 suítes. Segurança executou independentemente98/98 testes; Arquitetura5/5. Diagnose5020/5020, zero novas violações. Uma execução intermediária teve179 aprovados e duas expectativas de opções HTTP antigas falhando; foram atualizadas para exigir Accept/maxContentLength e a execução final passou.
+
+Revisões independentes Fiscal, Segurança e Arquitetura favoráveis ao diff corrigido, condicionadas à CI final. Achados corrigidos: opcionais/404 ADN, GZip obrigatório, promoção indevida de evidência parcial histórica, concorrência de custódia e projeção, projeção pública canônica. Controlador2026-11-24T19-05-51-276Z-1bad8bcb concluiu executor; subprocesso não executou Jest por EPERM no Windows. Principal interrompeu nos gates, corrigiu achados e executou validação alternativa. Sem ready_for_human e sem alteração dos gates. A CI do SHA publicado deve ser conferida no PR.
+
+Limitações: nenhuma homologação externa ou fiscal real; procedência SEFIN é texto fornecido, não arquivo de exportação rastreável. Assinatura embutida prova integridade, não cadeia ICP-Brasil independente; origem depende do transporte oficial autenticado. AppSetting não tem imutabilidade imposta no banco. Reservas NAO_ENVIADO não são reabertas automaticamente. Rollback seguro preserva evidências/reservas e suspende o ato sob autorização; reverter à versão que promovia HTTP a cancelamento reintroduz o defeito.
+
 ## Fechamento delimitado PR315 — rodada 0
 
 Base deste fechamento: `daf6079c6a94ec7a67f728707d765f9fca9739e7`.

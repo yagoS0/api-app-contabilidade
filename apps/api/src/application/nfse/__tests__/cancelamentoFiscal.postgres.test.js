@@ -200,4 +200,110 @@ pg('Cancelamento fiscal: PostgreSQL 16 descartável, duas conexões', () => {
     expect((await invoice(f)).status).toBe(status);
   });
 
+  test('coleção conflitante mantém custódia deduplicada e decisão auditável sem cancelar', async () => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), r = await a.reservar(f.contexto);
+    const deferido = evidence(f.contexto, '105104'), indeferido = evidence(f.contexto, '105105');
+    const lote = { evidencias: [deferido, indeferido, deferido], completa: true, problemas: [] };
+    const result = await confirm(a, r, f, lote);
+    expect(result.decisao).toMatchObject({ situacao: 'INCONCLUSIVO', cancelada: false });
+    expect((await invoice(f)).status).toBe('issued');
+    expect(await db.appSetting.count({ where: { key: { startsWith: r.key + ':evento:' } } })).toBe(2);
+    expect(await db.appSetting.count({ where: { key: { startsWith: r.key + ':decisao:' } } })).toBe(1);
+    const replay = await a.reservar(f.contexto);
+    await confirm(a, replay, f, lote);
+    expect(await db.appSetting.count({ where: { key: { startsWith: r.key + ':evento:' } } })).toBe(2);
+  });
+  test('resposta parcial custodia evento válido sem projetar cancelamento', async () => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), r = await a.reservar(f.contexto);
+    const ev = evidence(f.contexto);
+    const result = await confirm(a, r, f, { evidencias: [ev], completa: false, problemas: ['XML_OU_METADATA_INCOMPATIVEL'] });
+    expect(result.decisao.cancelada).toBe(false);
+    expect((await invoice(f)).status).toBe('issued');
+    expect((await db.appSetting.findUnique({ where: { key: r.key + ':evento:' + ev.hash } })).value.xml).toBe(ev.xml);
+  });
+  test('ausência posterior não promove evento custodiado em resposta parcial', async () => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), r = await a.reservar(f.contexto), ev = evidence(f.contexto);
+    await confirm(a, r, f, { evidencias: [ev], completa: false, problemas: ['XML_OU_METADATA_INCOMPATIVEL'] });
+    const consulta = await a.reservar(f.contexto);
+    const result = await confirm(a, consulta, f, { evidencias: [], completa: true, problemas: ['AUSENCIA_EVENTOS'] });
+    expect(result.decisao).toMatchObject({ situacao: 'INCONCLUSIVO', cancelada: false });
+    expect((await invoice(f)).status).toBe('issued');
+    expect((await current(consulta)).value.status).toBe('INCONCLUSIVO');
+    // Nova evidência atual completa, não a ausência, permite recuperação.
+    const recuperacao = await a.reservar(f.contexto);
+    const valido = await confirm(a, recuperacao, f, { evidencias: [ev, ev], completa: true, problemas: [] });
+    expect(valido.decisao.cancelada).toBe(true);
+    expect(valido.evidencias).toHaveLength(1);
+    expect((await invoice(f)).status).toBe('cancelled');
+  });
+  test.each([['105104', '105105'], ['105105', '105104']])('duas conexões: %s e %s entre histórico e CAS invalidam projeção', async (primeiroTipo, segundoTipo) => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), b = criarPersistenciaCancelamento(second);
+    const r = await a.reservar(f.contexto), concorrente = await b.reservar(f.contexto);
+    const deferido = evidence(f.contexto, primeiroTipo), indeferido = evidence(f.contexto, segundoTipo);
+    let arrived, release;
+    const read = new Promise(resolve => { arrived = resolve; });
+    const proceed = new Promise(resolve => { release = resolve; });
+    const original = db.$transaction.bind(db);
+    const spy = jest.spyOn(db, '$transaction').mockImplementation((callback, options) => original(tx => callback(new Proxy(tx, {
+      get(target, prop) {
+        if (prop !== 'appSetting') return target[prop];
+        return new Proxy(tx.appSetting, { get(model, method) {
+          if (method !== 'findMany') return typeof model[method] === 'function' ? model[method].bind(model) : model[method];
+          return async args => { const rows = await model.findMany(args); arrived(); await proceed; return rows; };
+        } });
+      },
+    })), options));
+    const attempt = confirm(a, r, f, deferido).then(value => ({ value }), error => ({ error }));
+    try {
+      await read;
+      // A resposta de B é custodiada mesmo com snapshot obsoleto; a revisão
+      // durável avança antes de A tentar projetar sua leitura antiga.
+      await expect(confirm(b, concorrente, f, indeferido)).rejects.toHaveProperty('code', 'NFSE_CANCELAMENTO_CONCORRENTE');
+      release();
+      expect((await attempt).error).toHaveProperty('code', 'NFSE_CANCELAMENTO_CONCORRENTE');
+      expect((await invoice(f)).status).toBe('issued');
+      expect(await db.appSetting.count({ where: { key: { startsWith: r.key + ':evento:' } } })).toBe(2);
+    } finally { release(); await attempt; spy.mockRestore(); }
+    const consulta = await a.reservar(f.contexto);
+    expect((await confirm(a, consulta, f, deferido)).decisao.cancelada).toBe(false);
+    expect((await invoice(f)).status).toBe('issued');
+  });
+  test('resposta isolada posterior não apaga conflito histórico sem correlação', async () => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), r = await a.reservar(f.contexto);
+    await confirm(a, r, f, evidence(f.contexto, '105105'));
+    const novo = await a.reservar(f.contexto);
+    const result = await confirm(a, novo, f, evidence(f.contexto, '105104'));
+    expect(result.decisao).toMatchObject({ situacao: 'INCONCLUSIVO', cancelada: false });
+    expect((await invoice(f)).status).toBe('issued');
+    expect((await current(novo)).value.decisao.motivo).toBe('EVENTOS_FISCAIS_CONFLITANTES');
+  });
+  test('coleção inválida não custodia XML alheio nem parte anterior da coleção', async () => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), r = await a.reservar(f.contexto);
+    const ev = evidence(f.contexto), estranho = evidence({ ...f.contexto, companyId: 'outra' });
+    await expect(confirm(a, r, f, { evidencias: [ev, estranho], completa: true, problemas: [] })).rejects.toHaveProperty('code');
+    expect(await db.appSetting.count({ where: { key: { startsWith: r.key + ':evento:' } } })).toBe(0);
+  });
+  test('falha ao gravar julgamento reverte projeção e conserva custódia para recuperação', async () => {
+    const f = await fixture(), a = criarPersistenciaCancelamento(db), r = await a.reservar(f.contexto), ev = evidence(f.contexto);
+    const original = db.$transaction.bind(db);
+    const spy = jest.spyOn(db, '$transaction').mockImplementation(callback => original(tx => callback(new Proxy(tx, {
+      get(target, prop) {
+        if (prop !== 'appSetting') return target[prop];
+        return new Proxy(tx.appSetting, { get(model, method) {
+          if (method === 'upsert') return async args => {
+            if (args.where.key.includes(':decisao:')) throw Error('Synthetic audit failure');
+            return model.upsert(args);
+          };
+          return typeof model[method] === 'function' ? model[method].bind(model) : model[method];
+        } });
+      },
+    }))));
+    try { await expect(confirm(a, r, f, ev)).rejects.toThrow('Synthetic audit failure'); }
+    finally { spy.mockRestore(); }
+    expect((await invoice(f)).status).toBe('issued');
+    expect(await db.appSetting.findUnique({ where: { key: r.key + ':evento:' + ev.hash } })).not.toBeNull();
+    await confirm(a, r, f, ev);
+    expect((await invoice(f)).status).toBe('cancelled');
+  });
+
 });

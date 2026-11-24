@@ -1,6 +1,8 @@
 import { DOMParser } from '@xmldom/xmldom';
 import { SignedXml } from 'xml-crypto';
 import { createHash, X509Certificate } from 'node:crypto';
+import { decodificarRespostaSefinCancelamento } from './decodificarRespostaSefinCancelamento.js';
+import { decodificarRespostaAdnCancelamento } from './decodificarRespostaAdnCancelamento.js';
 
 const NS = 'http://www.sped.fazenda.gov.br/nfse';
 const DS = 'http://www.w3.org/2000/09/xmldsig#';
@@ -15,6 +17,8 @@ const texto = (node, nome) => unico(node, nome).textContent.trim();
 // Somente o adaptador interno produz este recibo opaco. Um corpo ou booleano
 // fornecido pelo chamador não comprova transporte oficial. Não é validação de PKI.
 const respostasOficiais = new WeakMap();
+const opcoesTransporte = () => ({ proxy: false, timeout: 15000, maxRedirects: 0,
+  maxContentLength: 12_000_000, headers: { Accept: 'application/json' } });
 
 function contextoDoTransporte(contexto) {
   const snapshot = { companyId: String(contexto?.companyId || ''), cnpj: String(contexto?.cnpj || '').replace(/\D/g, ''), chaveAcesso: String(contexto?.chaveAcesso || ''), ambiente: contexto?.ambiente };
@@ -24,10 +28,12 @@ function contextoDoTransporte(contexto) {
 function destinoOficial(destino, contexto, operacao) {
   const url = new URL(destino);
   const producao = contexto.ambiente === 'producao';
-  const host = operacao === 'SOLICITAR' ? (producao ? 'sefin.nfse.gov.br' : 'sefin.producaorestrita.nfse.gov.br') : (producao ? 'adn.nfse.gov.br' : 'adn.producaorestrita.nfse.gov.br');
+  const host = operacao !== 'CONSULTAR' ? (producao ? 'sefin.nfse.gov.br' : 'sefin.producaorestrita.nfse.gov.br') : (producao ? 'adn.nfse.gov.br' : 'adn.producaorestrita.nfse.gov.br');
   const pathValido = operacao === 'SOLICITAR'
     ? [`/SefinNacional/nfse/${contexto.chaveAcesso}/eventos`, `/API/SefinNacional/nfse/${contexto.chaveAcesso}/eventos`].includes(url.pathname)
-    : url.pathname === `/contribuintes/NFSe/${contexto.chaveAcesso}/Eventos`;
+    : operacao === 'CONSULTAR_INDIVIDUAL'
+      ? new RegExp(`^/(?:API/)?SefinNacional/nfse/${contexto.chaveAcesso}/eventos/(101101|101103|105104|105105)/1$`).test(url.pathname)
+      : url.pathname === `/contribuintes/NFSe/${contexto.chaveAcesso}/Eventos`;
   if (url.protocol !== 'https:' || url.hostname !== host || url.port || url.username || url.password || url.search || url.hash || !pathValido) throw new Error('NFSE_DESTINO_CANCELAMENTO_INVALIDO');
   return url.href;
 }
@@ -38,12 +44,27 @@ export function criarTransporteCancelamento({ client, caminho, requestBody, cont
   const consulta = destinoOficial(`https://${identidade.ambiente === 'producao' ? 'adn.nfse.gov.br' : 'adn.producaorestrita.nfse.gov.br'}/contribuintes/NFSe/${identidade.chaveAcesso}/Eventos`, identidade, 'CONSULTAR');
   const receber = (resposta, operacao, destino) => {
     const recibo = Object.freeze({});
-    respostasOficiais.set(recibo, Object.freeze({ corpo: resposta.data, contexto: identidade, operacao, destino }));
+    // Congela o conteúdo observado; mutação posterior do objeto Axios não altera o recibo.
+    const corpo = typeof resposta.data === 'string' ? resposta.data : JSON.parse(JSON.stringify(resposta.data ?? null));
+    respostasOficiais.set(recibo, Object.freeze({ corpo, status: resposta.status, contexto: identidade, operacao, destino }));
     return recibo;
   };
+  const consultarOficial = async (destino, operacao) => {
+    try { return receber(await client.get(destino, opcoesTransporte()), operacao, destino); }
+    catch (erro) {
+      // Rejeições HTTP recebidas do mesmo despacho podem explicar ausência/restrição.
+      // Timeout/TLS/redirecionamento continuam erros, sem recibo de sucesso fabricado.
+      if ((operacao === 'CONSULTAR' ? [400, 404] : [401, 404, 422]).includes(erro.response?.status)) return receber(erro.response, operacao, destino);
+      throw erro;
+    }
+  };
   return {
-    enviar: async () => receber(await client.post(envio, requestBody, { proxy: false, timeout: 15000, maxRedirects: 0 }), 'SOLICITAR', envio),
-    consultar: async () => receber(await client.get(consulta, { proxy: false, timeout: 15000, maxRedirects: 0 }), 'CONSULTAR', consulta),
+    enviar: async () => receber(await client.post(envio, requestBody, opcoesTransporte()), 'SOLICITAR', envio),
+    consultar: async () => consultarOficial(consulta, 'CONSULTAR'),
+    consultarIndividual: async (tipoEvento, sequencia = 1) => {
+      const destino = destinoOficial(`${envio}/${tipoEvento}/${sequencia}`, identidade, 'CONSULTAR_INDIVIDUAL');
+      return consultarOficial(destino, 'CONSULTAR_INDIVIDUAL');
+    },
   };
 }
 
@@ -52,16 +73,33 @@ export function verificarRespostaCancelamento(resposta, contexto) {
   try {
     const recibo = respostasOficiais.get(resposta);
     const esperado = contextoDoTransporte(contexto);
-    if (Object.keys(esperado).some(campo => esperado[campo] !== recibo.contexto[campo]) || !['SOLICITAR', 'CONSULTAR'].includes(recibo.operacao)) return null;
+    if (Object.keys(esperado).some(campo => esperado[campo] !== recibo.contexto[campo]) || !['SOLICITAR', 'CONSULTAR', 'CONSULTAR_INDIVIDUAL'].includes(recibo.operacao)) return null;
     destinoOficial(recibo.destino, recibo.contexto, recibo.operacao);
-    const evidencia = verificarXmlEventoOficial(recibo.corpo, esperado);
-    return evidencia ? { ...evidencia, origemVerificada: true } : null;
+    const statusEsperado = recibo.operacao === 'SOLICITAR' ? 201 : 200;
+    // Somente envelopes documentados; XML avulso não substitui o contrato JSON.
+    if (!recibo.corpo || typeof recibo.corpo !== 'object' || Array.isArray(recibo.corpo)) return null;
+    if (recibo.operacao !== 'CONSULTAR' && recibo.status !== statusEsperado) return null;
+    const decodificado = recibo.operacao === 'CONSULTAR'
+      ? decodificarRespostaAdnCancelamento(recibo.corpo, esperado, recibo.status)
+      : { documentos: [decodificarRespostaSefinCancelamento(recibo.corpo, esperado)], problemas: [], completa: true };
+    const evidencias = [], problemas = [...decodificado.problemas];
+    for (const documento of decodificado.documentos) {
+      const evidencia = verificarXmlEventoOficial(documento.xml, esperado);
+      const individual = recibo.operacao === 'CONSULTAR_INDIVIDUAL' ? new URL(recibo.destino).pathname.split('/').slice(-2) : null;
+      if (!evidencia || (documento.tipoEvento && documento.tipoEvento !== evidencia.tipoEvento)
+        || (individual && (individual[0] !== evidencia.tipoEvento || Number(individual[1]) !== Number(evidencia.sequencia)))) {
+        problemas.push('XML_OU_METADATA_INCOMPATIVEL');
+        continue;
+      }
+      evidencias.push({ ...evidencia, origemVerificada: true });
+    }
+    return { evidencias, problemas, completa: decodificado.completa && problemas.length === 0 };
   } catch { return null; }
 }
 
 
 // Certificado embutido comprova apenas integridade, nunca procedência oficial.
-// O envelope JSON de eventos ainda não foi homologado: não adivinhar campos do provedor.
+// Decoders extraem conteúdo; somente este verificador atesta sua integridade/contexto.
 export function verificarXmlEventoOficial(corpo, contexto) {
   try {
     if (typeof corpo !== 'string' || corpo.length > 2_000_000 || /<!DOCTYPE|<!ENTITY/i.test(corpo)) return null;
@@ -119,6 +157,7 @@ export function verificarXmlEventoOficial(corpo, contexto) {
     const tpAmb = texto(pedido, 'tpAmb');
     const ambiente = tpAmb === '1' ? 'producao' : tpAmb === '2' ? 'homologacao' : null;
     if (chaveAcesso !== contexto.chaveAcesso || ambiente !== contexto.ambiente) return null;
+    if (info.getAttribute('Id') !== `EVT${chaveAcesso}${tipoEvento}001` || pedido.getAttribute('Id') !== `PRE${chaveAcesso}${tipoEvento}`) return null;
     if (tipoEvento === '101101' || tipoEvento === '101103') {
       if (texto(pedido, 'CNPJAutor') !== String(contexto.cnpj).replace(/\D/g, '')) return null;
     }

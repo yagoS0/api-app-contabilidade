@@ -27,10 +27,17 @@ export function criarCancelamentoFiscal({ reservar, registrarResultado, marcarDe
         corpo = await transporte.enviar();
       }
       const evidencia = verificarResposta(corpo, contexto);
-      const decisao = decidirConfirmacaoFiscalCancelamento(evidencia, contexto);
-      const invoice = await registrarResultado(reserva, contexto, evidencia, decisao);
+      let decisao = decidirConfirmacaoFiscalCancelamento(evidencia, contexto);
+      const resultado = await registrarResultado(reserva, contexto, evidencia, decisao);
+      // Persistência pode detectar conflito com evidências anteriormente custodiadas.
+      if (resultado?.decisao) decisao = resultado.decisao;
+      const invoice = resultado?.decisao ? resultado.invoice : resultado;
       if (!decisao.cancelada) throw resultadoFiscalNaoConfirmado(decisao.situacao);
-      return { status: 'cancelled', confirmacaoFiscal: true, situacao: decisao.situacao, nfse: invoice, providerData: { eventoId: evidencia.id, hash: evidencia.hash } };
+      const usados = resultado?.evidencias || evidencia?.evidencias || (evidencia ? [evidencia] : []);
+      const eventos = [...new Map(usados.map(e => [e.id + ':' + e.hash, e])).values()]
+        .filter(e => decidirConfirmacaoFiscalCancelamento(e, contexto).cancelada)
+        .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0);
+      return { status: 'cancelled', confirmacaoFiscal: true, situacao: decisao.situacao, nfse: invoice, providerData: eventos.length === 1 ? { eventoId: eventos[0].id, hash: eventos[0].hash } : { eventos: eventos.map(e => ({ eventoId: e.id, hash: e.hash })) } };
     } catch (erro) {
       // Só esta tentativa nova comprova ausência de despacho. Reserva antiga continua incerta.
       if (reserva.nova && !despachou) erro.antesDoPost = true;

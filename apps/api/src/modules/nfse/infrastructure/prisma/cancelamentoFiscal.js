@@ -1,6 +1,8 @@
 import { prisma as clientePadrao } from '../../../../infrastructure/db/prisma.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { DOMParser } from '@xmldom/xmldom';
+import { isDeepStrictEqual } from 'node:util';
+import { decidirConfirmacaoFiscalCancelamento } from '../../domain/confirmacaoFiscalCancelamento.js';
 
 const conflito = () => Object.assign(new Error('O estado do cancelamento mudou. Consulte a nota antes de continuar.'), { code: 'NFSE_CANCELAMENTO_CONCORRENTE', antesDoPost: true });
 export function chaveReservaCancelamento({ companyId, ambiente, chaveAcesso }) {
@@ -75,19 +77,67 @@ export function criarPersistenciaCancelamento(prisma = clientePadrao, { aposConf
     },
     async registrarResultado(reserva, contexto, evidencia, decisao) {
       if (reserva.value.companyId !== contexto.companyId || reserva.value.chaveAcesso !== contexto.chaveAcesso || reserva.value.ambiente !== contexto.ambiente) throw conflito();
-      if (evidencia && (evidencia.companyId !== contexto.companyId || evidencia.chaveAcesso !== contexto.chaveAcesso || evidencia.ambiente !== contexto.ambiente || evidencia.integridadeVerificada !== true || evidencia.origemVerificada !== true)) throw conflito();
-      // Custódia é confirmada antes da projeção: conflito/rollback não apaga resposta fiscal.
-      if (evidencia) {
-        const evidenceKey = `${reserva.key}:evento:${evidencia.hash}`;
-        await prisma.appSetting.upsert({ where: { key: evidenceKey }, create: { key: evidenceKey, value: { ...evidencia, recebidoEm: new Date().toISOString() } }, update: {} });
+      const recebidos = evidencia?.evidencias || (evidencia ? [evidencia] : []);
+      if (!Array.isArray(recebidos) || recebidos.length > 100) throw conflito();
+      const eventos = [...new Map(recebidos.map(e => [`${e?.id}:${e?.hash}`, e])).values()]
+        .sort((a, b) => `${a?.id}:${a?.hash}`.localeCompare(`${b?.id}:${b?.hash}`));
+      if (!Array.isArray(eventos) || eventos.length > 100) throw conflito();
+      let volume = 0;
+      for (const evento of eventos) {
+        if (decidirConfirmacaoFiscalCancelamento(evento, contexto).situacao === 'INCONCLUSIVO'
+          || typeof evento.xml !== 'string' || Buffer.byteLength(evento.xml) > 2_000_000
+          || evento.hash !== createHash('sha256').update(evento.xml).digest('hex')) throw conflito();
+        volume += Buffer.byteLength(evento.xml);
       }
+      if (volume > 8_000_000) throw conflito();
+      decisao = decidirConfirmacaoFiscalCancelamento(evidencia, contexto);
+      const decisaoAtual = decisao;
+      // Diagnóstico sem XML rejeitado, idempotente por conjunto; sobrevive ao CAS perdido.
+      const observacao = { hashes: [...new Set(eventos.map(e => e.hash))].sort(), problemas: evidencia?.problemas || [], completa: evidencia?.completa ?? Boolean(evidencia), decisao };
+      if (!Array.isArray(observacao.problemas) || observacao.problemas.length > 100
+        || observacao.problemas.some(p => typeof p !== 'string' || p.length > 200)) throw conflito();
+      const observacaoKey = `${reserva.key}:observacao:${createHash('sha256').update(JSON.stringify(observacao)).digest('hex')}`;
+      // Custódia e revisão da reserva são atômicas. Toda nova observação invalida
+      // uma projeção concorrente que tenha lido o histórico anterior.
+      const custodia = await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT "key" FROM "AppSetting" WHERE "key" = ${reserva.key} FOR UPDATE`;
+        const atual = await tx.appSetting.findUnique({ where: { key: reserva.key } });
+        if (!atual || atual.value.companyId !== contexto.companyId || atual.value.chaveAcesso !== contexto.chaveAcesso
+          || atual.value.ambiente !== contexto.ambiente) throw conflito();
+        const obsoleta = !isDeepStrictEqual(atual.value, reserva.value);
+        for (const evento of eventos) {
+          const evidenceKey = `${reserva.key}:evento:${evento.hash}`;
+          await tx.appSetting.upsert({ where: { key: evidenceKey }, create: { key: evidenceKey, value: { ...evento, recebidoEm: new Date().toISOString() } }, update: {} });
+        }
+        await tx.appSetting.upsert({ where: { key: observacaoKey }, create: { key: observacaoKey, value: { ...observacao, recebidoEm: new Date().toISOString() } }, update: {} });
+        const revisao = atual.value.revisaoEvidencias ?? 0;
+        if (!Number.isSafeInteger(revisao) || revisao < 0 || revisao >= Number.MAX_SAFE_INTEGER) throw conflito();
+        const value = { ...atual.value, revisaoEvidencias: revisao + 1 };
+        await tx.appSetting.update({ where: { key: reserva.key }, data: { value } });
+        return { value, obsoleta };
+      });
+      if (custodia.obsoleta) throw conflito();
+      reserva.value = custodia.value;
       let proximoValor;
       const invoice = await prisma.$transaction(async (tx) => {
         const corrente = await tx.appSetting.findUnique({ where: { key: reserva.key } });
+        // Uma resposta posterior não apaga um indeferimento/pedido anterior sem correlação.
+        const historico = await tx.appSetting.findMany({ where: { key: { startsWith: `${reserva.key}:evento:` } }, take: 101 });
+        const historicoValido = historico.map(e => e.value);
+        const decisaoHistorica = decidirConfirmacaoFiscalCancelamento({ evidencias: historicoValido, completa: observacao.completa && historico.length <= 100 }, contexto);
+        // Ausência ou resposta parcial atual não sana uma evidência histórica
+        // anteriormente incompleta. Exige nova comprovação conclusiva atual.
+        decisao = decisaoAtual.situacao === 'INCONCLUSIVO' ? decisaoAtual
+          : decisaoHistorica.cancelada && !decisaoAtual.cancelada
+            ? { situacao: 'INCONCLUSIVO', cancelada: false, motivo: 'SEM_COMPROVACAO_CONCLUSIVA_ATUAL' }
+            : decisaoHistorica;
         if (corrente?.value.status === 'CONFIRMADO') {
           if (!decisao.cancelada) throw conflito();
           return corrente.value.invoiceId ? tx.serviceInvoice.findFirst({ where: { id: corrente.value.invoiceId, companyId: contexto.companyId, chaveAcesso: contexto.chaveAcesso } }) : null;
         }
+        const julgamento = { observacaoKey, hashes: historico.map(e => e.value.hash).sort(), decisao };
+        const julgamentoKey = `${reserva.key}:decisao:${createHash('sha256').update(JSON.stringify(julgamento)).digest('hex')}`;
+        await tx.appSetting.upsert({ where: { key: julgamentoKey }, create: { key: julgamentoKey, value: { ...julgamento, registradoEm: new Date().toISOString() } }, update: {} });
         let atualizada = null;
         if (decisao.cancelada && reserva.value.invoiceId) {
           const atual = await tx.serviceInvoice.findFirst({ where: { id: reserva.value.invoiceId, companyId: contexto.companyId, chaveAcesso: contexto.chaveAcesso } });
@@ -99,12 +149,12 @@ export function criarPersistenciaCancelamento(prisma = clientePadrao, { aposConf
           }
           atualizada = await tx.serviceInvoice.findUnique({ where: { id: atual.id } });
         }
-        proximoValor = await cas(tx, reserva, { ...reserva.value, status: decisao.situacao, eventoHash: evidencia?.hash || null, atualizadoEm: new Date().toISOString() });
+        proximoValor = await cas(tx, reserva, { ...reserva.value, status: decisao.situacao, eventoHash: eventos.length === 1 ? eventos[0].hash : null, eventoHashes: historico.map(e => e.value.hash).sort(), decisao, observacaoKey, atualizadoEm: new Date().toISOString() });
         return atualizada;
       });
       if (proximoValor) reserva.value = proximoValor;
       if (invoice && proximoValor) await aposConfirmacao(invoice, prisma);
-      return invoice;
+      return { invoice, decisao, evidencias: eventos };
     },
   };
 }

@@ -121,14 +121,14 @@ beforeEach(() => {
 describe("P0.2 — HTTP200 não é confirmação fiscal", () => {
   it('POST usa proxy false sem alterar defaults das demais operações', async () => {
     await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
-    expect(postMock).toHaveBeenCalledWith(`https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse/${CHAVE}/eventos`, expect.any(Object), { proxy: false, timeout: 15000, maxRedirects: 0 });
+    expect(postMock).toHaveBeenCalledWith(`https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse/${CHAVE}/eventos`, expect.any(Object), { proxy: false, timeout: 15000, maxRedirects: 0, maxContentLength: 12_000_000, headers: { Accept: 'application/json' } });
     expect(axios.create.mock.calls[0][0]).not.toHaveProperty('proxy');
   });
   it('GET de reserva antiga usa proxy false no ADN e não reenvia', async () => {
     mockReservaNova = false;
     await expect(cancelar()).rejects.toMatchObject({ code: 'NFSE_CANCELAMENTO_NAO_CONFIRMADO' });
     expect(postMock).not.toHaveBeenCalled();
-    expect(getMock).toHaveBeenCalledWith(`https://adn.producaorestrita.nfse.gov.br/contribuintes/NFSe/${CHAVE}/Eventos`, { proxy: false, timeout: 15000, maxRedirects: 0 });
+    expect(getMock).toHaveBeenCalledWith(`https://adn.producaorestrita.nfse.gov.br/contribuintes/NFSe/${CHAVE}/Eventos`, { proxy: false, timeout: 15000, maxRedirects: 0, maxContentLength: 12_000_000, headers: { Accept: 'application/json' } });
   });
   it.each([{}, { ok: true }, { status: "pending" }])("mantém %j inconclusivo", async data => {
     montarCenario({ respostaProvedor: () => ({ status: 200, data }) });
