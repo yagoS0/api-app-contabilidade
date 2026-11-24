@@ -45,7 +45,10 @@ export function decodificarRespostaAdnCancelamento(corpo, contexto, status = 200
       const aberto = decodificarArquivoEvento(item.ArquivoXml, { limite: Math.min(LIMITE_XML_EVENTO, 8_000_000 - volume) });
       volume += aberto.bytes;
       documentos.push({ xml: aberto.xml, tipoEvento: TIPOS[item.TipoEvento], chaveAcesso: item.ChaveAcesso, indice });
-    } catch { problemas.push(`DOCUMENTO_ADN_INVALIDO:${indice}`); }
+    } catch (erro) {
+      volume += Number.isSafeInteger(erro.bytesConsumidos) ? erro.bytesConsumidos : 0;
+      problemas.push(`DOCUMENTO_ADN_INVALIDO:${indice}`);
+    }
   }
   return { documentos, problemas, completa: problemas.length === 0 };
 }

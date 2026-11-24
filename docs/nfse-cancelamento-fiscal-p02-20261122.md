@@ -20,7 +20,7 @@ Erros e Alertas ADN são opcionais/nulos conforme o contrato. Dados essenciais �
 
 Exemplos sintéticos: SEFIN201 com evento101101 válido confirma; ADN200 com solicitação101103 e deferimento105104 confirma; solicitação com105105 fica indeferida. Deferimento e indeferimento juntos, ou mesmo ID com hashes distintos, ficam inconclusivos. Duplicatas idênticas não duplicam prova; ordem não altera decisão. Coleção parcial ou XML alheio impede confirmação e o XML inválido não é custodiado como prova. Ausência posterior não promove prova de lote parcial. Nova evidência atual conclusiva permite recuperação quando não há conflito histórico.
 
-Limites defensivos locais (não são regras tributárias): HTTP12MB, Base642.800.000 caracteres, XML2MB, até100 documentos e8MB descompactados por lote; UTF-8 inválido, Base64 não canônico, GZip truncado/excessivo recusados. Requests específicos pedem JSON e mantêm proxyfalse, maxRedirects0 e timeout15s. Nada muda no cliente Axios global.
+Limites defensivos locais (não são regras tributárias): HTTP12MB, Base642.800.000 caracteres, XML2MB, até100 documentos e8MB descompactados por lote; UTF-8 inválido, Base64 não canônico, GZip truncado/excessivo recusados. Falhas de GZip consomem conservadoramente o orçamento reservado; falhas UTF-8 consomem bytes efetivamente abertos, impedindo expansão repetida após falha. Requests específicos pedem JSON e mantêm proxyfalse, maxRedirects0 e timeout15s. Nada muda no cliente Axios global.
 
 Custódia individual e diagnóstico limitado usam AppSetting existente. Transação curta bloqueia a reserva e incrementa revisaoEvidencias; a projeção usa CAS. Uma nova observação entre leitura histórica e CAS invalida a projeção, sem apagar a custódia. Nenhuma transação fica aberta durante rede; nenhuma migração. Reservas existentes só consultam. Confirmação persistida não regride.
 
@@ -31,6 +31,8 @@ Validação local final:328/328 em9 suítes (inclui24 PostgreSQL16, com duas con
 Revisões independentes Fiscal, Segurança e Arquitetura favoráveis ao diff corrigido, condicionadas à CI final. Achados corrigidos: opcionais/404 ADN, GZip obrigatório, promoção indevida de evidência parcial histórica, concorrência de custódia e projeção, projeção pública canônica. Controlador2026-11-24T19-05-51-276Z-1bad8bcb concluiu executor; subprocesso não executou Jest por EPERM no Windows. Principal interrompeu nos gates, corrigiu achados e executou validação alternativa. Sem ready_for_human e sem alteração dos gates. A CI do SHA publicado deve ser conferida no PR.
 
 Limitações: nenhuma homologação externa ou fiscal real; procedência SEFIN é texto fornecido, não arquivo de exportação rastreável. Assinatura embutida prova integridade, não cadeia ICP-Brasil independente; origem depende do transporte oficial autenticado. AppSetting não tem imutabilidade imposta no banco. Reservas NAO_ENVIADO não são reabertas automaticamente. Rollback seguro preserva evidências/reservas e suspende o ato sob autorização; reverter à versão que promovia HTTP a cancelamento reintroduz o defeito.
+
+Complemento final: limite agregado corrigido também para tentativas de descompactação que falham. Suíte focal reexecutada pelo principal e Segurança independente:99/99 aprovados. É subconjunto com um novo cenário, não soma de99 aos328 anteriores. Diagnose repetido: zero acréscimos. Revisão de Segurança favorável ao delta, sem mudança fiscal.
 
 ## Fechamento delimitado PR315 — rodada 0
 

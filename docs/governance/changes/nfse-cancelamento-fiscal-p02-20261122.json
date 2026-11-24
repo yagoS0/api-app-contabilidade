@@ -19,7 +19,7 @@
   "tests": [
     "24/11: base inicial153/153; candidata final328/328 em9 suítes, incluindo24 PostgreSQL16 descartável. Duas expectativas HTTP intermediárias corrigidas para exigir novos limites e AcceptJSON.",
     "Regressão isolamento ADN do313:87/87 em12 suítes; sem mudanças na sincronização geral.",
-    "Segurança independente:98/98 testes da política/envelopes; Arquitetura independente5/5.",
+    "Segurança independente:98/98 inicialmente; após limite agregado incluir descompactações com falha,99/99 na suíte focal pelo principal e Segurança (subconjunto, não somar aos328). Arquitetura independente5/5.",
     "Governança:40/40 aprovados; registro de impacto válido. Diagnose:5020 base/5020 candidata, zero acréscimos; 5 testes arquiteturais locais aprovados.",
     "CI integral do SHA final deve ser comprovada no PR; não reutilizar a CI do09f8886."
   ],

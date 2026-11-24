@@ -164,6 +164,15 @@ describe('contratos JSON SEFIN e ADN com eventos assinados sintéticos', () => {
     corpo.LoteDFe = [item('101101')];
     expect(decidirConfirmacaoFiscalCancelamento(verificarRespostaCancelamento(recibo, contexto), contexto).situacao).toBe('PENDENTE');
   });
+  test('falhas de expansão e UTF-8 também consomem o limite agregado do lote', () => {
+    for (const ArquivoXml of [compactar('x'.repeat(2_000_001)), gzipSync(Buffer.alloc(2_000_000, 0xff)).toString('base64')]) {
+      const invalido = { ...item('101101'), ArquivoXml };
+      const resultado = decodificarRespostaAdnCancelamento(adn([...Array(4).fill(invalido), item('101101')]), contexto);
+      expect(resultado.documentos).toEqual([]);
+      expect(resultado.problemas).toHaveLength(5);
+      expect(resultado.completa).toBe(false);
+    }
+  });
 });
 function xml(tipo = '101101', { chave = contexto.chaveAcesso, ambiente = '2', autor = contexto.cnpj, seq = '1', semMotivo = false, autorNamespace = '', nDFSe = '1', nProcAdm = null } = {}) {
   const id = `EVT${chave}${tipo}${seq.padStart(3, '0')}`;

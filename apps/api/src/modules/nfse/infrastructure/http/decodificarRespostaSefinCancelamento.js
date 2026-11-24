@@ -10,9 +10,17 @@ export function decodificarArquivoEvento(valor, { limite = LIMITE_XML_EVENTO } =
   if (bytes.toString('base64') !== valor) throw Error('BASE64_INVALIDO');
   const gzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
   if (!gzip) throw Error('GZIP_OBRIGATORIO');
-  const aberto = gunzipSync(bytes, { maxOutputLength: limite });
+  let aberto;
+  try { aberto = gunzipSync(bytes, { maxOutputLength: limite }); }
+  catch (erro) {
+    // O zlib não informa o volume parcial em falha. Consome conservadoramente
+    // o orçamento reservado para impedir expansão repetida em um mesmo lote.
+    erro.bytesConsumidos = limite;
+    throw erro;
+  }
   if (!aberto.length || aberto.length > limite) throw Error('XML_EXCESSIVO');
-  return { xml: new TextDecoder('utf-8', { fatal: true }).decode(aberto), bytes: aberto.length };
+  try { return { xml: new TextDecoder('utf-8', { fatal: true }).decode(aberto), bytes: aberto.length }; }
+  catch (erro) { erro.bytesConsumidos = aberto.length; throw erro; }
 }
 
 // Texto Swagger fornecido pelo proprietário; URL de exportação não comprovada.
