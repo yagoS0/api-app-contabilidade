@@ -86,3 +86,28 @@ test('troca por URL normaliza filtro de atenção herdado sem esconder falha de 
  const view=render(viewFor('calculado'));await screen.findByRole('region',{name:'Tabela contextual: Calculado'});await waitFor(()=>expect(screen.getByRole('button',{name:/^Confirmado /})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Filtros 0'}));fireEvent.change(screen.getByLabelText('Situação da etapa'),{target:{value:'error'}});expect(screen.getByLabelText('Situação da etapa')).toHaveValue('error');expect(screen.getByRole('option',{name:'Atenção ou bloqueio'})).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Aplicar'}));expect(within(screen.getByRole('region',{name:'Empresas da etapa'})).queryByText('Alfa')).not.toBeInTheDocument();expect(screen.getByText('Execução fiscal em andamento')).toBeInTheDocument();
  view.rerender(viewFor('enviado'));await screen.findByRole('region',{name:'Tabela contextual: Enviado'});fireEvent.click(screen.getByRole('button',{name:'Filtros 0'}));expect(screen.getByLabelText('Situação da etapa')).toHaveValue('all');expect(screen.queryByRole('option',{name:'Atenção ou bloqueio'})).not.toBeInTheDocument();await waitFor(()=>expect(screen.queryAllByText('Lendo documentos salvos…')).toHaveLength(0));expect(screen.getAllByText(/Falha real do canal/).some(el=>!el.closest('[hidden]'))).toBe(true);expect(screen.getByRole('rowheader',{name:/^Alfa/})).toBeInTheDocument();expect(screen.getByRole('rowheader',{name:/^Beta/})).toBeInTheDocument();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
+
+test.each([8, 35])('Calculadas usa as %i empresas do cartão, incluindo legado/transmitidas sem snapshot e todas as páginas', async totalCalculated => {
+ const companies=Array.from({length:41},(_,i)=>({companyId:String(i),razao:`Empresa ${String(i).padStart(2,'0')}`,myRole:i===0?'VIEWER':'ACCOUNTANT',fluxoCarteira:{competencia:'2026-10',apuracao:{apurada:i<totalCalculated?true:i===40?null:false,transmitida:i===0,porFora:i===1},contabilizacao:{},status:{chave:'apuracao'}}}));
+ const items=companies.map((c,i)=>({companyId:c.companyId,competencia:'2026-10',revision:`rev-${i}`,pending:[],status:i===0?'EXECUTED':'PENDING',calculation:i>=2&&i<5?{dasValor:100}:null}));
+ const api={getOperationEvidence:jest.fn(async()=>({ok:true,competencia:'2026-10',total:41,items})),getCompanyOperation:jest.fn(),saveCompanyOperation:jest.fn(),executeCompanyOperation:jest.fn()};
+ render(<OperationsPage api={api} companies={companies} competencia="2026-10"/>);
+ fireEvent.click(screen.getByRole('button',{name:`Calculado ${totalCalculated}/41 empresas`}));
+ await waitFor(()=>expect(screen.queryByText('Lendo cálculos e evidências…')).not.toBeInTheDocument());
+ fireEvent.change(screen.getByLabelText('Situação da etapa'),{target:{value:'done'}});
+ const table=screen.getByRole('region',{name:'Cálculos para conferência'});
+ expect(within(table).getAllByRole('rowheader')).toHaveLength(Math.min(30,totalCalculated));
+ expect(within(table).getByText('Empresa 00')).toBeInTheDocument();
+ expect(within(table).getByText('Empresa 01')).toBeInTheDocument();
+ expect(within(table).queryByText('Não calculado')).not.toBeInTheDocument();
+ expect(within(table).getAllByText('Cálculo local não disponível').length).toBeGreaterThan(0);
+ if(totalCalculated>30){fireEvent.click(screen.getByRole('button',{name:'Próxima'}));expect(within(table).getAllByRole('rowheader')).toHaveLength(5);expect(within(table).getByText('Empresa 34')).toBeInTheDocument();}
+ fireEvent.change(screen.getByLabelText('Situação da etapa'),{target:{value:'unknown'}});
+ expect(within(table).getAllByRole('rowheader')).toHaveLength(1);expect(within(table).getByText('Empresa 40')).toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText('Situação da etapa'),{target:{value:'pending'}});
+ expect(within(table).getAllByRole('rowheader')).toHaveLength(Math.min(30,40-totalCalculated));
+ fireEvent.change(screen.getByLabelText('Situação da etapa'),{target:{value:'done'}});
+ fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Empresa 01'}});
+ expect(within(table).getAllByRole('rowheader')).toHaveLength(1);
+ expect(api.getCompanyOperation).not.toHaveBeenCalled();expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});

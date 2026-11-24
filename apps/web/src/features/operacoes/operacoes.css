@@ -315,7 +315,7 @@
 /* Review of the approved compact panel and fixed modal actions. */
 .operacoes .operacoes-etapa { min-height:300px; }
 .operacoes .operacoes-progress,.operacoes .operacoes-quadro,.operacoes .operacoes-grafico-legenda button,.operacoes-dialogo .btn { transition:background-color .16s,border-color .16s,transform .16s; }
-.operacoes button:not(.btn-primary):hover:not(:disabled),.operacoes-dialogo .btn:not(.btn-primary):hover:not(:disabled) { background:var(--bg-subtle); }
+.operacoes button:not(.btn-primary):not(.operacoes-guide-tag):hover:not(:disabled),.operacoes-dialogo .btn:not(.btn-primary):not(.operacoes-guide-tag):hover:not(:disabled) { background:var(--bg-subtle); }
 .operacoes button:active:not(:disabled),.operacoes-dialogo .btn:active:not(:disabled) { border-color:var(--text-muted); }
 .operacoes-dialogo :is(button,a,input,select):focus-visible { outline:2px solid var(--accent-purple); outline-offset:3px; }
 .operacoes .operacoes-rotinas-unico { display:flex; flex-wrap:wrap; align-items:center; gap:16px; }
@@ -573,10 +573,11 @@
 .operacoes-stage-modal .operacoes-tabela :is(td,th) { vertical-align:middle; }
 .operacoes-stage-modal .operacoes-tabela small { display:block; color:var(--text-muted); }
 .operacoes-guide-tags { display:flex; flex-wrap:wrap; gap:6px; }
-.operacoes-guide-tag { display:inline-flex; flex-direction:column; align-items:flex-start; border:1px solid var(--border); background:var(--bg-surface); color:var(--text); border-radius:6px; padding:6px 8px; font:inherit; text-align:left; }
+.operacoes-guide-tag { display:inline-flex; flex-direction:column; align-items:flex-start; border:1px solid var(--border); background:var(--state-neutral-surface); color:var(--text); border-radius:6px; padding:6px 8px; font:inherit; text-align:left; }
 button.operacoes-guide-tag { cursor:pointer; }
-.operacoes-guide-tag-valid { border-color:var(--state-ok); }
-.operacoes-guide-tag-error { border-color:var(--state-danger); }
+.operacoes-guide-tag-valid { border-color:var(--state-ok); background:var(--state-ok-surface); }
+.operacoes-guide-tag-error { border-color:var(--state-danger); background:var(--state-danger-surface); }
+.operacoes-guide-tag-pending { border-color:var(--state-warn); background:var(--state-warn-surface); }
 .operacoes-guide-tag-recalculated { border-style:dashed; }
 .operacoes-stage-modal .modal-titulo { font-size:1.125rem; font-weight:600; }
 .operacoes-stage-modal .modal-topo { display:flex; gap:12px; align-items:flex-start; }
@@ -600,7 +601,7 @@ button.operacoes-guide-tag { cursor:pointer; }
 .operacoes-stage-modal .operacoes-guide-fact { margin:0 0 8px; line-height:1.4; }
 .operacoes-stage-modal .operacoes-guide-fact:last-child { margin-bottom:0; }
 .operacoes-stage-modal .operacoes-guide-tag { min-height:40px; transition:background .15s,border-color .15s; }
-.operacoes-stage-modal button.operacoes-guide-tag:hover:not(:disabled) { background:var(--bg-subtle); border-color:var(--border-focus); }
+.operacoes-stage-modal button.operacoes-guide-tag:hover:not(:disabled) { outline:1px solid var(--border-focus); outline-offset:2px; }
 .operacoes-stage-modal .operacoes-stage-footer { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:0; }
 .operacoes-stage-modal .modal-rodape { padding:12px 16px; }
 .operacoes-stage-modal .modal-rodape nav { display:flex; align-items:center; gap:8px; margin:0 auto 0 0; }

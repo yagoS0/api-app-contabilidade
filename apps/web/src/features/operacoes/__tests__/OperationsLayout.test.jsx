@@ -20,3 +20,27 @@ test('filtro da URL conserva competência e deep link; Escape fecha modal e pres
  render(<WorkspaceNavigation.Provider value={value}><OperationsPage companies={[]} competencia="2026-10"/></WorkspaceNavigation.Provider>);
  expect(screen.getByRole('dialog',{name:/^Disponível ·/})).toBeVisible();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).not.toBeInTheDocument();const params=new URL(navigate.mock.calls[0][0],'http://localhost').searchParams;expect(params.get('operacoesEtapa')).toBe('disponivel');expect(params.get('operacoesLista')).toBe('missing');expect(params.get('competencia')).toBe('2026-10');expect(params.has('operacoesModal')).toBe(false);
 });
+
+test('tags usam fundo semântico integral e hover preserva o estado em desktop/celular',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../operacoes.css'),'utf8');
+ for(const [suffix,token] of [['','neutral'],['-valid','ok'],['-error','danger'],['-pending','warn']]) {
+  const rule=css.match(new RegExp('\\.operacoes-guide-tag'+suffix+'\\s*\\{([^}]+)\\}'));
+  expect(rule).not.toBeNull();expect(rule[1]).toContain(`background:var(--state-${token}-surface)`);
+ }
+ const hover=css.match(/\.operacoes-stage-modal button\.operacoes-guide-tag:hover:not\(:disabled\)\s*\{([^}]+)\}/);
+ expect(hover[1]).not.toMatch(/background:/);
+});
+
+test('hover geral mantém botões comuns elegíveis e não substitui o fundo semântico das tags', () => {
+ const css=fs.readFileSync(path.join(__dirname,'../operacoes.css'),'utf8');
+ const neutralHover=css.match(/([^{}]*\.operacoes button:not\(\.btn-primary\)[^{}]*)\{\s*background:var\(--bg-subtle\);\s*\}/);
+ expect(neutralHover).not.toBeNull();
+ const selectors=neutralHover[1].trim().split(',').map(selector=>selector.replace(/:hover/g,'').trim());
+ const {container}=render(<div className="operacoes operacoes-stage-modal operacoes-dialogo"><button className="btn btn-secondary operacoes-guide-tag operacoes-guide-tag-valid">DAS</button><button className="btn btn-secondary" data-testid="ordinary-action">Ação comum</button></div>);
+ const tag=container.querySelector('.operacoes-guide-tag-valid'),ordinary=screen.getByTestId('ordinary-action');
+ for(const selector of selectors) {
+  expect(tag.matches(selector)).toBe(false);
+  expect(ordinary.matches(selector)).toBe(true);
+ }
+ expect(selectors).toHaveLength(2);
+});

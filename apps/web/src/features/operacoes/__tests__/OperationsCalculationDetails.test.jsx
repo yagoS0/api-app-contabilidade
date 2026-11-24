@@ -234,3 +234,67 @@ test.each([
  expect(content).toHaveFocus();
  expect(screen.getByRole('dialog')).toContainElement(document.activeElement);
 });
+
+test('tags da transmissão preservam nome, disponibilidade acessível e erro sem legenda Disponível',async()=>{
+ const api={getOperationsTransmissionDocuments:jest.fn(async(id,period)=>({...transmissionResponse(id,period),items:transmissionResponse(id,period).items.map(item=>({...item,documentos:{extrato:true,recibo:false}}))})),getCompanyGuides:jest.fn(async id=>[{companyId:id,guideId:'das',competencia:'2026-10',tipo:'DAS',status:'PROCESSED'},{companyId:id,guideId:'inss',competencia:'2026-10',tipo:'INSS',status:'ERROR'}]),fetchGuidePdfBlob:jest.fn(),downloadOperationsTransmissionDocuments:jest.fn()};
+ render(<OperationsTransmissionTable api={api} rows={transmissionRows.slice(0,1)} visibleRows={transmissionRows.slice(0,1)} competencia="2026-10"/>);
+ const das=await screen.findByRole('button',{name:'DAS · Disponível'});
+ expect(das).toHaveTextContent(/^DAS$/);expect(das).toHaveClass('operacoes-guide-tag-valid');expect(das).toHaveAttribute('title','DAS · Disponível');
+ const inss=screen.getByRole('button',{name:'INSS · Erro de processamento'});expect(inss).toHaveTextContent('Erro de processamento');expect(inss).toHaveClass('operacoes-guide-tag-error');expect(inss).toBeDisabled();
+ const receipt=screen.getByRole('button',{name:'Baixar recibo · Indisponível'});expect(receipt).toHaveTextContent(/^Recibo$/);expect(receipt).toBeDisabled();
+ const extract=screen.getByRole('button',{name:'Baixar extrato · Disponível'});expect(extract).toHaveTextContent(/^Extrato$/);expect(extract).toBeEnabled();
+ expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();expect(api.fetchGuidePdfBlob).not.toHaveBeenCalled();
+});
+test('transmissão distingue leitura pendente de guias e resposta vazia sem disponibilidade visível nas tags', async () => {
+ let finishGuides;
+ const api = {
+  getOperationsTransmissionDocuments: jest.fn(async (id, period) => transmissionResponse(id, period)),
+  getCompanyGuides: jest.fn(() => new Promise(resolve => { finishGuides = resolve; })),
+  fetchGuidePdfBlob: jest.fn(),
+  downloadOperationsTransmissionDocuments: jest.fn(),
+ };
+ const { container } = render(<OperationsTransmissionTable api={api} rows={transmissionRows.slice(0, 1)} visibleRows={transmissionRows.slice(0, 1)} competencia="2026-10" />);
+ const expectNoVisibleAvailability = () => {
+  for (const tag of container.querySelectorAll('.operacoes-guide-tag')) expect(tag.textContent).not.toMatch(/dispon[ií]ve/i);
+ };
+ expect(screen.getByRole('status')).toHaveTextContent('Lendo documentos salvos…');
+ expect(screen.queryByText('Nenhuma guia identificada.')).not.toBeInTheDocument();
+ expectNoVisibleAvailability();
+ await waitFor(() => expect(api.getCompanyGuides).toHaveBeenCalledWith('a'));
+ expect(screen.getByRole('status')).toHaveTextContent('Lendo documentos salvos…');
+ expect(screen.queryByText('Nenhuma guia identificada.')).not.toBeInTheDocument();
+ expectNoVisibleAvailability();
+ await act(async () => finishGuides([]));
+ const empty = await screen.findByText('Nenhuma guia identificada.');
+ expect(empty.tagName).toBe('P');
+ expect(empty.closest('.operacoes-guide-tag')).toBeNull();
+ expect(screen.queryByRole('status')).not.toBeInTheDocument();
+ expect(screen.queryByText(/Guias indisponíveis/)).not.toBeInTheDocument();
+ expectNoVisibleAvailability();
+ expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();
+ expect(api.fetchGuidePdfBlob).not.toHaveBeenCalled();
+});
+test('transmissão sem leitor de guias informa indisponibilidade fora das tags sem afirmar ausência nem executar ações', async () => {
+ const api = {
+  getOperationsTransmissionDocuments: jest.fn(async (id, period) => transmissionResponse(id, period)),
+  fetchGuidePdfBlob: jest.fn(),
+  downloadOperationsTransmissionDocuments: jest.fn(),
+  saveCompanyOperation: jest.fn(),
+  executeCompanyOperation: jest.fn(),
+ };
+ const { container } = render(<OperationsTransmissionTable api={api} rows={transmissionRows.slice(0, 1)} visibleRows={transmissionRows.slice(0, 1)} competencia="2026-10" />);
+ expect(screen.getByRole('status')).toHaveTextContent('Lendo documentos salvos…');
+ expect(screen.queryByText('Leitura de guias indisponível.')).not.toBeInTheDocument();
+ expect(screen.queryByText('Nenhuma guia identificada.')).not.toBeInTheDocument();
+ const unavailable = await screen.findByText('Leitura de guias indisponível.');
+ expect(unavailable.tagName).toBe('P');
+ expect(unavailable.closest('.operacoes-guide-tag')).toBeNull();
+ expect(screen.queryByRole('status')).not.toBeInTheDocument();
+ expect(screen.queryByText('Nenhuma guia identificada.')).not.toBeInTheDocument();
+ for (const tag of container.querySelectorAll('.operacoes-guide-tag')) expect(tag.textContent).not.toMatch(/dispon[ií]ve/i);
+ expect(api.getOperationsTransmissionDocuments).toHaveBeenCalledWith('a', '2026-10');
+ expect(api.downloadOperationsTransmissionDocuments).not.toHaveBeenCalled();
+ expect(api.fetchGuidePdfBlob).not.toHaveBeenCalled();
+ expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+ expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});

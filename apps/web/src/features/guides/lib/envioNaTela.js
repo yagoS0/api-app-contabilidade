@@ -182,7 +182,13 @@ export function lerEnvioDaGuia(guide) {
     situacao,
     ...d,
     // O resumo é curto porque a célula é estreita; o detalhe por canal vai no `title`.
-    resumo: canais.length > 1 ? `${d.rotulo} (${entregues.length}/${canais.length})` : d.rotulo,
+    resumo: canais.length > 1
+      ? situacao === SITUACAO_ENVIO.LIDA
+        ? `lida (${canais.filter(c => c.status === 'lido').length}/${canais.length} canais)`
+        : situacao === SITUACAO_ENVIO.ENTREGUE
+          ? `entregue (${canais.filter(c => ['entregue', 'lido'].includes(c.status)).length}/${canais.length} canais)`
+          : `${d.rotulo} (${entregues.length}/${canais.length})`
+      : d.rotulo,
     titulo: frases.length ? frases.join("\n") : d.rotulo,
     canais,
     chegou: entregues.length > 0,
