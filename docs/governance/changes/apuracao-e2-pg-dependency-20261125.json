@@ -1,0 +1,26 @@
+{
+  "summary": "Declare pg 8.16.3 as an exact API development dependency for PostgreSQL FS12 integration tests.",
+  "risk": "high",
+  "domains": [
+    "api",
+    "ci",
+    "portal",
+    "web"
+  ],
+  "operationalImpact": "No fiscal or operational rule changes. Reproducible test dependency only; no gate, limit, script, production integration or database grant changed.",
+  "tests": [
+    "Independent read-only review revisao_fluxo approved dependency-only diff: 12 new dev package entries, 141 added lockfile lines, no removal or existing package update.",
+    "PostgreSQL focal foundation-postgres-focal.json: 1 suite, 2 tests passed, no failure/skip; subprocess asserts 5 Prisma scenarios passed.",
+    "Full API gate prior to correction FAILED at batch26: Cannot find module pg; 625 prior suites passed. Original journal and principal-interruption.json preserved; no integral approval inferred.",
+    "Clean installation and complete regression on corrected source remain required."
+  ],
+  "humanDecisions": [
+    "User authorization E2 of 25/11/2026 covers implementation and mandatory PostgreSQL tests; no merge, deploy or real fiscal acts authorized. Principal handled protected dependency files separately from executor allowlist."
+  ],
+  "rollback": "Revert only declared pg development dependency and matching added lockfile entries together if tests are changed accordingly; preserve source candidates, journals and synthetic database evidence.",
+  "status": "dependency_correction_reviewed",
+  "sourcePaths": [
+    "apps/api/package.json",
+    "package-lock.json"
+  ]
+}
