@@ -2,11 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { OperationsFiscalWorkspace } from '../OperationsFiscalWorkspace';
 // These boundary doubles test workspace lifecycle only, not the fiscal form or transport.
 jest.mock('../../apuracao/components/FechamentoModal', () => ({ FechamentoModal: props => <section aria-label="Formulário compartilhado"><span>{props.portalClientId}</span><button onClick={props.onChanged}>Cálculo persistido</button></section> }));
-jest.mock('../../apuracao/components/FluxoPgdasPanel', () => ({ FluxoPgdasPanel: props => <button disabled={props.ocupado}>Registrar fora da Altan</button> }));
+jest.mock('../../apuracao/components/FluxoPgdasPanel', () => ({ FluxoPgdasPanel: props => <button disabled={props.ocupado || !props.api?.registrarEntregaPgdasExterna}>Registrar fora da Altan</button> }));
 const pa='2026-11', item={companyId:'a',name:'Empresa A'};
 const aptitude = (id='a',patch={}) => ({ok:true,aptidao:{portalClientId:id,competencia:pa,fs12:{revisao:1},fiscal:{estado:'NAO_TRANSMITIDA'},capacidades:{calcular:true,transmitir:false,retificar:false,reconciliar:false},impedimentos:[],pendencias:[],...patch}});
 function setup(patch={},props={}) {
- const api={getAptidaoFiscalFechamento:jest.fn(async()=>aptitude()),getFechamento:jest.fn(async()=>({ok:true,dados:{}})),conferirTransmissaoFechamento:jest.fn(async()=>({ok:true})),...patch};
+ const api={registrarEntregaPgdasExterna:jest.fn(),getAptidaoFiscalFechamento:jest.fn(async()=>aptitude()),getFechamento:jest.fn(async()=>({ok:true,dados:{}})),conferirTransmissaoFechamento:jest.fn(async()=>({ok:true})),...patch};
  const options={api,item,competencia:pa,canWrite:()=>true,...props};
  return {...render(<OperationsFiscalWorkspace {...options}/>),api,options};
 }
@@ -91,4 +91,11 @@ test('encerramento recusado mantém desconhecido e não anuncia sucesso',async()
  fireEvent.click(screen.getByRole('button',{name:'Encerrar tentativa não enviada'}));fireEvent.click(screen.getByRole('button',{name:'Confirmar encerramento sem despacho'}));
  expect(await screen.findByRole('alert')).toHaveTextContent('Resultado não confirmado');
  expect(screen.getByText(/Resultado desconhecido/)).toBeInTheDocument();
+});
+test('confirmação causal não vira entrega externa quando consulta documental é inconclusiva',async()=>{
+ const {api}=setup({getAptidaoFiscalFechamento:jest.fn(async()=>aptitude('a',{fiscal:{estado:'CONFIRMADA',motivo:'Resposta causal preservada.'},capacidades:{calcular:false,transmitir:false,retificar:true},pendencias:['Documentos pendentes']})),getFechamento:jest.fn(async()=>({ok:true,dados:{fluxoPgdas:{transmissao:{estado:'INCONCLUSIVA'}}}}))});
+ expect(await screen.findByText(/A transmissão está confirmada pela resposta fiscal preservada/)).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Registrar fora da Altan'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Reabrir para retificar'})).toBeEnabled();
+ expect(api.registrarEntregaPgdasExterna).not.toHaveBeenCalled();
 });

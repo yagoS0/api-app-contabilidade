@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Fs12DeclaratoriaPanel } from '../Fs12DeclaratoriaPanel';
-import { FechamentoModal } from '../FechamentoModal';
+import { FechamentoModal, transmissaoConfirmadaDoResultado } from '../FechamentoModal';
 
 const contexto = 'a'.repeat(64);
 const props = { portalClientId: 'p1', competencia: '2026-11', razao: 'Empresa exemplo', temFatorR: false };
@@ -190,4 +190,19 @@ test('confirmação FS12 invalida cálculo antigo, preserva receitas e relê apt
   expect(screen.getByRole('spinbutton',{name:'Receita externa da atividade 1'})).toHaveValue(0);
   expect(api.salvarFechamento).not.toHaveBeenCalled();
   expect(api.calcularFechamento).not.toHaveBeenCalled(); expect(api.transmitirFechamento).not.toHaveBeenCalled();
+});
+
+test('consumer translates exact causal E2 transmission and preserves explicit legacy response',()=>{
+ const identity={portalClientId:'p1',competencia:'2026-11',calculoId:'calc'};
+ const result={confirmada:true,calculoId:'calc',transmissao:{confirmada:true,estado:'TRANSMITIDA',evidencia:{origem:'ALTAN',competencia:'2026-11',numeroDeclaracao:'declaration'}},snapshot:{portalClientId:'p1',competencia:'2026-11',idempotencyKey:'calc',estado:'transmitida',numeroDeclaracao:'declaration'}};
+ expect(transmissaoConfirmadaDoResultado(result,identity)).toMatchObject({confirmada:true,numeroDeclaracao:'declaration',origem:'ALTAN'});
+ const legacy={transmissao:{confirmada:true,numeroDeclaracao:'legacy',origem:'EXTERNA',evidencia:{origem:'EXTERNA',competencia:'2026-10',numeroDeclaracao:'legacy'}}};
+ expect(transmissaoConfirmadaDoResultado(legacy,{...identity,competencia:'2026-10'})).toMatchObject({numeroDeclaracao:'legacy',origem:'EXTERNA'});
+ expect(transmissaoConfirmadaDoResultado(legacy,identity)).toBeNull();
+ expect(transmissaoConfirmadaDoResultado({transmissao:{confirmada:true,numeroDeclaracao:'flat'}},identity)).toBeNull();
+ expect(transmissaoConfirmadaDoResultado(result,{...identity,competencia:'2027-01'})).toBeNull();
+ for(const change of [r=>r.confirmada=false,r=>r.transmissao.confirmada=false,r=>r.transmissao.estado='RESULTADO_INCERTO',r=>r.snapshot.portalClientId='other',r=>r.snapshot.competencia='2026-12',r=>r.snapshot.idempotencyKey='other',r=>r.snapshot.numeroDeclaracao='other',r=>r.transmissao.evidencia.origem='EXTERNA',r=>r.transmissao.evidencia.numeroDeclaracao='']){
+  const bad=JSON.parse(JSON.stringify(result));change(bad);expect(transmissaoConfirmadaDoResultado(bad,identity)).toBeNull();
+ }
+ expect(transmissaoConfirmadaDoResultado({transmissao:{numeroDeclaracao:'number-only'}},identity)).toBeNull();
 });

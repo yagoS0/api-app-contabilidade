@@ -26,11 +26,11 @@ function FiscalWorkspace({ api, item, competencia, onClose, onChanged, onBusyCha
     finally { if (context.current === current && version === generation.current) setReading(false); }
   }
   useEffect(() => { context.current = { api }; heading.current?.focus(); void reload(); return () => { generation.current++; context.current = null; }; }, [api]);
-  const externalApi = useMemo(() => ({ ...api, registrarEntregaPgdasExterna: typeof api.registrarEntregaPgdasExterna === 'function' ? async (...args) => {
+  const externalApi = useMemo(() => ({ ...api, registrarEntregaPgdasExterna: data?.aptidao?.fiscal?.estado !== 'CONFIRMADA' && typeof api.registrarEntregaPgdasExterna === 'function' ? async (...args) => {
     const current = context.current; setExternalBusy(true);
     try { return await api.registrarEntregaPgdasExterna(...args); }
     finally { if (context.current === current) setExternalBusy(false); }
-  } : undefined }), [api]);
+  } : undefined }), [api, data?.aptidao?.fiscal?.estado]);
   async function perform() {
     if (lock.current || occupied || reading || error || !allowed || !action) return;
     const current = context.current, chosen = action;
@@ -70,7 +70,7 @@ function FiscalWorkspace({ api, item, competencia, onClose, onChanged, onBusyCha
       <Button variant="secondary" disabled={busy} onClick={() => setAction(null)}>Cancelar ação</Button>
       <Button disabled={blocked || action === 'retificar' && !reason.trim()} onClick={perform}>Confirmar {action === 'retificar' ? 'reabertura' : action === 'encerrar' ? 'encerramento sem despacho' : 'conferência'}</Button>
     </section>}
-    {!form && data && <FluxoPgdasPanel api={externalApi} dados={data.fechamento} companyId={item.companyId} competencia={competencia} razao={item.name} ocupado={blocked || ['DESCONHECIDA', 'EM_PROCESSAMENTO'].includes(apt?.fiscal?.estado)} onChanged={reload} />}
+    {!form && data && <section aria-label="Consulta documental"><h4>Consulta documental</h4>{apt?.fiscal?.estado === 'CONFIRMADA' && <p>A transmissão está confirmada pela resposta fiscal preservada. A situação abaixo se refere à consulta documental: um índice inconclusivo ou documento pendente não desfaz essa confirmação. Não registre esta declaração como realizada fora da Altan.</p>}<FluxoPgdasPanel api={externalApi} dados={data.fechamento} companyId={item.companyId} competencia={competencia} razao={item.name} ocupado={blocked || ['DESCONHECIDA', 'EM_PROCESSAMENTO'].includes(apt?.fiscal?.estado)} onChanged={reload} /></section>}
     {form && <FechamentoModal embedded disabled={!allowed || !!error} api={api} portalClientId={item.companyId} competencia={competencia} razao={item.name} retificar={form === 'retificar'} onBusyChange={setFormBusy} onChanged={reload} onClose={() => { if (!occupied) { setForm(null); void reload(); } }} />}
     {form && <Button variant="secondary" disabled={occupied} onClick={() => { setForm(null); void reload(); }}>Voltar à situação fiscal</Button>}
     <Button variant="secondary" disabled={occupied} onClick={() => { onChanged?.(); onClose?.(); }}>Voltar às operações</Button>
