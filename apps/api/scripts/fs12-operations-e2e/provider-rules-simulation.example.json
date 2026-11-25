@@ -1,0 +1,6 @@
+{
+ "rules": [
+  {"name":"Simulação sintética sem ato fiscal", "path":"/Declarar", "service":"TRANSDECLARACAO11", "indicadorTransmissao":false, "status":200, "response":{"status":200,"dados":"{\"idDeclaracao\":\"00000000202611001\",\"valoresDevidos\":[{\"codigoTributo\":1010,\"valor\":10}]}","mensagens":[]}},
+  {"name":"Índice sem declaração sintético", "path":"/Consultar", "service":"CONSDECLARACAO13", "status":200, "response":{"status":200,"dados":"","mensagens":[{"codigo":"[EntradaIncorreta-PGDASD-MSG_ISN_005]","texto":"Não há declaração transmitida para o período informado."}]}}
+ ]
+}

@@ -10,7 +10,7 @@ const mesLegivel = mes => `${mes.slice(5)}/${mes.slice(0, 4)}`;
 export function Fs12DeclaratoriaPanel(props) {
   return <PainelFs12 key={`${props.portalClientId}:${props.competencia}`} {...props} />;
 }
-function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, recuperado, razao }) {
+function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, recuperado, razao, onConfirmed, onBusyChange, disabled = false, calculoDisponivel = false }) {
   const [leitura, setLeitura] = useState({ carregando: true });
   const [tentativa, setTentativa] = useState(0);
   const [rascunho, setRascunho] = useState({});
@@ -20,6 +20,9 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
   const [erro, setErro] = useState('');
   const [motivo, setMotivo] = useState('');
   const ativa = useRef(true);
+  const contexto = useRef({ api });
+  if (contexto.current.api !== api) contexto.current = { api };
+  useEffect(() => { onBusyChange?.(gravando); return () => onBusyChange?.(false); }, [gravando, onBusyChange]);
   const salvando = useRef(false);
   const comando = useRef(null);
   const focoConfirmacao = useRef(null);
@@ -68,9 +71,11 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
     && JSON.stringify(serie) === JSON.stringify(confirmacao.serie);
   const estado = inalterada ? 'Confirmada' : confirmacao ? 'Alterada' : completa ? 'Pronta para confirmar'
     : Object.values(rascunho).some(v => v.trim() !== '') ? 'Em preenchimento' : 'Não informada';
-  const podeConfirmar = completa && !inalterada && !!leitura.dados?.contextoRevisao && !!api.confirmarFs12Fechamento;
+  const podeConfirmar = !disabled && completa && !inalterada && !!leitura.dados?.contextoRevisao && !!api.confirmarFs12Fechamento;
   async function salvar() {
     if (!podeConfirmar || !conferido || salvando.current || (confirmacao && !motivo.trim())) return;
+    const origem = contexto.current;
+    let confirmada = null;
     salvando.current = true; setGravando(true); setErro('');
     try {
       const payload = { serie, revisaoEsperada: leitura.dados.revisaoVigente,
@@ -79,7 +84,7 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
       if (comando.current?.assinatura !== assinatura) comando.current = { assinatura, chave: crypto.randomUUID() };
       const out = await api.confirmarFs12Fechamento(portalClientId, competencia,
         { ...payload, chaveIdempotencia: comando.current.chave });
-      if (!ativa.current) return;
+      if (!ativa.current || contexto.current !== origem) return;
       if (out?.ok !== true || out.autorizaEfeitoFiscal !== false
         || !confirmacaoFs12Valida(out.confirmacao, portalClientId, competencia)
         || out.confirmacao.companyId !== politica.empresaId
@@ -91,19 +96,21 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
         revisaoVigente: out.confirmacao.revisao, historico: [out.confirmacao, ...(p.dados.historico || [])] } }));
       setConfirmando(false); setConferido(false); setMotivo(''); comando.current = null;
       focoAcao.current?.focus();
+      confirmada = out.confirmacao;
     } catch {
-      if (ativa.current) setErro('Confirmação indisponível ou em conflito. O rascunho foi preservado. Recarregue o histórico para conferir a revisão antes de tentar novamente.');
+      if (ativa.current && contexto.current === origem) setErro('Confirmação indisponível ou em conflito. O rascunho foi preservado. Recarregue o histórico para conferir a revisão antes de tentar novamente.');
     } finally {
       salvando.current = false;
       if (ativa.current) setGravando(false);
     }
+    if (confirmada && ativa.current && contexto.current === origem) onConfirmed?.(confirmada);
   }
   const futuro = competencia >= '2027-01';
   return <section className="fechamento-secao fs12-declaratoria" aria-label="FS12 declaratória">
     <h3>FS12 declaratória</h3>
     <p>{futuro ? 'A política técnica de 2027 depende de homologação específica.'
       : 'Nos PAs 11/2026 e 12/2026, o PGDAS-D exige a folha para todas as atividades do Simples Nacional, inclusive sem receita.'}</p>
-    <p><strong>Fator R:</strong> {temFatorR ? 'há atividade sujeita nas atividades selecionadas.' : 'nenhuma atividade selecionada está marcada como sujeita.'} Informar FS12 não muda o enquadramento.</p>
+    <p><strong>Fator R:</strong> {temFatorR == null ? 'enquadramento não informado neste contexto.' : temFatorR ? 'há atividade sujeita nas atividades selecionadas.' : 'nenhuma atividade selecionada está marcada como sujeita.'} Informar FS12 não muda o enquadramento.</p>
     {leitura.carregando && <p role="status">Consultando competências da folha…</p>}
     {leitura.erro && <Aviso tom="atencao" titulo="FS12 indisponível">
       <p role="alert">Não foi possível conferir o contexto. Nenhum valor foi considerado zero. Tente novamente.</p>
@@ -115,7 +122,7 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
           : 'Confira a abertura e o histórico do regime no cadastro. Sem vigência mensal inequívoca, não é possível determinar os meses da folha.'}
     </Aviso>}
     {meses.length > 0 && <>
-    <Aviso compacto tom="atencao" titulo="Declaração manual — novo cálculo indisponível">
+    <Aviso compacto tom="atencao" titulo={calculoDisponivel ? "Declaração manual da folha" : "Declaração manual — novo cálculo indisponível"}>
       Informe e confira a folha dos meses indicados. A confirmação registra a declaração manual do contador, sem validação da Receita Federal ou do Departamento Pessoal.
       Somente valores confirmados são gravados. O rascunho é descartado ao fechar ou trocar a competência. Confirmar não calcula nem transmite.
       {recuperado && ' O cálculo recuperado e suas ações continuam usando exclusivamente os dados anteriores, sem incorporar este rascunho.'}
@@ -135,7 +142,7 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
             <label htmlFor={id}>Folha {mesLegivel(mes)}</label>
             <input id={id} type="text" inputMode="decimal" value={valor} placeholder="Não informado"
               aria-invalid={invalido} aria-describedby={`${id}-estado`}
-              disabled={gravando || confirmando} onChange={e => { setRascunho(p => ({ ...p, [mes]: e.target.value })); setConferido(false); }} />
+              disabled={disabled || gravando || confirmando} onChange={e => { setRascunho(p => ({ ...p, [mes]: e.target.value })); setConferido(false); }} />
             <span id={`${id}-estado`} className="fs12-situacao">{invalido ? 'Informe valor não negativo com até 2 casas.'
               : informado === null ? 'Ausente · informe a folha do mês.'
                 : inalterada ? 'Valor confirmado pelo contador.' : informado === 0 ? 'Zero explícito · não conferido.' : 'Digitado neste rascunho · não conferido.'}</span>
@@ -148,7 +155,7 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
       </div>
       {erro && <Aviso tom="atencao" titulo="Confirmação indisponível">
         <p role="alert">{erro}</p>
-        <Button type="button" variant="secondary" disabled={gravando} onClick={() => setTentativa(t => t + 1)}>Recarregar histórico e descartar rascunho</Button>
+        <Button type="button" variant="secondary" disabled={disabled || gravando} onClick={() => setTentativa(t => t + 1)}>Recarregar histórico e descartar rascunho</Button>
       </Aviso>}
       {api.confirmarFs12Fechamento && !confirmando && <Button type="button" ref={botaoConfirmar} disabled={!podeConfirmar || gravando}
         onClick={() => { setConferido(false); setConfirmando(true); }}>Confirmar valores da folha</Button>}
@@ -156,12 +163,12 @@ function PainelFs12({ api, portalClientId, competencia, temFatorR, referencia, r
         <h4 tabIndex={-1} ref={focoConfirmacao}>Conferir folha de {razao || portalClientId} · {mesLegivel(competencia)}</h4>
         <p>{meses.length} meses · {dinheiro(totalCentavos)}. Declaração manual; não libera cálculo nem transmissão.</p>
         {confirmacao && <label>Motivo da substituição
-          <textarea maxLength={1000} value={motivo} disabled={gravando} onChange={e => setMotivo(e.target.value)} />
+          <textarea maxLength={1000} value={motivo} disabled={disabled || gravando} onChange={e => setMotivo(e.target.value)} />
         </label>}
-        <label className="fs12-conferencia"><input type="checkbox" checked={conferido} disabled={gravando} onChange={e => setConferido(e.target.checked)} /> Conferi os meses e valores desta apuração.</label>
+        <label className="fs12-conferencia"><input type="checkbox" checked={conferido} disabled={disabled || gravando} onChange={e => setConferido(e.target.checked)} /> Conferi os meses e valores desta apuração.</label>
         <div className="fs12-acoes">
-          <Button type="button" variant="secondary" disabled={gravando} onClick={() => { retornarAosValores.current = true; setConfirmando(false); setConferido(false); }}>Voltar aos valores</Button>
-          <Button type="button" disabled={gravando || !conferido || (confirmacao && !motivo.trim())} onClick={salvar}>{gravando ? 'Gravando confirmação…' : 'Confirmar declaração manual'}</Button>
+          <Button type="button" variant="secondary" disabled={disabled || gravando} onClick={() => { retornarAosValores.current = true; setConfirmando(false); setConferido(false); }}>Voltar aos valores</Button>
+          <Button type="button" disabled={disabled || gravando || !conferido || (confirmacao && !motivo.trim())} onClick={salvar}>{gravando ? 'Gravando confirmação…' : 'Confirmar declaração manual'}</Button>
         </div>
       </div>}
     </>}

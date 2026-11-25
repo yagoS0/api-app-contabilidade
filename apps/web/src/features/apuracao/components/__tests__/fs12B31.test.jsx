@@ -166,19 +166,28 @@ test('total e histórico mantêm último centavo exato no limite inteiro seguro'
   expect(screen.getByText('Total confirmado:').parentElement).toHaveTextContent('R$ 90.071.992.547.409,91');
 });
 
-test('confirmação manual não libera cálculo nem altera formulário recuperado do modal', async () => {
+test('confirmação FS12 invalida cálculo antigo, preserva receitas e relê aptidão sem calcular automaticamente', async () => {
   const formulario = { atividades: [{ idAtividade: 1, descricao: 'Atividade', valorInterno: 100, valorExterno: 0 }],
     folhaMensal12: [{ pa: '2026-10', valor: 42 }], regimeApuracao: 'COMPETENCIA' };
-  const api = { ...preparar(), listPendenciasPosFechamento: jest.fn(async () => []),
+  let leiturasAptidao = 0;
+  const api = { ...preparar(), getAptidaoFiscalFechamento: jest.fn(async () => ({ok:true,aptidao:{portalClientId:'p1',competencia:'2026-11',fs12:{revisao:++leiturasAptidao,contextoRevisao:contexto},capacidades:{calcular:leiturasAptidao>1,transmitir:false},impedimentos:[]}})), listPendenciasPosFechamento: jest.fn(async () => []),
     listAtividadesPgdasd: jest.fn(async () => ({ atividades: [] })),
     getFechamento: jest.fn(async () => ({ ok: true, dados: { cadastroCompleto: true, regimeApuracao: 'COMPETENCIA',
       faturamento: { interno: 100, externo: 0, total: 100 }, entregaPgdas: {}, disparidades: [], rbt12: 1200,
       atividades: formulario.atividades, calculoRecuperavel: { calculoId: 'calc-antigo', dasValor: 10, formulario } } })),
     calcularFechamento: jest.fn(), transmitirFechamento: jest.fn(), salvarFechamento: jest.fn(async () => ({ ok: true })) };
   render(<FechamentoModal {...props} api={api} feedback={{}} onClose={jest.fn()} onChanged={jest.fn()} />);
+  const receita=await screen.findByRole('spinbutton',{name:'Receita interna da atividade 1'});
+  expect(receita).toHaveValue(100);
+  await waitFor(()=>expect(screen.getByRole('button',{name:/Salvar \(fechar\)/})).toBeEnabled());
   await abrirConferencia('99'); confirmar(); await screen.findByText('Confirmada');
-  expect(screen.getByRole('button', { name: /Calcular \(simulação\)/ })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: /Salvar \(fechar\)/ }));
-  await waitFor(() => expect(api.salvarFechamento).toHaveBeenCalledWith('p1', '2026-11', { ...formulario, calculoId: 'calc-antigo' }));
+  await waitFor(()=>expect(api.getAptidaoFiscalFechamento).toHaveBeenCalledTimes(2));
+  // Only the refreshed server capability enables a NEW calculation. The previous
+  // calculation ID cannot be saved or transmitted with a different FS12 revision.
+  await waitFor(()=>expect(screen.getByRole('button',{name:/Calcular \(simulação\)/})).toBeEnabled());
+  const salvar=screen.getByRole('button',{name:/Salvar \(fechar\)/});expect(salvar).toBeDisabled();fireEvent.click(salvar);
+  expect(screen.getByRole('spinbutton',{name:'Receita interna da atividade 1'})).toHaveValue(100);
+  expect(screen.getByRole('spinbutton',{name:'Receita externa da atividade 1'})).toHaveValue(0);
+  expect(api.salvarFechamento).not.toHaveBeenCalled();
   expect(api.calcularFechamento).not.toHaveBeenCalled(); expect(api.transmitirFechamento).not.toHaveBeenCalled();
 });

@@ -1,0 +1,186 @@
+{
+  "id": "apuracao-e2-persistencia",
+  "data": "2026-11-25",
+  "objetivo": "Integrar a base persistente aditiva do PR302 sobre E1, sem consumidor fiscal. Não encerra E2.",
+  "estado": "implementado_localmente_validacao_e_revisoes_pendentes",
+  "risco": "high",
+  "origem": {
+    "pr": 302,
+    "verificacao": "HEAD conferido e status limpo; fonte somente lida, sem edições.",
+    "commit": "7604115503e205fd8c7e355850d8b7dfc4531ecb",
+    "sqlSha256BytesLocais": "e59dc77b54fe25d67bf9f5edfdd853899bfc52b8d60831531a08b3090f21e868",
+    "arvore": "../pgdas-fs12-migracao-20261118",
+    "referenciaOperacionalSha256": "99a27e4a2191f8243cffa662e18074ea92216bb4cad4ec0b08caa42d650cb745",
+    "mainInformadaPeloPrincipal": "eee0040be6245c7842926de125ee2e9b66291db9",
+    "sqlFiel": "Hash dos bytes locais igual ao arquivo da fonte; nenhuma alteração SQL.",
+    "baseE1": "3bb3f0bba27678268fc42a8be00637ab21b97d9a"
+  },
+  "caminhos": [
+    "apps/api/prisma/schema.prisma",
+    "apps/api/prisma/migrations/20261118000000_add_fs12_comando_custodia/migration.sql",
+    "apps/api/scripts/fs12-b33b1-ddl/helpers.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/constraints.postgres.test.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/migracao-versionada.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/prisma-migracao.postgres.test.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/privilegios.postgres.test.mjs",
+    "docs/modules/fixtures/fs12-b33b1-ddl/ensaio-prisma.mjs",
+    "apps/api/src/modules/fiscal/infrastructure/prisma/__tests__/fs12ComandoCustodia.postgres.test.js",
+    "docs/modules/apuracao-e2-persistencia.json"
+  ],
+  "regras": [
+    "R01",
+    "R02",
+    "R04-R06",
+    "R19-R22",
+    "seções36/37 interpretadas pela seção38",
+    "R25/R26 preservadas"
+  ],
+  "dominios": [
+    "accounting",
+    "api",
+    "commercial",
+    "communication",
+    "data",
+    "documentation",
+    "fiscal",
+    "guides",
+    "operations",
+    "portal",
+    "web"
+  ],
+  "contratos": [
+    {
+      "escrita": "Fs12Comando, Fs12ComandoReserva, Fs12ComandoResposta, Fs12ComandoCalculo",
+      "dono": "fiscal",
+      "impacto": "Quatro fatos imutáveis de comando/custódia/correlação; sem estado fiscal adicional nem promoção automática."
+    },
+    {
+      "escrita": "schema e migration",
+      "dono": "data",
+      "impacto": "Somente 100 linhas aditivas no schema atual: quatro modelos, relações reversas em User/AppSetting/SerproChamada/B31/B32 e chave composta B32. CHECKs, FKs RESTRICT, triggers e índice parcial permanecem no SQL."
+    },
+    {
+      "dono": "fiscal",
+      "consumidores": [
+        "ApuracaoFs12Revisao",
+        "ApuracaoFs12Calculo",
+        "SerproChamada",
+        "AppSetting"
+      ],
+      "impacto": "Reaproveita identidades B31/B32, reserva SERPRO e marcador serpro_dispatch. Sem backfill, segunda máquina de estados ou alteração de guardas, payload, seleção e transporte."
+    },
+    {
+      "dono": "api",
+      "consumidores": [
+        "accounting",
+        "commercial",
+        "communication",
+        "guides",
+        "operations",
+        "portal",
+        "web"
+      ],
+      "impacto": "Nenhuma rota, serviço, worker, interface, pagamento, fechamento, envio ou contrato público alterado. Relações novas no Prisma são aditivas e não têm consumidor de produção neste incremento."
+    }
+  ],
+  "dependenciasPreservadas": [
+    "docs/modules/fixtures/fs12-b33b1-ddl/original.sql",
+    "docs/modules/fixtures/fs12-b33b1-ddl/candidato-corrigido.sql",
+    "docs/modules/fixtures/fs12-b33b1-ddl/ensaio.prisma",
+    "apps/api/scripts/fs12-b33b1-ddl/concorrencia.postgres.test.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/custodia.postgres.test.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/criptografia.test.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/seguranca-fixture.mjs",
+    "apps/api/scripts/fs12-b33b1-ddl/pa-prospectivo.test.mjs"
+  ],
+  "adaptacoes": [
+    "helpers.mjs restringe os scripts ao destino exclusivo E2: 127.0.0.1:54661/altan_rotinas_governance_test, usuário altan_test, PostgreSQL16. Portas de outras árvores recusadas.",
+    "constraints inclui installed além das provas original/corrected; fixtures históricas preservadas.",
+    "ensaio-prisma valida os modelos integrados sem duplicá-los; mantém suporte à fixture histórica.",
+    "Jest focal verifica ledger/checksum SQL/constraints e executa os cinco cenários Prisma originais em processo Node separado. Esse processo de teste NÃO prova concorrência entre processos fiscais nem reinício de worker.",
+    "migracao-versionada conserva baseline explícita de 215 migrations, exige banco vazio, verifica upgrade B31/B32 preservado, ausência de backfill e replay de migrate deploy; nunca faz reset."
+  ],
+  "ambiente": {
+    "databaseUrlSintetica": "postgresql://altan_test@127.0.0.1:54661/altan_rotinas_governance_test",
+    "instrucoes": "Definir as quatro variáveis com a URL sintética acima, NODE_ENV=test, sem .env produtivo. Dependências e Prisma client exclusivos deste checkout. Não usar outros clusters ou portas.",
+    "variaveis": [
+      "DATABASE_URL",
+      "ALTAN_GOVERNANCE_TEST_DATABASE_URL",
+      "TEST_CICLO_PG_URL",
+      "ALTAN_FS12_DDL_DATABASE_URL"
+    ],
+    "privilegios": "privilegios.postgres.test.mjs e constraints usam papéis sintéticos NOLOGIN e grants dentro de transações revertidas; exigem capacidade local para CREATE ROLE. Não executar com papel produtivo nem transformar esses grants em política runtime."
+  },
+  "aplicacao": {
+    "proibicoes": [
+      "db push",
+      "migrate dev",
+      "reset",
+      "migração produtiva",
+      "alterar histórico de migrations",
+      "backfill",
+      "grant produtivo",
+      "chaves reais"
+    ],
+    "preparo": [
+      "node node_modules/prisma/build/index.js validate --schema apps/api/prisma/schema.prisma",
+      "node node_modules/prisma/build/index.js generate --schema apps/api/prisma/schema.prisma",
+      "node node_modules/prisma/build/index.js migrate deploy --schema apps/api/prisma/schema.prisma"
+    ],
+    "escopo": "Somente PostgreSQL16 descartável autorizado; execução pelo Principal/controlador.",
+    "upgrade": "Antes de migrate deploy, se o banco exclusivo ainda estiver vazio, executar node apps/api/scripts/fs12-b33b1-ddl/migracao-versionada.mjs. O script aplica histórico, grava fixtures sintéticas B31/B32, aplica a nova migration e repete deploy. Se já contiver tabelas, recusa: não apagar/resetar; reportar prova de upgrade pendente ao Principal."
+  },
+  "comandosComplementaresRaiz": [
+    "node apps/api/scripts/fs12-b33b1-ddl/migracao-versionada.mjs",
+    "node docs/modules/fixtures/fs12-b33b1-ddl/ensaio-prisma.mjs",
+    "node --test apps/api/scripts/fs12-b33b1-ddl/constraints.postgres.test.mjs",
+    "node --test apps/api/scripts/fs12-b33b1-ddl/prisma-migracao.postgres.test.mjs",
+    "node --test apps/api/scripts/fs12-b33b1-ddl/privilegios.postgres.test.mjs",
+    "node --test apps/api/scripts/fs12-b33b1-ddl/concorrencia.postgres.test.mjs",
+    "node --test apps/api/scripts/fs12-b33b1-ddl/custodia.postgres.test.mjs",
+    "node --test apps/api/scripts/fs12-b33b1-ddl/criptografia.test.mjs apps/api/scripts/fs12-b33b1-ddl/pa-prospectivo.test.mjs",
+    "node node_modules/jest/bin/jest.js --config apps/api/jest.config.js --runInBand --runTestsByPath apps/api/src/modules/fiscal/infrastructure/prisma/__tests__/fs12ComandoCustodia.postgres.test.js"
+  ],
+  "catalogo": "Nenhum gate/config/timeout existente alterado. O Jest focal é descoberto pelo catálogo normal; exige ambas DATABASE_URL e ALTAN_GOVERNANCE_TEST_DATABASE_URL iguais. Sem esta última, fica explicitamente skipped, que não é prova PostgreSQL. Preparar generate/migrate deploy antes do gate API.",
+  "evidenciasExecutor": [
+    {
+      "resultado": "limpo",
+      "comando": "git status --short (inicial)"
+    },
+    {
+      "resultado": "Somente quatro modelos e relações necessárias; schema antigo não copiado integralmente",
+      "comando": "Inspeção do delta schema atual versus fonte PR302"
+    },
+    {
+      "resultado": "SHA256 idêntico e59dc77b54fe25d67bf9f5edfdd853899bfc52b8d60831531a08b3090f21e868",
+      "comando": "Get-FileHash migration.sql (destino e fonte)"
+    },
+    {
+      "resultado": "exit 0",
+      "comando": "git diff --check"
+    },
+    {
+      "resultado": "não executado pelo runtime: Node abortou com EPERM lstat C:\\Users\\yagoa",
+      "comando": "node scripts/governance/check.mjs plan --base 3bb3f0bba27678268fc42a8be00637ab21b97d9a"
+    },
+    {
+      "resultado": "falhou antes de carregar Prisma: EPERM lstat C:\\Users\\yagoa; client não regenerado pelo executor",
+      "comando": "node node_modules/prisma/build/index.js generate --schema apps/api/prisma/schema.prisma"
+    }
+  ],
+  "rollback": {
+    "falha": "Migration usa BEGIN/COMMIT; investigar erro e estado real antes de qualquer nova aplicação. Preservar evidências/backup e resolver pelo fluxo de manutenção autorizado; nunca tratar resultado fiscal incerto como licença para repetir.",
+    "depoisDeAplicar": "Reverter consumidores futuros/código de aplicação, conservando tabelas, vínculos, respostas, triggers, ledger Prisma e SERPRO. Não DROP/TRUNCATE, não apagar migrations aplicadas, não editar checksum nem recriar fatos. As tabelas novas são aditivas e podem permanecer sem consumidor.",
+    "antesDeAplicar": "Retirar o delta de código somente mediante coordenação, preservando trabalhos concorrentes."
+  },
+  "pendencias": [
+    "Principal: executar plan, validate, generate, auditoria SQL/migrations, migrate deploy, gates originais e complementares; revisar resultado efetivo, sem aprovação por skip.",
+    "Revisões independentes fiscal/dados/backend/sistêmica pendentes; executor não aprova a própria entrega.",
+    "Procedimento runtime de custódia, autenticação, capacidades, AAD/tag, replay hash e interpretação fiscal continuam fora deste incremento. SQL verifica estrutura/identidade, não autenticidade criptográfica ou prova declaratória.",
+    "Privilégio de lock FOR SHARE em AppSetting demonstrado somente por ensaio sintético; definição de privilégios runtime permanece pendente, sem grant incorporado.",
+    "Coordenador fiscal, recuperação/reconciliação, Operações/FS12, invalidação de revisões, estados e comandos virão em incrementos próprios.",
+    "Todos os 17 cenários T156–T162 e pendências E1 permanecem abertos até prova individual: concorrência entre processos, reinício real, browser/API/PostgreSQL, recarga, lote parcial e regressões Guias/Contabilização.",
+    "E3 conserva positivo/zero, aumento/redução, DAS pago, mês fechado, retificações sucessivas, histórico integral e reconciliação de efeitos.",
+    "Homologação com provedor real, PA2027, permissões produtivas, PR/SHA/CI da integração e qualquer publicação não concluídos/autorizados por este incremento."
+  ]
+}

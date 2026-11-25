@@ -84,18 +84,33 @@ describe('B3.3 — janela local completa não é seleção de remessa', () => {
       .toEqual(meses.map(mes => ({ pa: Number(mes.replace('-', '')), valor: 0 })));
   });
 
-  test('abertura em 15/11: contexto mensal conservador ainda impede confirmar, sem estender o regime', () => {
+  test('abertura em 15/11: existência comprovada permite série manual apenas na janela de abertura', () => {
     const data = s => new Date(`${s}T00:00:00.000Z`);
     const company = { id: empresaId, dataAbertura: data('2026-11-15'), regimeHistorico: [{
       id: 'regime-fixture', companyId: empresaId, regime: 'SIMPLES', vigenciaInicio: data('2026-11-15'),
       vigenciaFim: null, updatedAt: data('2026-11-15'),
     }] };
+    const before = JSON.stringify(company);
     const ctx = interpretarContextoMensalFs12(company, '2026-11');
     expect(ctx.inicioAtividade).toBe('2026-11');
-    expect(ctx.regimeDoPeriodo).toBeNull();
-    expect(determinarPoliticaDeclaratoriaFs12(ctx).impedimentos).toContain('REGIME_DO_PERIODO_NAO_COMPROVADO');
-    expect(() => validarSerieManualFs12(ctx, [{ mes: '2026-11', valorCentavos: 0 }]))
-      .toThrow(expect.objectContaining({ code: 'FS12_CONTEXTO_PENDENTE' }));
+    expect(ctx.regimeDoPeriodo).toEqual({ empresaId, competencia: '2026-11', tipo: 'SIMPLES_NACIONAL', referencia: 'RegimeHistorico:regime-fixture:2026-11-15T00:00:00.000Z' });
+    expect(determinarPoliticaDeclaratoriaFs12(ctx)).toMatchObject({ situacao: 'EXIGIDA', janela: { competencias: ['2026-11'] } });
+    expect(validarSerieManualFs12(ctx, [{ mes: '2026-11', valorCentavos: 0 }]).totalCentavos).toBe(0);
+    expect(() => validarSerieManualFs12(ctx, [{ mes: '2026-10', valorCentavos: 0 }])).toThrow(expect.objectContaining({ code: 'FS12_SERIE_INVALIDA' }));
+    expect(JSON.stringify(company)).toBe(before);
+    // No blanket relaxation: an older company changing regime mid-month, an
+    // overlapping history, or a regime beginning after opening stay unproved.
+    for (const changed of [
+      { ...company, dataAbertura: data('2020-01-01') },
+      { ...company, regimeHistorico: [...company.regimeHistorico, { ...company.regimeHistorico[0], id: 'overlap' }] },
+      { ...company, regimeHistorico: [{ ...company.regimeHistorico[0], vigenciaInicio: data('2026-11-16') }] },
+    ]) {
+      const pending = interpretarContextoMensalFs12(changed, '2026-11');
+      expect(pending.regimeDoPeriodo).toBeNull();
+      expect(determinarPoliticaDeclaratoriaFs12(pending).impedimentos).toContain('REGIME_DO_PERIODO_NAO_COMPROVADO');
+      expect(() => validarSerieManualFs12(pending, [{ mes: '2026-11', valorCentavos: 0 }]))
+        .toThrow(expect.objectContaining({ code: 'FS12_CONTEXTO_PENDENTE' }));
+    }
   });
 
   test.each(periodos)('%s: omissão, lista vazia e null não são equivalentes na entrada local', pa => {

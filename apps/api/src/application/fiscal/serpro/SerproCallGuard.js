@@ -1,3 +1,5 @@
+import {prepararTransporteComandoFs12,identidadeComandoFs12Atual,associarReservaFs12NaTx,
+  registrarReservaFs12,revalidarFs12NaTx,registrarMarcadorFs12} from '../../../modules/fiscal/publicComandosFs12.js';
 import { conferirModoConsultaDespacho } from './ConsultaPagamentoAutomaticaService.js';
 import crypto from "node:crypto";
 import { conferirContextoCicloFiscal, conferirTentativaAutomaticaDespacho, tentativaAutomaticaSemDespacho, marcarDespachoTentativaAutomatica } from '../automacaoCicloFiscalContext.js';
@@ -21,7 +23,8 @@ export class SerproGuardError extends Error {
 export function identificarChamada(payload, rota) {
   const p = payload && typeof payload === "object" ? payload : {};
   let dados = p.pedidoDados?.dados; try { if (typeof dados === "string") dados = JSON.parse(dados); } catch { dados = null; }
-  const pa = String(dados?.periodoApuracao || dados?.competencia || dados?.anoMesParcela || "");
+  const pgdas=p?.pedidoDados?.idSistema==='PGDASD'&&p?.pedidoDados?.idServico==='TRANSDECLARACAO11';
+  const pa = String((pgdas ? dados?.pa ?? dados?._periodoApuracao : null) || dados?.periodoApuracao || dados?.competencia || dados?.anoMesParcela || "");
   const competencia = /^\d{6}$/.test(pa) ? `${pa.slice(0,4)}-${pa.slice(4)}` : /^\d{4}-\d{2}$/.test(pa) ? pa : null;
   return { competencia, cnpj: String(p?.contribuinte?.numero || "").replace(/\D+/g, ""),
     idSistema: p?.pedidoDados?.idSistema ? String(p.pedidoDados.idSistema) : null,
@@ -68,8 +71,10 @@ export function segundosDeCooldown(chamada) {
   return SERPRO_COOLDOWN_SEGUNDOS;
 }
 export async function autorizarChamada({ payload, rota }, client = prisma) {
+  const fs12=prepararTransporteComandoFs12({payload,rota});
+  const fiscal=fs12?identidadeComandoFs12Atual():null;
   const id = identificarChamada(payload, rota), ctx = contextoSerproAtual();
-  const base = { ...id, acaoId: ctx.acaoId || null, origem: ctx.origem || "nao_informada", userId: ctx.userId || null };
+  const base = { ...id, acaoId: fiscal?.comandoId || ctx.acaoId || null, origem: fiscal?.origem || ctx.origem || "nao_informada", userId: fiscal?.autorId || ctx.userId || null };
   let desfecho;
   try {
     desfecho = await client.$transaction(async (tx) => {
@@ -120,10 +125,13 @@ export async function autorizarChamada({ payload, rota }, client = prisma) {
         return { recusa }; // lançar só após commit: a recusa também precisa de rastro.
       }
       const reserva = await tx.serproChamada.create({ data: { ...base, status: "reservada", forcado } });
+      // Same transaction: failed association rolls back the new ledger reservation.
+      if(fs12) await associarReservaFs12NaTx(tx,{reserva,payload,rota});
       return { autorizacao: { id: reserva.id, inicio: Date.now(), forcado } };
     }, { maxWait: 10000, timeout: 15000, isolationLevel: "ReadCommitted" });
-  } catch (e) { if (e instanceof SerproGuardError || e instanceof AutomacaoCicloFiscalError || e.code?.startsWith('AUTOMACAO_EMPRESA_')) throw e; throw medicaoIndisponivel(); }
+  } catch (e) { if (e instanceof SerproGuardError || e instanceof AutomacaoCicloFiscalError || e.code?.startsWith('AUTOMACAO_EMPRESA_') || e.code?.startsWith('FS12_') || (fs12 && [400,403,404,409,422].includes(e.status))) throw e; throw medicaoIndisponivel(); }
   if (desfecho.recusa) throw desfecho.recusa;
+  if(fs12) registrarReservaFs12(desfecho.autorizacao);
   return desfecho.autorizacao;
 }
 // Linearização da autorização de despacho e da pausa usam o mesmo lock de empresa.
@@ -146,18 +154,23 @@ export async function autorizarDespacho(autorizacao, client = prisma) {
         await conferirPoliticaSerpro(tx, reserva.portalClientId);
         await conferirModoConsultaDespacho(tx, { portalClientId: reserva.portalClientId });
         await conferirTentativaAutomaticaDespacho(tx, { portalClientId: reserva.portalClientId });
+        // Global/company-policy locks already held; FS12 coordination -> ACL/context -> revision.
+        await revalidarFs12NaTx(tx,reserva);
       }
       catch (error) {
-        if (!error.code?.startsWith('SERPRO_') && !error.code?.startsWith('AUTOMACAO_EMPRESA_') && !(error instanceof AutomacaoCicloFiscalError)) throw error;
+        if (!error.code?.startsWith('SERPRO_') && !error.code?.startsWith('AUTOMACAO_EMPRESA_') && !error.code?.startsWith('FS12_') && !(identidadeComandoFs12Atual() && [400,403,404,409,422].includes(error.status)) && !(error instanceof AutomacaoCicloFiscalError)) throw error;
         const abortada = await tx.serproChamada.updateMany({ where: { id: reserva.id, status: 'reservada' }, data: { status: 'abortada_politica', erroCodigo: error.code, erroMensagem: error.message.slice(0, 300), duracaoMs: Date.now() - autorizacao.inicio } });
         if (abortada.count !== 1) throw new SerproGuardError('SERPRO_REGISTRO_INDETERMINADO', 'Não foi possível confirmar o cancelamento antes do despacho. Confira o registro; nenhuma nova operação foi enviada.');
         return { recusa: Object.assign(new SerproGuardError(error.code, error.message, error.detalhe), { recusaAntesDespacho: tentativaAutomaticaSemDespacho() }) };
       }
-      await tx.appSetting.create({ data: { key, value: { reservaId: reserva.id, companyId: reserva.portalClientId, authorizedAt: new Date().toISOString() } } });
-      return {};
+      const fs12Marker={reservaId:reserva.id,companyId:reserva.portalClientId,authorizedAt:new Date().toISOString()};
+      await tx.appSetting.create({ data: { key, value: fs12Marker } });
+      return {fs12Marker:reserva.idSistema==='PGDASD'&&reserva.idServico==='TRANSDECLARACAO11'
+        && identidadeComandoFs12Atual() ? fs12Marker : null};
     }, { maxWait: 10000, timeout: 15000, isolationLevel: 'ReadCommitted' });
-  } catch (error) { if (error instanceof SerproGuardError) throw error; throw medicaoIndisponivel(); }
+  } catch (error) { if (error instanceof SerproGuardError || error.code?.startsWith('FS12_')) throw error; throw medicaoIndisponivel(); }
   if (desfecho.recusa) throw desfecho.recusa;
+  if(desfecho.fs12Marker) registrarMarcadorFs12(autorizacao,desfecho.fs12Marker);
   marcarDespachoTentativaAutomatica();
 }
 export async function concluirChamada(autorizacao, { httpStatus = null, erroCodigo = null, erroMensagem = null, abortadaAuth = false } = {}, client = prisma) {

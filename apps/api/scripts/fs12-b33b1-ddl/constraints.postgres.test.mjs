@@ -8,10 +8,14 @@ const corrected = new URL('../../../../docs/modules/fixtures/fs12-b33b1-ddl/cand
 test('B33b1 candidate SQL on complete existing PostgreSQL16 schema', async t => {
   const db=await connect();
   try {
-    for (const version of ['original','corrected']) {
+    for (const version of ['original','corrected','installed']) {
       await db.query('BEGIN');
-      const schema='fs12_ddl_'+uid().replaceAll('-','');
+      const schema=version==='installed'?'public':'fs12_ddl_'+uid().replaceAll('-','');
       try {
+        if(version==='installed') {
+          assert.equal((await db.query("SELECT count(*)::int AS n FROM _prisma_migrations WHERE migration_name='20261118000000_add_fs12_comando_custodia' AND finished_at IS NOT NULL AND rolled_back_at IS NULL")).rows[0].n,1);
+          await db.query('SET LOCAL search_path TO public');
+        } else {
         await db.query(`CREATE SCHEMA ${schema}; SET LOCAL search_path TO ${schema},public`);
         assert.equal((await db.query('SELECT to_regclass($1) AS relation',[schema+'.fs12_comandos'])).rows[0].relation,null);
         // Existing B32 remains public. Rename only its extra unique index for concurrent
@@ -19,6 +23,7 @@ test('B33b1 candidate SQL on complete existing PostgreSQL16 schema', async t => 
         const originalSql=(await readFile(original,'utf8')).replace('CREATE UNIQUE INDEX fs12_calculo_escopo_vinculo_key ',`CREATE UNIQUE INDEX ${schema}_b32_key `);
         await db.query(originalSql);
         if(version==='corrected') await db.query(await readFile(corrected,'utf8'));
+        }
         const run = (name,fn) => t.test(version+': '+name, async()=>{
           await db.query('SAVEPOINT scenario');
           try { await fn(); } finally { await db.query('ROLLBACK TO SAVEPOINT scenario'); await db.query('RELEASE SAVEPOINT scenario'); }

@@ -37,6 +37,8 @@ import { confirmarFs12DaApuracao } from '../../../modules/fiscal/application/con
 const suite = process.env.ALTAN_TESTE_POSTGRES === '1' ? describe : describe.skip;
 let otherDb;
 let queries = [];
+let queryEvents = [];
+import { chaveCoordenacaoFs12 } from '../../../modules/fiscal/infrastructure/prisma/coordenacaoFs12.js';
 const date = value => new Date(`${value}T00:00:00.000Z`);
 const key = () => randomUUID();
 function app(user) {
@@ -65,37 +67,45 @@ async function command(f, { pa = '2026-11', valor = 0 } = {}) {
     chaveIdempotencia: key(), motivo: r.body.fs12.revisaoVigente ? 'Correção manual sintética' : null };
 }
 const count = f => mockDb.apuracaoFs12Revisao.count({ where: { portalClientId: f.portal.id } });
-function assertNoOtherEffects() {
+function assertNoOtherEffects(f) {
   expect(SerproHttpClient).not.toHaveBeenCalled();
   const writes = queries.filter(q => /\b(INSERT INTO|UPDATE |DELETE FROM)\b/i.test(q));
-  expect(writes.every(q => q.includes('apuracao_fs12_revisoes'))).toBe(true);
+  const coordination = queryEvents.filter(e => writes.includes(e.query) && !e.query.includes('apuracao_fs12_revisoes'));
+  for (const e of coordination) {
+    expect(e.query).toMatch(/INSERT INTO "AppSetting"/);
+    expect(e.query).toContain('ON CONFLICT ("key") DO UPDATE');
+    expect(e.query).toContain('jsonb_set');
+    expect(JSON.parse(e.params)).toEqual([chaveCoordenacaoFs12({portalClientId:f.portal.id,competencia:'2026-11'})]);
+  }
+  expect(writes.length).toBe(queryEvents.filter(e => writes.includes(e.query) && e.query.includes('apuracao_fs12_revisoes')).length + coordination.length);
 }
-// Both transactions read the same predecessor before either is allowed to insert.
+// Rendezvous BEFORE the first coordination statement. Holding that lock while
+// waiting for the other protected read would deadlock the harness itself.
 function barrierClients(clients) {
-  let arrivals = 0;
-  let release;
+  let arrivals = 0, release;
   const ready = new Promise(resolve => { release = resolve; });
-  const withBarrier = db => new Proxy(db, { get(target, name) {
-    if (name === '$transaction') return (fn, options) => target.$transaction(tx => fn(new Proxy(tx, { get(inner, field) {
-      if (field === 'apuracaoFs12Revisao') return new Proxy(inner[field], { get(model, method) {
-        if (method === 'findFirst') return async args => {
-          const found = await model.findFirst(args);
-          if (args.orderBy && arrivals < 2) {
-            arrivals++;
-            if (arrivals === 2) release();
-            await Promise.race([ready, new Promise((_, reject) => { const timer = setTimeout(() => reject(Error('B31 concurrency barrier timed out')), 4000); ready.finally(() => clearTimeout(timer)); })]);
-          }
-          return found;
-        };
-        const value = model[method]; return typeof value === 'function' ? value.bind(model) : value;
-      } });
-      const value = inner[field]; return typeof value === 'function' ? value.bind(inner) : value;
-    } })), options);
-    const value = target[name]; return typeof value === 'function' ? value.bind(target) : value;
-  } });
-  return { clients: clients.map(withBarrier), arrivals: () => arrivals };
+  const pids = new Set();
+  const withBarrier = db => {
+    let firstAttempt = true;
+    return new Proxy(db, { get(target, name) {
+      if (name === '$transaction') return (fn, options) => target.$transaction(async tx => {
+        if (firstAttempt) {
+          firstAttempt = false;
+          const [{pid}] = await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');
+          pids.add(pid); arrivals++;
+          if (arrivals === 2) release();
+          await new Promise((resolve,reject) => {
+            const timer=setTimeout(()=>reject(Error('B31 concurrency barrier timed out')),4000);
+            ready.then(()=>{clearTimeout(timer);resolve();},reject);
+          });
+        }
+        return fn(tx);
+      },options);
+      const value=target[name]; return typeof value==='function'?value.bind(target):value;
+    }});
+  };
+  return {clients:clients.map(withBarrier),arrivals:()=>arrivals,pids:()=>pids.size};
 }
-
 suite('B3.1 manual FS12: real PostgreSQL16 and authenticated HTTP', () => {
   beforeAll(async () => {
     const raw = process.env.ALTAN_GOVERNANCE_TEST_DATABASE_URL;
@@ -106,11 +116,11 @@ suite('B3.1 manual FS12: real PostgreSQL16 and authenticated HTTP', () => {
       throw Error('Explicit disposable FS12 B31 loopback database required');
     mockDb = new PrismaClient({ datasources: { db: { url: raw } }, log: [{ emit: 'event', level: 'query' }] });
     otherDb = new PrismaClient({ datasources: { db: { url: raw } } });
-    mockDb.$on('query', e => queries.push(e.query));
+    mockDb.$on('query', e => {queries.push(e.query); queryEvents.push(e);});
     const [version] = await mockDb.$queryRawUnsafe("SELECT current_setting('server_version_num')::int AS version");
     expect(version.version).toBeGreaterThanOrEqual(160000); expect(version.version).toBeLessThan(170000);
   });
-  beforeEach(() => { mockBeforeTransaction = null; mockFailAfterInsert = false; queries = []; jest.clearAllMocks(); });
+  beforeEach(() => { mockBeforeTransaction = null; mockFailAfterInsert = false; queries = []; queryEvents = []; jest.clearAllMocks(); });
   afterEach(() => { expect(SerproHttpClient).not.toHaveBeenCalled(); });
   afterAll(async () => { await mockDb?.$disconnect(); await otherDb?.$disconnect(); });
 
@@ -137,7 +147,7 @@ suite('B3.1 manual FS12: real PostgreSQL16 and authenticated HTTP', () => {
     expect(history.body.fs12.integracao.permiteNovoCalculo).toBe(false);
     expect(history.body.fs12.autorizaEfeitoFiscal).toBe(false);
     expect((await post(f, input)).body.confirmacao.id).toBe(r.body.confirmacao.id);
-    expect(await count(f)).toBe(2); assertNoOtherEffects();
+    expect(await count(f)).toBe(2); assertNoOtherEffects(f);
   });
 
   test('same key with changed content, stale predecessor and different actor never replace a revision', async () => {
@@ -159,7 +169,7 @@ suite('B3.1 manual FS12: real PostgreSQL16 and authenticated HTTP', () => {
       execute(barrier.clients[0], input),
       execute(barrier.clients[1], mode === 'same' ? input : { ...input, chaveIdempotencia: key() }),
     ]);
-    expect(barrier.arrivals()).toBe(2);
+    expect(barrier.arrivals()).toBe(2); expect(barrier.pids()).toBe(2);
     expect(await count(f)).toBe(1);
     if (mode === 'same') {
       expect(results.every(x => x.status === 'fulfilled')).toBe(true);
@@ -291,6 +301,6 @@ suite('B3.1 manual FS12: real PostgreSQL16 and authenticated HTTP', () => {
     expect(queries.some(q => /\b(INSERT INTO|UPDATE |DELETE FROM)\b/i.test(q))).toBe(false);
     const forbidden = await get(f, '2026-11', other.user);
     expect(forbidden.status).toBe(403); expect(forbidden.body).not.toHaveProperty('fs12');
-    assertNoOtherEffects();
+    assertNoOtherEffects(f);
   });
 });

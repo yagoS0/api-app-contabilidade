@@ -97,7 +97,7 @@ describe("valor indefinido — o campo aparece VAZIO, com o motivo", () => {
       semMovimentoDisponivel: true,
       prefillValor: { total: 0, indefinido: true, motivo: "sem rateio", mercadoAplicado: null, origem: "faturamento_da_competencia" },
     });
-    expect(await screen.findByText(/Declarar SEM MOVIMENTO/i)).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: /Declarar SEM MOVIMENTO/i })).not.toBeChecked();
   });
 
   it("⚠ apagar o campo NÃO grava 0 — `Number('') || 0` seria uma afirmação inventada", async () => {

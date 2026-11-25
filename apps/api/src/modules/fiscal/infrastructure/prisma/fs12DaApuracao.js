@@ -1,3 +1,4 @@
+import {coordenarEscopoFs12,serializacaoFs12} from './coordenacaoFs12.js';
 import { createHash } from 'node:crypto';
 import { prisma } from '../../../../infrastructure/db/prisma.js';
 import { administradorGlobal, avaliarAcessoEmpresaEscritorio } from '../../../identity/public.js';
@@ -9,15 +10,22 @@ const canonical = value => Array.isArray(value) ? value.map(canonical)
 const hash = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 const escopo = ({ portalClientId, companyId, competencia }) => ({ portalClientId, companyId, competencia });
 
-export function criarPersistenciaFs12(db = prisma) {
+export function criarPersistenciaFs12(db = prisma, {coordenacaoExterna=false} = {}) {
   return { transacionar: async (executar, { escrita }) => {
     // Retry local de serialização: sem transporte, somente transação de confirmação.
     // Replay relê autorização e idempotência; revisão antiga continua conflito.
     for (let tentativa = 0; ; tentativa++) {
       try {
-        return await db.$transaction(async tx => executar({
+        return await db.$transaction(async tx => {
+          let escopoCoordenado=null;
+          return executar({
           hash, agora: () => new Date().toISOString(),
-          autorizar: async ({ autorId, portalClientId }) => {
+          autorizar: async ({ autorId, portalClientId, competencia }) => {
+            if(escrita && !coordenacaoExterna){
+              const scope=JSON.stringify([portalClientId,competencia]);
+              if(escopoCoordenado && escopoCoordenado!==scope)throw erroFs12('FS12_ESCOPO_TRANSACAO_INVALIDO','Confirme uma empresa e competência por operação.',409);
+              if(!escopoCoordenado){await coordenarEscopoFs12(tx,{autorId,portalClientId,competencia});escopoCoordenado=scope;}
+            }
             if (escrita) {
               await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${autorId} FOR SHARE`;
               await tx.$queryRaw`SELECT id FROM "CompanyFirmAccess" WHERE "userId" = ${autorId} AND "companyId" = ${portalClientId} FOR SHARE`;
@@ -50,9 +58,9 @@ export function criarPersistenciaFs12(db = prisma) {
           lerUltima: entrada => tx.apuracaoFs12Revisao.findFirst({ where: escopo(entrada), orderBy: { revisao: 'desc' }, include: { autor: { select: { name: true } } } }),
           lerComando: entrada => tx.apuracaoFs12Revisao.findFirst({ where: { ...escopo(entrada), chaveIdempotencia: entrada.chaveIdempotencia }, include: { autor: { select: { name: true } } } }),
           inserir: data => tx.apuracaoFs12Revisao.create({ data, include: { autor: { select: { name: true } } } }),
-        }), { isolationLevel: escrita ? 'Serializable' : 'RepeatableRead' });
+        }); }, { isolationLevel: escrita ? 'Serializable' : 'RepeatableRead' });
       } catch (error) {
-        if (['P2034', 'P2002'].includes(error?.code)) {
+        if (serializacaoFs12(error) || error?.code==='P2002') {
           if (tentativa < 2) continue;
           throw erroFs12('FS12_REVISAO_CONFLITO', 'Confirmação concorrente. Recarregue antes de confirmar.', 409);
         }

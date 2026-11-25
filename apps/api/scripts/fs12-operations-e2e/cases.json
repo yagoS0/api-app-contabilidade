@@ -1,0 +1,3513 @@
+{
+  "status": "PREPARADO_NAO_EXECUTADO",
+  "cases": [
+    {
+      "id": "T156.1",
+      "cenario": "Histórico completo",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Abrir Operações PA11, preparar folha, conferir 12 meses, confirmar, reler aptidão, calcular individual e selecionadas.",
+      "aceite": "Série/revisão persistidas, payload fiscal local idêntico à série confirmada, nenhum efeito ao apenas confirmar folha.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.2",
+      "cenario": "Histórico parcial",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Seed com lacunas; abrir painel e tentar confirmar sem completar; completar somente meses comprovados e confirmar.",
+      "aceite": "Lacunas explícitas; nenhum zero inferido; confirmação anterior preservada quando incompleta.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.3",
+      "cenario": "Histórico ausente",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": null
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": null
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Seed sem histórico; abrir painel e formulário; tentar calcular; declarar manualmente série explícita.",
+      "aceite": "Não inventa folha; razão visível; confirmação persiste e relê sem autocálculo.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": null
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": null
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.4",
+      "cenario": "Empresa recém-constituída",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2026-11",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2026-11",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Seed abertura15/11 e PA11; outra abertura15/10 PA11; terceira empresa antiga muda regime15/11.",
+      "aceite": "Janela conforme política B1; período efetivo de existência evidenciado; sem vigência fictícia; mudança de regime não equivale abertura; payload local não homologa SERPRO real.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.5",
+      "cenario": "Sem folha",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 0
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 0
+        }
+      ],
+      "acao": "Empresa sem empregados/prolabore: apresentar falta de histórico e declarar zero explicitamente na série.",
+      "aceite": "Não confundir ausência de evidência com folha zero; confirmar fonte/motivo/revisão.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 0
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 0
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.6",
+      "cenario": "Valores zero",
+      "competencia": "2026-11",
+      "receitaAtual": 0,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 0
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 0
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 0
+        }
+      ],
+      "acao": "Base receita zero comprovada: conferir opção sem movimento; depois repetir com receita ausente e mesma opção.",
+      "aceite": "Primeiro zero explícito preservado; segundo não calcula; revisão FS12 e zeros auditáveis.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 0
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 0
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 0
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.7",
+      "cenario": "Sujeita ao Fator R",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": true,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Dentro de Operações editar segregações e FS12, confirmar, calcular, salvar, conferir, liberar e transmitir na confirmação própria.",
+      "aceite": "Sem navegar para outra aba; mesmo motor; revisão/contexto confirmados; efeito fiscal somente no comando explícito.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T156.8",
+      "cenario": "Não sujeita ao Fator R",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Empresa sem Fator R PA11/12: confirmar FS12, calcular; repetir PA2027.",
+      "aceite": "Não presume dispensa declaratória; 2027 continua bloqueado e motivo visível.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Fluxo normal",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T157.1",
+      "cenario": "Divergência local/fiscal",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Fiscal local responde declaração localizada sem vínculo causal enquanto tentativa Altan UNKNOWN; abrir situação fiscal.",
+      "aceite": "Declaração confirmada origem DESCONHECIDA e tentativa sem correlação simultâneas; nenhum reenvio nem resolução implícita por documento.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Injetar somente resposta fiscal local MSG029/030 e índice independente, preservar revisão manual",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T157.2",
+      "cenario": "Folha alterada após cálculo",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Calcular revisão2, confirmar revisão3 em segunda sessão, tentar confirmar/liberar resultado anterior.",
+      "aceite": "Revisão antiga recusada antes de despacho; novo cálculo exige releitura.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Confirmar revisão+1 pela API após cálculo, não UPDATE direto",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T157.3",
+      "cenario": "Receita alterada após cálculo",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Calcular, acrescentar nota sintética pelo fluxo real e tentar liberar/transmitir cálculo anterior.",
+      "aceite": "Fingerprint/prova inválidos; motivo visível; nenhuma chamada fiscal.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Adicionar nota sintética pela rota importação/ingestão real após cálculo",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T157.4",
+      "cenario": "Revisão alterada antes de transmitir",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Preparar confirmação de transmissão, alterar FS12 em segunda sessão e confirmar primeira.",
+      "aceite": "Backend revalida revisão sob custódia; zero despacho com prova obsoleta.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Duas sessões; confirmar nova revisão entre abrir e confirmar transmissão",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T158.1",
+      "cenario": "Retorno tardio",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Provedor local retém resposta; trocar empresa/PA, liberar resposta; também alterar revisão enquanto tentativa aguarda.",
+      "aceite": "UI não promove outra identidade; fiscal não promove prova obsoleta; custódia conserva tentativa.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Provider rule hold, trocar empresa/PA e liberar resposta",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T158.2",
+      "cenario": "Transmissão interrompida",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Provedor local aceita comando e retém resposta; encerrar processo API de teste; reiniciar mesmo DB; recarregar browser; conferir explicitamente.",
+      "aceite": "Reserva/UNKNOWN sobrevivem; não retransmite; consulta/reconciliação causal fica auditada. PROCESS_RESTART_ONLY não equivale pane do SO.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Provider hold/drop; restart API, readback, reconciliar requestId original",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T159.1",
+      "cenario": "Processamento simultâneo",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Duas sessões e dois processos API de teste disputam mesmo comando/revisão no mesmo PG.",
+      "aceite": "Uma reserva e no máximo um despacho; perdedor com resposta explícita e estado relido.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Dois processos API reais, mesmoPG e chave idempotência",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T159.2",
+      "cenario": "Lote com falhas parciais",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Lote A sucesso, B erro conhecido, C interrompida; recarregar página e reiniciar API antes de consultar cada resultado.",
+      "aceite": "Resultado durável por empresa/tentativa; falhas isoladas; nenhum POST repetido na recuperação.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Três empresas: sucesso/rejeição/incerta, sem repetirPOST ao reload",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    },
+    {
+      "id": "T160",
+      "cenario": "Retificação FS12",
+      "competencia": "2026-11",
+      "receitaAtual": 1000,
+      "sujeitoFatorR": false,
+      "fonte": "Documento de ensaio sintético; não é folha fiscal real",
+      "historicoInicial": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "documentoComplementarSintetico": [
+        {
+          "mes": "2025-11",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2025-12",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-01",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-02",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-03",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-04",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-05",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-06",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-07",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-08",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-09",
+          "valorCentavos": 70000
+        },
+        {
+          "mes": "2026-10",
+          "valorCentavos": 70000
+        }
+      ],
+      "acao": "Declaração confirmada causal, reabrir com motivo, confirmar revisão atual, recalcular e transmitir retificadora sob intenção própria.",
+      "aceite": "Custódia/revisão/intenção corretas e anterior preservada. Efeitos financeiros/contábeis E3 não inferidos deste ensaio.",
+      "persistirConfirmacaoPor": "API/UI reais, nunca seed direto de confirmação ou snapshot",
+      "faseEspecial": "Primeira declaração causal pela API; reabertura motivada; revisão atual; retificadora",
+      "preparacaoDezembro": {
+        "competencia": "2026-12",
+        "historicoInicial": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "documentoComplementarSintetico": [
+          {
+            "mes": "2025-12",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-01",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-02",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-03",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-04",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-05",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-06",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-07",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-08",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-09",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-10",
+            "valorCentavos": 70000
+          },
+          {
+            "mes": "2026-11",
+            "valorCentavos": 70000
+          }
+        ],
+        "observacao": "Reconfirmar contexto/revisão pela API/UI real; não reaproveitar prova de novembro."
+      }
+    }
+  ],
+  "regras": [
+    "null não é zero; não completar lacunas automaticamente",
+    "meses anteriores à constituição não aparecem",
+    "novembro/dezembro2026 precisam percursos separados;2027 mantém bloqueio",
+    "valores calculados fake não homologam tributo/anexoFatorR"
+  ],
+  "contratosLocais": [
+    "apps/api/src/application/fiscal/serpro/__tests__/fs12B33Contrato.test.js",
+    "apps/api/src/application/notas/apuracao/v2/__tests__/indiceDeclaracao.test.js",
+    "apps/api/src/application/notas/adn-nacional/AdnNacionalClient.js",
+    "apps/api/src/modules/fiscal/domain/politicaDeclaratoriaFs12.js"
+  ]
+}

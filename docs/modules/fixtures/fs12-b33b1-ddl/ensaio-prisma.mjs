@@ -15,12 +15,17 @@ const additions = {
   ApuracaoFs12Revisao: '  comandosFs12 Fs12Comando[] @relation("Fs12ComandoRevisao")',
   ApuracaoFs12Calculo: '  comandosOrigemFs12 Fs12Comando[] @relation("Fs12ComandoOrigem")\n  associacoesFs12 Fs12ComandoCalculo[] @relation("Fs12AssociacaoCalculo")\n  @@unique([id, portalClientId, companyId, competencia, revisaoFs12], map: "fs12_calculo_escopo_vinculo_key")',
 };
-for (const [model, fields] of Object.entries(additions)) {
-  const regex = new RegExp(`(model ${model} \\{[\\s\\S]*?)(\\r?\\n\\})`);
-  if (!regex.test(schema)) throw new Error(`Model absent: ${model}`);
-  schema = schema.replace(regex, `$1\n${fields}$2`);
+// Historical fixture remains usable on pre-integration trees. On the integrated schema,
+// validate the actual four models rather than adding duplicate definitions.
+const integrated = /^model Fs12Comando \{/m.test(schema);
+if (!integrated) {
+  for (const [model, fields] of Object.entries(additions)) {
+    const regex = new RegExp(`(model ${model} \\{[\\s\\S]*?)(\\r?\\n\\})`);
+    if (!regex.test(schema)) throw new Error(`Model absent: ${model}`);
+    schema = schema.replace(regex, `$1\n${fields}$2`);
+  }
+  schema += '\n' + readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'ensaio.prisma'), 'utf8');
 }
-schema += '\n' + readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'ensaio.prisma'), 'utf8');
 const out = resolve(root, '.altan-governance/prisma-ensaio/schema.prisma');
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, schema);

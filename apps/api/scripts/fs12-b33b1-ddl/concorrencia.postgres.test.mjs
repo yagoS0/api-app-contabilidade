@@ -130,16 +130,19 @@ async function realFixture(prisma) {
   await confirmarFs12DaApuracao(input,criarPersistenciaFs12(prisma));
   return {...identity,companyId:company.id,input:{...input,revisaoEsperada:1,chaveIdempotencia:uid(),motivo:'Synthetic replacement'}};
 }
-async function wrappedB31(prisma, f, inside=async()=>{}, onPid=()=>{}) {
+async function wrappedB31(prisma, f, inside=async()=>{}, onPid=()=>{}, trace=null) {
   const wrapped={$transaction:(callback,options)=>prisma.$transaction(async tx=>{
     const facade={query:async(sql,args=[])=>{
       const rows=await tx.$queryRawUnsafe(sql,...args); return {rows,rowCount:rows.length};
     }};
-    const [{pid}]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid'); onPid(pid);
+    const [{pid,xid}]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid, txid_current()::text AS xid');
+    trace?.attempts.push(xid); onPid(pid);
     await tx.$queryRawUnsafe("SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext($1))",'company_automation:'+f.portalClientId);
     await counter(facade,f.portalClientId); await inside(tx);
     return callback(tx);
-  },{...options,timeout:15000})};
+  },{...options,timeout:15000}).catch(error=>{
+    trace?.errors.push({code:error.code,sqlState:error.meta?.code}); throw error;
+  })};
   return confirmarFs12DaApuracao(f.input,criarPersistenciaFs12(wrapped));
 }
 for(const first of ['confirmation','authorization']) test(`REAL B31 with test-only coordination wrapper, first=${first}`,()=>clients(async(db,a)=>{
@@ -155,18 +158,23 @@ for(const first of ['confirmation','authorization']) test(`REAL B31 with test-on
       assert.equal((await db.query('SELECT max(revisao) AS r FROM apuracao_fs12_revisoes WHERE "portalClientId"=$1',[f.portalClientId])).rows[0].r,2);
     } else {
       await a.query('BEGIN ISOLATION LEVEL SERIALIZABLE');await lock(a,f.portalClientId);await counter(a,f.portalClientId);
-      let started=false;
+      let started=false, completedBodies=0;
+      const trace={attempts:[],errors:[]};
       const backend=deferred();
-      const confirming=wrappedB31(prisma,f,async()=>{started=true;},backend.resolve);
+      const confirming=wrappedB31(prisma,f,async()=>{started=true;completedBodies++;},backend.resolve,trace);
       await observedWait(db,await backend.promise);assert.equal(started,false);
       assert.equal((await a.query('SELECT max(revisao) AS r FROM apuracao_fs12_revisoes WHERE "portalClientId"=$1',[f.portalClientId])).rows[0].r,1);
       await insert(a,'AppSetting',{key:'synthetic_t2:'+f.portalClientId,value:{revisao:1,nenhumaRede:true},updatedAt:new Date()});
       await a.query('COMMIT');
-      // Prisma reports raw SQL serialization as P2010/meta.code=40001, not P2034.
-      // Characterize this integration gap rather than silently broadening production retry.
-      await assert.rejects(confirming,e=>e.code==='P2010' && e.meta?.code==='40001');
-      assert.equal((await db.query('SELECT max(revisao) AS r FROM apuracao_fs12_revisoes WHERE "portalClientId"=$1',[f.portalClientId])).rows[0].r,1);
-      await wrappedB31(prisma,f); // explicit local test retry, never transport
+      // E2 retries the entire local B31 transaction after raw SQL serialization.
+      // The waiting first transaction keeps its old snapshot and MUST abort;
+      // the second transaction rereads after the authorization committed.
+      await confirming;
+      assert.deepEqual(trace.errors,[{code:'P2010',sqlState:'40001'}]);
+      assert.equal(trace.attempts.length,2);
+      assert.equal(new Set(trace.attempts).size,2,'Retry must use a fresh PostgreSQL transaction');
+      assert.equal(completedBodies,1,'The aborted attempt cannot run the B31 body');
+      assert.equal(started,true);
       assert.equal((await db.query('SELECT value FROM "AppSetting" WHERE key=$1',['synthetic_t2:'+f.portalClientId])).rows[0].value.revisao,1);
       assert.equal((await db.query('SELECT max(revisao) AS r FROM apuracao_fs12_revisoes WHERE "portalClientId"=$1',[f.portalClientId])).rows[0].r,2);
     }

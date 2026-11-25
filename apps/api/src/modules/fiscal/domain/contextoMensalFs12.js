@@ -7,6 +7,9 @@ export function interpretarContextoMensalFs12(company, competencia) {
   // Datas do cadastro são civis armazenadas em UTC. Instantes não normalizados
   // não são promovidos a vigência mensal por inferência.
   const civil = value => { const s = iso(value); return s?.endsWith('T00:00:00.000Z') ? s.slice(0, 10) : null; };
+  const abertura = civil(company.dataAbertura);
+  const aberturaNoPa = abertura && abertura >= inicio && abertura <= fim;
+  const inicioEfetivo = aberturaNoPa ? abertura : inicio;
   const historico = company.regimeHistorico || [];
   const datasValidas = historico.every(h => civil(h.vigenciaInicio)
     && (h.vigenciaFim == null || (civil(h.vigenciaFim) && civil(h.vigenciaFim) >= civil(h.vigenciaInicio))));
@@ -14,10 +17,15 @@ export function interpretarContextoMensalFs12(company, competencia) {
     && (h.vigenciaFim == null || civil(h.vigenciaFim) >= inicio)) : [];
   const h = candidatos.length === 1 ? candidatos[0] : null;
   const tipos = { SIMPLES: 'SIMPLES_NACIONAL', LUCRO_PRESUMIDO: 'LUCRO_PRESUMIDO', LUCRO_REAL: 'LUCRO_REAL', MEI: 'MEI' };
-  const integral = h && h.companyId === company.id && civil(h.vigenciaInicio) <= inicio
+  // No PA de constituição, comprovar todo o período de existência, sem antecipar
+  // a vigência. Histórico anterior à abertura é contraditório e pede conferência.
+  const aberturaComprovada = abertura && abertura <= fim
+    && (!aberturaNoPa || historico.every(item => civil(item.vigenciaInicio) >= abertura));
+  const integral = aberturaComprovada && h && h.companyId === company.id
+    && civil(h.vigenciaInicio) <= inicioEfetivo
     && (h.vigenciaFim == null || civil(h.vigenciaFim) >= fim) && tipos[h.regime] && h.id && iso(h.updatedAt);
   return { empresaId: company.id, competenciaApuracao: competencia,
-    inicioAtividade: civil(company.dataAbertura)?.slice(0, 7) ?? null,
+    inicioAtividade: abertura?.slice(0, 7) ?? null,
     regimeDoPeriodo: integral ? { empresaId: company.id, competencia, tipo: tipos[h.regime],
       referencia: `RegimeHistorico:${h.id}:${iso(h.updatedAt)}` } : null };
 }

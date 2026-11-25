@@ -1,3 +1,6 @@
+import { FS12_CUSTODY_CONFIG } from './config.js';
+import { inicializarCustodiaFiscalFs12 } from './composition/inicializarCustodiaFiscalFs12.js';
+import { identificarChamada } from './application/fiscal/serpro/SerproCallGuard.js';
 import { runSimplesEnvioGuiasWorkerLoop } from './workers/simplesEnvioGuiasWorker.js';
 import { runSimplesColetaCalculoWorkerLoop } from "./workers/simplesColetaCalculoWorker.js";
 import { encerrarPoolEmissaoLocks } from './infrastructure/db/prismaEmissaoLocks.js';
@@ -152,6 +155,7 @@ if (!CERT_SECRET_KEY || CERT_SECRET_KEY.length < CERT_SECRET_KEY_MIN_LENGTH) {
   process.exit(1);
 }
 
+await inicializarCustodiaFiscalFs12({config:FS12_CUSTODY_CONFIG,db:prisma,identificarEnvelope:identificarChamada,log});
 const servidor = app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
   // Q9 seeds: cria/atualiza templates globais de parcelamento (Simples, INSS, ...).

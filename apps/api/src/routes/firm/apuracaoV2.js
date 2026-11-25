@@ -1,3 +1,4 @@
+import { avaliarAptidaoFiscalOperacoes, registrarIntervencaoFiscalFs12 } from '../../composition/execucaoFs12.js';
 // Q14.2.d — Endpoints do sistema de apuração v2.
 // Mount: /firm/companies/:companyId/{cadastro-fiscal,produtos-servicos,pendencias,classificar-v2}
 
@@ -81,6 +82,20 @@ function mapRegime(company) {
 export function createApuracaoV2Router({ log } = {}) {
   const router = Router({ mergeParams: true });
 
+  router.post('/fechamento/:competencia/intervencoes', requireFirmCompanyAccess({minRole:'ACCOUNTANT'}), async(req,res)=>{
+    try {
+      const {comandoId,revisaoFs12,motivo,resultado,numeroDeclaracao,chaveIdempotencia}=req.body||{};
+      return res.json(await registrarIntervencaoFiscalFs12({portalClientId:String(req.params.companyId),competencia:String(req.params.competencia),
+        autorId:req.auth?.user?.id,comandoId,revisaoFs12,motivo,resultado,numeroDeclaracao,chaveIdempotencia}));
+    } catch(error){return bad(res,error.status||503,error.code||'FS12_INTERVENCAO_INDISPONIVEL',error.message);}
+  });
+  router.get('/fechamento/:competencia/aptidao', requireFirmCompanyAccess({minRole:'ACCOUNTANT'}), async (req,res) => {
+    try {
+      const aptidao=await avaliarAptidaoFiscalOperacoes({portalClientId:String(req.params.companyId),competencia:String(req.params.competencia),
+        autorId:req.auth?.user?.id,...(typeof req.query?.calculoId==='string'?{calculoId:req.query.calculoId}:{})});
+      return res.json({ok:true,aptidao});
+    } catch(error) {return bad(res,error.status||503,error.code||'FS12_APTIDAO_INDISPONIVEL',error.message||'Não foi possível conferir a aptidão fiscal.');}
+  });
   router.get('/fechamento/:competencia/fs12/calculos/:calculoId', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -766,14 +781,14 @@ export function createApuracaoV2Router({ log } = {}) {
     backgroundRoute("apuracao-calculo", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
-      const { atividades, folhaMensal12, regimeApuracao, semMovimento } = req.body || {};
+      const { atividades, folhaMensal12, regimeApuracao, semMovimento, fs12RevisaoEsperada, fs12ContextoRevisao, chaveIdempotencia } = req.body || {};
       try {
         // As chamadas ao SERPRO daqui pra baixo são PAGAS. O contexto leva quem disparou (para o
         // registro) e o `forcar`, que só um ADMIN consegue pedir — é o escape do teto diário
         // quando o fechamento está em cima do prazo. Fica gravado quem forçou.
         const result = await comContextoSerpro(
           { origem: "fechamento:calcular", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
-          () => calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento: Boolean(semMovimento) }),
+          () => calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento: Boolean(semMovimento), autorId:req.auth?.user?.id, fs12RevisaoEsperada, fs12ContextoRevisao, chaveIdempotencia }),
         );
         return res.json({ ok: true, result });
       } catch (err) {
@@ -809,7 +824,7 @@ export function createApuracaoV2Router({ log } = {}) {
     backgroundRoute("apuracao-transmissao", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
-      const { confirmCompetencia, calculoId } = req.body || {};
+      const { confirmCompetencia, calculoId, chaveIdempotencia } = req.body || {};
       if (confirmCompetencia !== competencia) {
         return bad(res, 400, "confirm_competencia_mismatch",
           "Digite a competência exata pra confirmar a transmissão (proteção contra envio acidental).");
@@ -817,7 +832,7 @@ export function createApuracaoV2Router({ log } = {}) {
       try {
         const result = await comContextoSerpro(
           { origem: "fechamento:transmitir", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
-          () => transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, calculoId }),
+          () => transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, calculoId, chaveIdempotencia }),
         );
         return res.json({ ok: true, result });
       } catch (err) {
@@ -873,8 +888,11 @@ export function createApuracaoV2Router({ log } = {}) {
   );
 
   router.post('/fechamento/:competencia/conferir-transmissao', requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute("apuracao-conferencia-transmissao", async (req, res) => {
+    const encerrarSemDespacho=req.body?.encerrarSemDespacho===true;
+    if(encerrarSemDespacho && (req.body?.confirmEncerramentoSemDespacho!==true || req.body?.confirmCompetencia!==String(req.params.competencia)))
+      return bad(res,400,'FS12_ENCERRAMENTO_NAO_CONFIRMADO','Confirme explicitamente o encerramento sem despacho e a competência.');
     try {
-      const result = await comContextoSerpro({ origem: 'fechamento:conferir-transmissao', atualizar: true, userId: req.auth?.user?.id }, () => conferirTransmissaoFechamento({ portalClientId: String(req.params.companyId), competencia: String(req.params.competencia) }));
+      const result = await comContextoSerpro({ origem: 'fechamento:conferir-transmissao', atualizar: true, userId: req.auth?.user?.id }, () => conferirTransmissaoFechamento({ portalClientId: String(req.params.companyId), competencia: String(req.params.competencia), autorId:req.auth?.user?.id, encerrarSemDespacho }));
       return res.json({ ok: true, result });
     } catch (err) { return bad(res, err?.code === 'ESTADO_INVALIDO' ? 409 : statusForFechamentoErr(err), err?.code || 'conferencia_transmissao_failed', err?.message || 'Erro ao conferir transmissão'); }
   }, "Conferir transmissão da apuração"));
@@ -903,7 +921,7 @@ export function createApuracaoV2Router({ log } = {}) {
     backgroundRoute("apuracao-retificacao", async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
-      const { confirmCompetencia, confirmRetificar, calculoId } = req.body || {};
+      const { confirmCompetencia, confirmRetificar, calculoId, chaveIdempotencia } = req.body || {};
       if (confirmCompetencia !== competencia) {
         return bad(res, 400, "confirm_competencia_mismatch",
           "Digite a competência exata pra confirmar a retificação.");
@@ -915,7 +933,7 @@ export function createApuracaoV2Router({ log } = {}) {
       try {
         const result = await comContextoSerpro(
           { origem: "fechamento:retificar", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
-          () => transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, retificar: true, calculoId }),
+          () => transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, retificar: true, calculoId, chaveIdempotencia }),
         );
         return res.json({ ok: true, result });
       } catch (err) {
