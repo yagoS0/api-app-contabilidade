@@ -105,6 +105,32 @@ export function criarAplicacaoRespostaFs12({ db, custodia, cifra, hash, validarS
         pendencias:comando.intencao==='SIMULAR'?[]:['DOCUMENTOS','CONTABILIZACAO']};
     });
   }
+  // Historical presentation only. No dispatch capability or state promotion.
+  async function historicoConfirmado(comando, recebido) {
+    const prep = comando.esperado.preparacao;
+    if (!prep || hash(prep) !== comando.esperado.preparoHash) return null;
+    const association = await db.fs12ComandoCalculo.findUnique({where:{comandoId:comando.id}});
+    if (!association || association.respostaId !== recebido.resposta.id || association.vinculoId !== comando.vinculoOrigemId) return null;
+    const vinculo = await db.apuracaoFs12Calculo.findUnique({where:{id:association.vinculoId}});
+    const snapshot = await db.apuracaoSnapshot.findUnique({where:whereSnapshot(comando)});
+    if (!vinculo || !snapshot || snapshot.estado !== 'transmitida' || snapshot.idempotencyKey !== prep.calculoId
+      || snapshot.simulacaoSerpro?._portalTransmissao?.comandoId !== comando.id
+      || snapshot.numeroDeclaracao !== recebido.desfecho.evidencia.numeroDeclaracao || vinculo.calculoId !== prep.calculoId) return null;
+    for (const field of ['portalClientId','companyId','competencia','revisaoFs12']) {
+      if (association[field] !== comando[field] || vinculo[field] !== comando[field]) return null;
+    }
+    if (association.intencao !== comando.intencao || vinculo.contextoHash !== comando.contextoHash) return null;
+    let calculo;
+    try { calculo = validarSnapshot(snapshot,{...scope(comando),calculoId:prep.calculoId}); } catch { return null; }
+    if (calculo.calculoId !== prep.calculoId || calculo.fs12?.revisao !== comando.revisaoFs12
+      || hash(vinculo.calculoConfirmado) !== vinculo.calculoHash || hash(calculo) !== vinculo.calculoHash) return null;
+    const valor = parseRetorno(recebido.raw).dasValor;
+    if (typeof valor !== 'number' || !Number.isFinite(valor) || valor < 0
+      || snapshot.dasRetornadoSerpro == null || snapshot.dasRetornadoSerpro === '' || Number(snapshot.dasRetornadoSerpro) !== valor) return null;
+    return {portalClientId:comando.portalClientId,competencia:comando.competencia,comandoId:comando.id,
+      calculoId:prep.calculoId,vinculoId:vinculo.id,respostaId:recebido.resposta.id,dasValor:valor,
+      estado:'transmitida',somenteLeitura:true,autorizaEfeitoFiscal:false};
+  }
   async function projetar(entrada) {
     const portal=await db.portalClient.findUnique({where:{id:entrada.portalClientId},select:{companyId:true}});
     const comandos = await db.fs12Comando.findMany({where:scope(entrada),orderBy:{criadoEm:'desc'}});
@@ -121,7 +147,7 @@ export function criarAplicacaoRespostaFs12({ db, custodia, cifra, hash, validarS
         if(!marcador && ledger?.status==='erro') continue;
         return {...base,estado:marcador?'DESCONHECIDA':'EM_PROCESSAMENTO',motivo:'Tentativa ainda sem resposta fiscal comprovada.'};
       }
-      if (r.desfecho.confirmada) return {...base,estado:'CONFIRMADA',numeroDeclaracao:r.desfecho.evidencia.numeroDeclaracao,motivo:'Resposta causal preservada.'};
+      if (r.desfecho.confirmada) return {...base,estado:'CONFIRMADA',numeroDeclaracao:r.desfecho.evidencia.numeroDeclaracao,motivo:'Resposta causal preservada.',calculoHistorico:await historicoConfirmado(comando,r)};
       if (r.desfecho.estado==='ERRO_VALIDACAO') return {...base,estado:'REJEITADA',motivo:r.desfecho.mensagem};
       if (r.desfecho.estado!=='SIMULACAO_CONCLUIDA') return {...base,estado:'DESCONHECIDA',motivo:'Resposta inconclusiva preservada.'};
       if (!await db.fs12ComandoCalculo.findUnique({where:{comandoId:comando.id}})) return {...base,estado:'DESCONHECIDA',motivo:'Resultado recebido ainda não aplicado. Concilie localmente.'};

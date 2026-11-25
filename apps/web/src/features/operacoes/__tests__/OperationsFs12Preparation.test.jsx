@@ -115,3 +115,23 @@ test('troca da seleção/PA descarta leitura antiga da folha em Operações', as
   expect(screen.queryByText('Confirmada')).not.toBeInTheDocument();
   expect(api.confirmarFs12Fechamento).not.toHaveBeenCalled();
 });
+import { OperationsApproval } from '../OperationsApproval';
+test.each([['PENDING',null],['INVALIDATED',null],['PENDING','revision'],['PENDING','identity'],['PENDING','audit']])('causal historical presentation %s preserves real error %s',async(status,invalid)=>{
+ const pa='2026-12',commandId='transmission-command';
+ const history={portalClientId:'a',competencia:pa,comandoId:commandId,calculoId:'exact-calculation',dasValor:0,somenteLeitura:true,autorizaEfeitoFiscal:false};
+ const operation={companyId:'a',competencia:pa,revision:'r1',regime:'SIMPLES',status,pending:[],blocked:'Resposta causal preservada.',blockingForNewActionOnly:true,calculation:history,aptidaoFiscal:{fiscal:{estado:'CONFIRMADA',comandoId:commandId},capacidades:{transmitir:false},pendencias:['Documentos pendentes']}};
+ const api={getOperationEvidence:jest.fn(async()=>({competencia:pa,total:1,items:[operation]})),getCompanyOperation:jest.fn(async()=>operation),getApuracaoSnapshot:jest.fn(async()=>({snapshot:{portalClientId:'a',competencia:pa,estado:'transmitida',idempotencyKey:history.calculoId,dasSimuladoSerpro:0,simulacaoSerpro:{_portalTransmissao:{comandoId:commandId}}}})),getAuditoriaNotas:jest.fn(async()=>({auditoria:{competencia:pa,totalAchados:0,perguntas:[]}})),getPgdasHistorico:jest.fn(async()=>({competencia:pa,versoes:[]})),saveCompanyOperation:jest.fn(),executeCompanyOperation:jest.fn()};
+ if(invalid==='audit')api.getAuditoriaNotas.mockRejectedValue(Error('Auditoria indisponível'));
+ if(['revision','identity'].includes(invalid)){
+  const read=api.getApuracaoSnapshot.getMockImplementation();
+  api.getApuracaoSnapshot.mockImplementation(async()=>{const result=await read(); if(invalid==='revision')result.snapshot.idempotencyKey='other';else result.snapshot.portalClientId='other';return result;});
+ }
+ render(<OperationsApproval api={api} rows={[{company:{companyId:'a',razao:'Histórico causal',myRole:'ACCOUNTANT'}}]} competencia={pa}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir',exact:true})).toBeEnabled());
+ fireEvent.click(screen.getByRole('button',{name:'Conferir',exact:true}));
+ await screen.findByRole('dialog',{name:'Conferir Histórico causal'});
+ if(!invalid)expect(screen.queryByText(/Revisão do cálculo não corresponde/)).not.toBeInTheDocument();
+ else expect(screen.getAllByText(invalid==='revision'?/Revisão do cálculo não corresponde/:invalid==='identity'?/Identidade ou período incompatível/:/Auditoria indisponível/).length).toBeGreaterThan(0);
+ expect(screen.getByRole('button',{name:'Confirmar apuração'})).toBeDisabled();
+ expect(api.saveCompanyOperation).not.toHaveBeenCalled();expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});

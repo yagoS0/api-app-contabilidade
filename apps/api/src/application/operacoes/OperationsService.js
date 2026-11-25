@@ -50,6 +50,16 @@ export async function lerOperacao(db, companyId, competencia, { rootDb = db, fis
     } catch { proofError = 'A prova do preparo automático não foi confirmada. Confira a tentativa antes de continuar.'; }
   }
   const recovery = proofError ? { calculoRecuperacaoMotivo: proofError } : recuperarCalculo(snapshot, { portalClientId: companyId, competencia, contextoOrigem: contexto, cnpj: contexto.contribuinteCnpj, regimeApuracao: contexto.regimeApuracao, preparacaoAtual });
+  const historico = aptidaoFiscal?.fiscal?.calculoHistorico;
+  const historicoComprovado = aptidaoFiscal?.fiscal?.estado === 'CONFIRMADA'
+    && historico?.somenteLeitura === true && historico.autorizaEfeitoFiscal === false
+    && historico.portalClientId === companyId && historico.competencia === competencia
+    && historico.comandoId === aptidaoFiscal.fiscal.comandoId && snapshot?.estado === 'transmitida'
+    && historico.calculoId === snapshot.idempotencyKey
+    && typeof historico.dasValor === 'number' && Number.isFinite(historico.dasValor) && historico.dasValor >= 0;
+  // Keep command blocking intact. Consumers distinguish a completed fiscal fact
+  // from an error without treating historical values as new-action authority.
+  const blockingForNewActionOnly = Boolean(historicoComprovado && !pending.length && !aptidaoFiscal.impedimentos?.length);
   let fiscalBlock = null;
   // Apenas novas ações dependentes de cálculo; histórico transmitido/documental
   // mantém seu caminho. A guarda final também cobre liberações antigas e lotes.
@@ -63,8 +73,8 @@ export async function lerOperacao(db, companyId, competencia, { rootDb = db, fis
   const status = execution?.status === 'DONE' ? (pending.length || state.contextHash !== contexto.hash ? 'INVALIDATED' : 'EXECUTED')
     : execution ? 'ATTENTION' : ['CONFIRMED', 'RELEASED'].includes(state.status) && (state.fingerprint !== fingerprint || blocked) ? 'INVALIDATED' : state.status;
   return { companyId, competencia, aptidaoFiscal, fingerprint, revision: hash([state, fingerprint]), status, schedule: state.schedule,
-    changedAt: state.changedAt || null, blocked, pending, execution: execution ? { status: execution.status, message: execution.message || null } : null,
-    calculation: recovery.calculoRecuperavel || recovery.calculoSalvo || null };
+    changedAt: state.changedAt || null, blocked, blockingForNewActionOnly, pending, execution: execution ? { status: execution.status, message: execution.message || null } : null,
+    calculation: historicoComprovado ? historico : recovery.calculoRecuperavel || recovery.calculoSalvo || null };
 }
 
 export async function salvarOperacao(db, companyId, competencia, userId, input, { isAdmin = false, transaction = null, rootDb = db } = {}) {

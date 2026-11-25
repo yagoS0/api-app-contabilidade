@@ -27,6 +27,23 @@ function pasAnteriores(competencia, n = 12) {
 function FechamentoContainer({ embedded, titulo, children, ...props }) {
   return embedded ? <section className="fechamento-modal" aria-label={titulo}>{children}</section> : <Modal titulo={titulo} {...props}>{children}</Modal>;
 }
+// Translate the causal E2 response without turning a declaration number alone
+// into confirmation. Legacy flat responses retain their explicit confirmation.
+export function transmissaoConfirmadaDoResultado(result, {portalClientId,competencia,calculoId}) {
+  const t = result?.transmissao || result?.fluxoPgdas?.transmissao;
+  if (t?.confirmada !== true) return null;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return null;
+  const e2 = ['2026-11','2026-12'].includes(competencia);
+  if (competencia > '2026-12') return null;
+  const numero = e2 ? t.evidencia?.numeroDeclaracao : t.numeroDeclaracao;
+  if (typeof numero !== 'string' || !numero.trim()) return null;
+  if (e2 && (result.confirmada !== true || t.estado !== 'TRANSMITIDA'
+    || t.evidencia.origem !== 'ALTAN' || t.evidencia.competencia !== competencia
+    || result.calculoId !== calculoId || result.snapshot?.idempotencyKey !== calculoId
+    || result.snapshot.portalClientId !== portalClientId || result.snapshot.competencia !== competencia
+    || result.snapshot.estado !== 'transmitida' || result.snapshot.numeroDeclaracao !== numero)) return null;
+  return {...t,numeroDeclaracao:numero,origem:t.evidencia?.origem || t.origem};
+}
 export function FechamentoModal({ api, feedback, portalClientId, competencia, razao, retificar = false, onClose, onChanged, embedded = false, onBusyChange, disabled = false }) {
   const contexto = portalClientId + ':' + competencia;
   const contextoAtual = useRef(contexto); contextoAtual.current = contexto;
@@ -410,8 +427,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       const r = out.result || {};
-      const transmissao = r.transmissao || r.fluxoPgdas?.transmissao;
-      if (transmissao?.confirmada !== true || !transmissao.numeroDeclaracao) {
+      const transmissao = transmissaoConfirmadaDoResultado(r, {portalClientId,competencia,calculoId:resultado.calculoId});
+      if (!transmissao) {
         setResultado(null);
         setShowTransmit(false);
         onChanged?.();

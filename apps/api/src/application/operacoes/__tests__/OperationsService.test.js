@@ -106,3 +106,55 @@ test('acesso revogado impede confirmação sem usar ator enviado no input',async
  await expect(salvarOperacao(db,'a','2026-11','user',{action:'confirm',requestId:'revoked-request',expectedRevision:before.revision,autorId:'admin-forged'})).rejects.toMatchObject({status:403});
  expect(db.appSetting.upsert).not.toHaveBeenCalled();expect(db.appSetting.create).not.toHaveBeenCalled();
 });
+// Presentation contract only: a read-only historical DTO never grants a new command.
+test.each([0, 19.75])('confirmed historical result %s remains visible with command block intact',async dasValor=>{
+ const db=fiscalDatabase();
+ const snapshot={estado:'transmitida',idempotencyKey:'calculo-historico'};
+ db.apuracaoSnapshot.findUnique.mockResolvedValue(snapshot);
+ const historico={portalClientId:'a',competencia:'2026-12',comandoId:'cmd',calculoId:'calculo-historico',dasValor,somenteLeitura:true,autorizaEfeitoFiscal:false};
+ const apt={fiscal:{estado:'CONFIRMADA',comandoId:'cmd',motivo:'Resposta causal preservada.',calculoHistorico:historico},capacidades:{transmitir:false},impedimentos:[],pendencias:['DOCUMENTOS']};
+ const out=await lerOperacao(db,'a','2026-12',{autorId:'user',avaliarFiscal:async()=>apt});
+ expect(out.calculation).toEqual(historico);expect(out.blocked).toBe('Resposta causal preservada.');
+ expect(out.blockingForNewActionOnly).toBe(true);expect(out.aptidaoFiscal.capacidades.transmitir).toBe(false);
+ db.pendenciaPosFechamento.findMany.mockResolvedValue([{id:'nota-posterior'}]);
+ const pending=await lerOperacao(db,'a','2026-12',{autorId:'user',avaliarFiscal:async()=>apt});
+ expect(pending.blockingForNewActionOnly).toBe(false);expect(pending.blocked).toMatch(/posteriores/);
+ expect(db.appSetting.upsert).not.toHaveBeenCalled();expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+
+test('historical calculation is not promoted for another snapshot/company/PA or unknown attempt',async()=>{
+ const db=fiscalDatabase();db.apuracaoSnapshot.findUnique.mockResolvedValue({estado:'transmitida',idempotencyKey:'calc'});
+ const h={portalClientId:'a',competencia:'2026-12',comandoId:'cmd',calculoId:'calc',dasValor:0,somenteLeitura:true,autorizaEfeitoFiscal:false};
+ for(const delta of [{portalClientId:'other'},{competencia:'2026-11'},{calculoId:'old'},{comandoId:'other'},{dasValor:null},{autorizaEfeitoFiscal:true}]){
+  const out=await lerOperacao(db,'a','2026-12',{autorId:'user',avaliarFiscal:async()=>({fiscal:{estado:'CONFIRMADA',comandoId:'cmd',calculoHistorico:{...h,...delta}},capacidades:{transmitir:false},impedimentos:[]})});
+  expect(out.blockingForNewActionOnly).toBe(false);expect(out.calculation?.somenteLeitura).not.toBe(true);
+ }
+ const unknown=await lerOperacao(db,'a','2026-12',{autorId:'user',avaliarFiscal:async()=>({fiscal:{estado:'DESCONHECIDA',comandoId:'cmd',calculoHistorico:h},capacidades:{transmitir:false},impedimentos:[]})});
+ expect(unknown.blockingForNewActionOnly).toBe(false);expect(unknown.calculation?.somenteLeitura).not.toBe(true);
+});
+import { criarAplicacaoRespostaFs12 } from '../../../modules/fiscal/infrastructure/prisma/aplicacaoRespostaFs12.js';
+import { hashCalculo, validarCalculoConfirmado } from '../../notas/apuracao/v2/CalculoConfirmado.js';
+// Real projector and snapshot validator; persistence/custody are unit fixtures.
+// This does not claim PG, encryption, ACL integration or fiscal authorization.
+test('causal historical DTO requires exact B33/B32, immutable calculation and current transmitted snapshot',async()=>{
+ const identity={portalClientId:'a',companyId:'legacy',competencia:'2026-12',revisaoFs12:1};
+ const dados={portalClientId:'a',competencia:'2026-12',formulario:{atividades:[],folhaMensal12:[],regimeApuracao:'COMPETENCIA'},fs12:{revisao:1}};
+ const calculo={...dados,calculoId:'fech:v1:test:'+hashCalculo(dados)};
+ const prep={calculoId:calculo.calculoId};
+ const command={...identity,id:'cmd',tentativaId:'attempt',cnpj:'12345678000199',intencao:'TRANSMITIR',contextoHash:'context',vinculoOrigemId:'b32',esperado:{custodia:{respostaId:'response'},preparacao:prep,preparoHash:hashCalculo(prep)}};
+ const response={id:'response',comandoId:'cmd',reservaId:'reserve',httpStatus:200,corpoHash:'body',corpoCifrado:{},recebidoEm:new Date('2026-11-25T12:00:00Z')};
+ const b33={...identity,comandoId:'cmd',respostaId:'response',vinculoId:'b32',intencao:'TRANSMITIR'};
+ const b32={...identity,id:'b32',calculoId:calculo.calculoId,contextoHash:'context',calculoConfirmado:calculo,calculoHash:hashCalculo(calculo)};
+ const snapshot={portalClientId:'a',competencia:'2026-12',estado:'transmitida',idempotencyKey:calculo.calculoId,numeroDeclaracao:'declaration',dasRetornadoSerpro:0,atividadesEscolhidas:[],folhaMensal12:[],simulacaoSerpro:{_portalCalculo:calculo,_portalTransmissao:{comandoId:'cmd'}}};
+ const db={portalClient:{findUnique:async()=>({companyId:'legacy'})},fs12Comando:{findMany:async()=>[command]},appSetting:{findUnique:async()=>null},fs12ComandoResposta:{findUnique:async()=>response},fs12ComandoReserva:{findUnique:async()=>({reservaId:'reserve'})},fs12ComandoCalculo:{findUnique:jest.fn(async()=>b33)},apuracaoFs12Calculo:{findUnique:async()=>b32},apuracaoSnapshot:{findUnique:async()=>snapshot}};
+ const raw={status:200,dados:JSON.stringify([{idDeclaracao:'declaration',indicadorTransmissao:true,cnpjCompleto:command.cnpj,pa:202612}])};
+ const app=criarAplicacaoRespostaFs12({db,hash:hashCalculo,validarSnapshot:validarCalculoConfirmado,validarEnvelope:async()=>{},custodia:{resolveOrigin:async()=>({})},cifra:{decifrar:async()=>Buffer.from(JSON.stringify(raw))},parseRetorno:()=>({dasValor:0})});
+ const read=()=>app.projetar({portalClientId:'a',competencia:'2026-12'});
+ expect((await read()).calculoHistorico).toMatchObject({calculoId:calculo.calculoId,dasValor:0,somenteLeitura:true,autorizaEfeitoFiscal:false});
+ db.fs12ComandoCalculo.findUnique.mockResolvedValueOnce(null);
+ expect(await read()).toMatchObject({estado:'CONFIRMADA',calculoHistorico:null});
+ for(const [target,key,value] of [[b33,'respostaId','another'],[b33,'portalClientId','another'],[b32,'calculoHash','invalid'],[snapshot,'idempotencyKey','newer'],[snapshot,'estado','aberta'],[snapshot,'dasRetornadoSerpro',null]]){
+  const old=target[key];target[key]=value;
+  expect(await read()).toMatchObject({estado:'CONFIRMADA',calculoHistorico:null});target[key]=old;
+ }
+});

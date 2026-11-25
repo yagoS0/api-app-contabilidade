@@ -75,7 +75,7 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
     const attempt = savedAttempt?.companyId === companyId && savedAttempt.competencia === competencia && typeof savedAttempt.attemptId === 'string'
       && ['COLLECTING', 'CALCULATING', 'CALCULATED', 'REVIEW', 'UNCERTAIN'].includes(savedAttempt.status) ? savedAttempt : null;
     const currentContext = attempt?.status === 'CALCULATED' ? await contextoOrigemCalculo({ portalClientId: companyId, competencia }, adapter) : null;
-    const attemptCurrent = attempt?.status === 'CALCULATED' && !evidence.blocked && Boolean(snapshot?.idempotencyKey)
+    const attemptCurrent = attempt?.status === 'CALCULATED' && (!evidence.blocked || evidence.blockingForNewActionOnly) && Boolean(snapshot?.idempotencyKey)
       && snapshot.idempotencyKey === attempt.calculation?.calculoId && currentContext?.hash === attempt.proof?.context?.hash;
     const calculation = attemptCurrent ? { calculoId: attempt.calculation.calculoId, receita: attempt.calculation.receita ?? null, imposto: attempt.calculation.imposto ?? null, origem: attempt.calculation.origem || null } : null;
     const auditSummary = attemptCurrent && attempt.audit ? { status: attempt.audit.status, totalAchados: attempt.audit.totalAchados ?? null, reason: attempt.audit.reason || null, warnings: Array.isArray(attempt.audit.warnings) ? attempt.audit.warnings.filter(w => typeof w === 'string') : [] } : null;
