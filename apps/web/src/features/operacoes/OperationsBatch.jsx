@@ -22,15 +22,24 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
   const [showHistory,setShowHistory]=useState(false);
   const conditionsTrigger=useRef(null),conditionsHeading=useRef(null);
   useEffect(()=>{if(conditions)conditionsHeading.current?.focus();},[conditions]);
-  const trigger = useRef(null), wasDetail = useRef(false);
+  const trigger = useRef(null), wasDetail = useRef(false), pendingFocus = useRef(false);
   const taskRequest = useRef(0);
   const detail = Boolean(preview || task);
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
   useEffect(() => { onDetailChange?.(detail); return () => onDetailChange?.(false); }, [detail, onDetailChange]);
   useEffect(() => {
-    if ((embedded || restoreTriggerFocus) && wasDetail.current && !detail) trigger.current?.focus();
+    if (detail) pendingFocus.current = false;
+    else if ((embedded || restoreTriggerFocus) && wasDetail.current) pendingFocus.current = true;
     wasDetail.current = detail;
-  }, [embedded, restoreTriggerFocus, detail]);
+    if (!pendingFocus.current || detail || disabled || busy) return undefined;
+    if (trigger.current?.isConnected && !trigger.current.disabled) trigger.current.focus();
+    const frame = requestAnimationFrame(() => {
+      if (pendingFocus.current && trigger.current?.isConnected && !trigger.current.disabled) {
+        trigger.current.focus(); pendingFocus.current = false;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [embedded, restoreTriggerFocus, detail, disabled, busy]);
   useEffect(() => {
     const origin = { api, competencia }; context.current = origin; taskRequest.current += 1;
     pending.current = false; setBusy(false); setReading(true);
@@ -51,6 +60,7 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
   }
   async function prepare(batchId = null) {
     if (pending.current) return;
+    if (disabled) { setError('Atualize as empresas e as conferências antes de preparar a liberação.'); return; }
     const origin = context.current;
     pending.current = true; setBusy(true); setError('');
     try {
@@ -64,12 +74,13 @@ export function OperationsBatch({ api, competencia, disabled = false, onChanged,
   }
   async function accept() {
     if (pending.current || !preview || confirmation !== competencia) return;
+    if (disabled) { setError('Atualize as empresas e as conferências antes de liberar a rotina.'); return; }
     const origin = context.current;
     pending.current = true; setBusy(true); setError('');
     try {
       const response = await api.acceptOperationsBatch({ previewId: preview.id, requestId: crypto.randomUUID(), confirmCompetencia: competencia });
       if (context.current !== origin) return;
-      if (response?.ok !== true || !response.batch?.id || response.batch.competencia !== competencia) throw Error('Aceite não confirmado. Atualize as liberações antes de qualquer nova ação.');
+      if (response?.ok !== true || !response.batch?.id || response.batch.competencia !== competencia || !Array.isArray(response.batch.items)) throw Error('Aceite não confirmado. Atualize as liberações antes de qualquer nova ação.');
       setBatches(old => [response.batch, ...old.filter(b => b.id !== response.batch.id)]);
       window.dispatchEvent(new Event('background-task-changed'));
       onChanged?.();

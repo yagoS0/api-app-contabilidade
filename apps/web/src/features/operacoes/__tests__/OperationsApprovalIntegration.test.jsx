@@ -191,3 +191,65 @@ test('confirmação inline mantém diálogo ocupado único e indicadores durante
   expect(api.saveCompanyOperation).toHaveBeenCalledTimes(1);
   expect(api.executeCompanyOperation).not.toHaveBeenCalled();
 });
+
+test('cálculo indisponível informa o impedimento na página integrada', async () => {
+  const { api } = fixture('PENDING');
+  await openApprovals('Calculado');
+  expect(screen.getByRole('alert')).toHaveTextContent('Cálculo em Operações indisponível neste ambiente');
+  expect(screen.getByRole('button', { name: 'Calcular', exact: true })).toBeDisabled();
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
+test.each(['individual', 'lote'])('clique de cálculo %s abre prévia integrada e preserva bloqueio fiscal', async mode => {
+  const { api } = fixture('PENDING');
+  api.previewOperationsCalculation = jest.fn(async id => ({ companyId: id, competencia: '2026-09', revision: 'preview-r1', canCalculate: false, blockers: ['Despacho bloqueado até B3.3. Confira FS12 na Apuração.'] }));
+  api.executeOperationsCalculation = jest.fn();
+  await openApprovals('Calculado');
+  if (mode === 'lote') fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar CDA' }));
+  fireEvent.click(screen.getByRole('button', { name: mode === 'lote' ? 'Calcular selecionadas' : 'Calcular', exact: true }));
+  expect(await screen.findByText('Despacho bloqueado até B3.3. Confira FS12 na Apuração.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Confirmar cálculo (0)' })).toBeDisabled();
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(api.previewOperationsCalculation).toHaveBeenCalledWith('a', '2026-09');
+  expect(api.executeOperationsCalculation).not.toHaveBeenCalled();
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});
+
+test.each(['success', 'error', 'empty'])('cálculo integrado apresenta %s sem confirmar ou transmitir', async outcome => {
+  const { api } = fixture('PENDING');
+  api.previewOperationsCalculation = jest.fn(async id => ({ companyId: id, competencia: '2026-09', revision: 'preview-r1', canCalculate: true, blockers: [] }));
+  api.executeOperationsCalculation = jest.fn(async (id, competencia, input) => {
+    if (outcome === 'error') throw Error('Cálculo recusado pelo servidor');
+    if (outcome === 'empty') return undefined;
+    return { companyId: id, competencia, requestId: input.requestId, status: 'CALCULATED' };
+  });
+  await openApprovals('Calculado');
+  fireEvent.click(screen.getByRole('button', { name: 'Calcular', exact: true }));
+  const confirm = await screen.findByRole('button', { name: 'Confirmar cálculo (1)' });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  expect(api.executeOperationsCalculation).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  if (outcome === 'success') expect(await screen.findByText('Calculado', { exact: true, selector: 'td' })).toBeVisible();
+  else expect(await screen.findByRole('alert')).toHaveTextContent(outcome === 'error' ? 'Cálculo recusado pelo servidor' : 'Resultado não confirmado');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Voltar' })).toBeEnabled());
+  expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(1);
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Calcular', exact: true })).toBeEnabled());
+});
+test('recusa de confirmação continua visível com o detalhe aberto', async () => {
+  const { api } = fixture('CONFIRMED');
+  const current = await api.getCompanyOperation();
+  api.getCompanyOperation.mockResolvedValue({ ...current, regime: 'PRESUMIDO' });
+  await openApprovals();
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir detalhes' }));
+  await screen.findByRole('region', { name: 'Conferir CDA' });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar apuração' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('somente para o Simples comprovado na competência');
+  expect(screen.getByRole('region', { name: 'Conferir CDA' })).toBeVisible();
+  expect(api.saveCompanyOperation).not.toHaveBeenCalled();
+  expect(api.executeCompanyOperation).not.toHaveBeenCalled();
+});

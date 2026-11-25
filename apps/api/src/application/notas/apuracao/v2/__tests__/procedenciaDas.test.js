@@ -449,6 +449,74 @@ jest.mock("../../../../fiscal/serpro/CaptureSerproGuidesService.js", () => ({
   capturePgdasGuideForCompany: jest.fn(async () => { throw new Error("Guia indisponível no transporte simulado"); }),
 }));
 import { recuperarCalculo } from "../RecuperacaoCalculo.js";
+
+describe('E1: contrato do fechamento com transporte sintético, sem homologação numérica fiscal', () => {
+  it.each([false, true])('segregações III/IV, ISS retido e folha aplicável=%s chegam ao payload e à prova salva', async sujeitoFatorR => {
+    // IDs do catálogo versionado AtividadePgdasdSeeds: 15/12 = retenção III,
+    // 17 = IV interno e 30 = III exterior. Nenhuma alíquota é definida aqui.
+    const atividades = [
+      { idAtividade:sujeitoFatorR ? 12 : 15, anexoImplicito:'III', sujeitoFatorR, valorInterno:4000, valorExterno:0 },
+      { idAtividade:17, anexoImplicito:'IV', sujeitoFatorR:false, valorInterno:5000, valorExterno:0 },
+      { idAtividade:30, anexoImplicito:'III', sujeitoFatorR:false, valorInterno:0, valorExterno:1000 },
+    ];
+    const folhaMensal12 = Array.from({ length:12 }, (_, i) => ({
+      pa:new Date(Date.UTC(2025, 5 + i, 1)).toISOString().slice(0, 7), valor:i === 0 ? 0 : 2000,
+    }));
+    const payloads = [];
+    const { buildDeclaracaoPayload } = jest.requireActual('../../../../fiscal/serpro/PgdasSimulacaoService.js');
+    mockSimular.mockImplementationOnce(async args => {
+      payloads.push(buildDeclaracaoPayload({ ...args, indicadorTransmissao:false }));
+      return { dasValor:812.34, raw:{ synthetic:true } };
+    });
+    const result = await calcularFechamento({ ...BASE, atividades, folhaMensal12 });
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({ pa:202606, indicadorTransmissao:false,
+      declaracao:{ receitaPaCompetenciaInterno:9000, receitaPaCompetenciaExterno:1000,
+        estabelecimentos:[{ atividades:[
+          { idAtividade:sujeitoFatorR ? 12 : 15, valorAtividade:4000 },
+          { idAtividade:17, valorAtividade:5000 },
+          { idAtividade:30, valorAtividade:1000 },
+        ] }] } });
+    if (sujeitoFatorR) {
+      expect(payloads[0].declaracao.folhasSalario).toEqual(folhaMensal12.map(f => ({ pa:Number(f.pa.replace('-', '')), valor:f.valor })));
+    } else {
+      expect(payloads[0].declaracao).not.toHaveProperty('folhasSalario');
+    }
+    expect(result.snapshot.atividadesEscolhidas).toEqual(atividades);
+    expect(result.snapshot.simulacaoSerpro._portalCalculo.formulario.folhaMensal12).toEqual(folhaMensal12);
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ id:'segregacao', ...result.snapshot });
+    const saved = await salvarFechamento({ ...BASE, atividades, folhaMensal12, calculoId:result.calculoId, userId:'contador-test' });
+    expect(saved.snapshot.estado).toBe('fechada');
+    // Trocar só a segregação, mesmo mantendo o total, exige novo cálculo.
+    await expect(salvarFechamento({ ...BASE, folhaMensal12, calculoId:result.calculoId,
+      atividades:atividades.map((a, i) => i === 0 ? { ...a, idAtividade:14 } : a),
+    })).rejects.toMatchObject({ code:'CALCULO_DESATUALIZADO' });
+    expect(mockTransmitir).not.toHaveBeenCalled();
+  });
+
+  it('ausência de atividades não autoriza zero; declaração explícita sem receita salva zero sem transmitir', async () => {
+    prisma.portalInvoice.findMany.mockResolvedValue([]);
+    prisma.portalInvoice.aggregate.mockResolvedValue({ _sum:{ total:0 } });
+    await expect(calcularFechamento({ ...BASE, atividades:[] })).rejects.toMatchObject({ code:'NO_ATIVIDADES' });
+    expect(mockSimular).not.toHaveBeenCalled();
+    mockSimular.mockResolvedValueOnce({ dasValor:0, raw:{ synthetic:true } });
+    const result = await calcularFechamento({ ...BASE, atividades:[], semMovimento:true });
+    expect(result).toMatchObject({ ok:true, dasValor:0, snapshot:{ estado:'calculada', receitaInterna:0, receitaExterna:0, dasSimuladoSerpro:0 } });
+    expect(mockSimular).toHaveBeenCalledWith(expect.objectContaining({ permitirSemMovimento:true }));
+    prisma.apuracaoSnapshot.findUnique.mockResolvedValue({ id:'zero', ...result.snapshot });
+    expect((await salvarFechamento({ ...BASE, atividades:[], calculoId:result.calculoId })).snapshot.estado).toBe('fechada');
+    expect(mockTransmitir).not.toHaveBeenCalled();
+  });
+
+  it('cálculo de junho não fecha nem transmite julho e não modifica o snapshot', async () => {
+    const { calculoId } = await simulacaoSalva();
+    await expect(salvarFechamento({ ...BASE, competencia:'2026-07', atividades:ATIVIDADES, calculoId })).rejects.toMatchObject({ code:'CALCULO_DESATUALIZADO' });
+    await expect(transmitirFechamento({ ...BASE, competencia:'2026-07', calculoId })).rejects.toMatchObject({ code:'CALCULO_DESATUALIZADO' });
+    expect(prisma.apuracaoSnapshot.updateMany).not.toHaveBeenCalled();
+    expect(mockIndice).not.toHaveBeenCalled();
+    expect(mockTransmitir).not.toHaveBeenCalled();
+  });
+});
 const indice027 = { status: 200, dados: '', mensagens: [{ codigo: '[Aviso-PGDASD-MSG_ISN_027]', texto: 'Não há declarações transmitidas para os parâmetros informados.' }] };
 
 describe('Fluxo completo de transmissão com negativa MSG_ISN_027 (provedores simulados)', () => {

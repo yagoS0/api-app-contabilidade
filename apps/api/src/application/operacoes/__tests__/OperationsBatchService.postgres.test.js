@@ -1,3 +1,4 @@
+import { createFirmPortalRouter } from '../../../routes/firm/index.js';
 // Credenciais exclusivamente sintéticas; preparação, persistência e guarda são reais.
 jest.mock('../../fiscal/serpro/SerproRuntimeSettings.js', () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { hasCertificate: true, document: '11111111000191' } })) }));
 // Redireciona o singleton usado pelos consumidores reais ao mesmo banco descartável.
@@ -8,9 +9,10 @@ jest.mock('axios', () => ({ __esModule: true, default: { request: jest.fn(() => 
 jest.mock('../../fiscal/serpro/SerproAuthService.js', () => ({ SerproAuthService: jest.fn().mockImplementation(() => ({
   authenticate: () => mockAuthenticate(), buildHttpsAgent: async () => null,
 })) }));
-jest.mock('../../guides/GuideStorageService.js', () => ({ GuideStorageService: { create: () => ({
-  upload: async ({ key }) => ({ key, url: `https://storage.invalid/${key}` }),
-}) } }));
+jest.mock('../../guides/GuideStorageService.js', () => ({ GuideStorageService: class {
+  static create() { return new this(); }
+  async upload({ key }) { return { key, url: `https://storage.invalid/${key}` }; }
+} }));
 import axios from 'axios';
 import express from 'express';
 import request from 'supertest';
@@ -91,6 +93,7 @@ async function fixture(run, { realTransmission = false, confirmed = true } = {})
     }
     await run({ ids, userId, queue, service, preview, accept, auth, transport, credentials, transmit, batches });
   } finally {
+    await assertFixtureCanBeCleaned(userId);
     // Limpeza somente dos IDs desta fixture; nunca esvaziar tabelas compartilhadas.
     const settings = await pg.appSetting.findMany({ select: { key: true, value: true } });
     const fiscalCalls = await pg.serproChamada.findMany({ where: { portalClientId: { in: ids } } });
@@ -390,3 +393,144 @@ test('PostgreSQL: falha da auditoria reverte liberações e recibo antes de agen
   expect(await pg.appSetting.count({ where: { key: `operations_batch_request:${f.userId}:${requestId}` } })).toBe(0);
   expect(tasks.start).not.toHaveBeenCalled(); expect(f.transport).not.toHaveBeenCalled();
 }), 60000);
+
+async function assertFixtureCanBeCleaned(ownerId) {
+ const running=await pg.manualTask.findMany({where:{ownerId,status:'running'},select:{id:true}});
+ if(running.length) throw Error(`Fixture PRESERVED: owner ${ownerId} still has running tasks ${running.map(t=>t.id).join(',')}; do not delete rows until work stops. Investigate the isolated test database.`);
+}
+
+test('E1 PostgreSQL: duas empresas aptas, timeout da primeira não impede a segunda nem autoriza replay', async () => fixture(async f => {
+  const preview = await f.preview();
+  expect(preview.items).toHaveLength(2);
+  const accepted = await f.accept(preview);
+  // A falha ocorre depois da guarda e da reserva reais, no transporte sintético.
+  const failed = preview.items[0].companyId;
+  const successful = preview.items[1].companyId;
+  f.transport.mockImplementation(async args => {
+    if (args.portalClientId === failed) throw new Error('Timeout sintético após despacho');
+    return { ok: true };
+  });
+  await f.queue[0]();
+  const result = await f.service.get({ userId: f.userId, batchId: accepted.id });
+  expect(result.items.find(item => item.companyId === failed).state).toBe('ATTENTION');
+  expect(result.items.find(item => item.companyId === successful).state).toBe('DONE');
+  expect(f.transport.mock.calls.map(([args]) => args.portalClientId)).toEqual([failed, successful]);
+  expect((await pg.manualTask.findUnique({ where: { id: accepted.taskId } })).status).toBe('partial');
+  const restarted = createOperationsBatchService({ db: pg });
+  await restarted.get({ userId: f.userId, batchId: accepted.id });
+  await expect(executarOperacao(pg, {
+    companyId: failed, competencia: pa, userId: f.userId,
+    revision: (await lerOperacao(pg, failed, pa)).revision,
+  }, { credentials: f.credentials, transmit: f.transmit })).rejects.toThrow();
+  expect(f.transport).toHaveBeenCalledTimes(2);
+}), 60000);
+async function drainAcceptedTask(taskId) {
+ const deadline=Date.now()+30000;
+ while(Date.now()<deadline) {
+  const task=await pg.manualTask.findUnique({where:{id:taskId}});
+  if(task && task.status!=='running')return;
+  await new Promise(resolve=>setTimeout(resolve,20));
+ }
+ throw Error('Accepted task still running; investigate fixture cleanup');
+}
+// Uses the production GET handler including owner/company ACL. Session identity is
+// supplied by the fixture, as in the existing HTTP integration (no login test).
+function mountPersistedTaskRead(app) {
+ const firm = createFirmPortalRouter({ensureAuthorized: async () => {}, log: {info(){},warn(){},error(){}}});
+ const layer = firm.stack.find(layer => layer.route?.path === '/jobs/tarefas/:taskId' && layer.route.methods.get);
+ expect(layer).toBeDefined();
+ app.get('/firm/jobs/tarefas/:taskId', ...layer.route.stack.map(entry => entry.handle));
+}
+async function readFinishedTask(app, taskId) {
+ const deadline = Date.now() + 30000;
+ while (Date.now() < deadline) {
+  const response = await request(app).get(`/firm/jobs/tarefas/${encodeURIComponent(taskId)}`);
+  expect(response.status).toBe(200);
+  expect(response.body.task.jobId).toBe(taskId);
+  if (response.body.task.status !== 'running') return response.body.task;
+  await new Promise(resolve => setTimeout(resolve, 20));
+ }
+ throw Error('Synthetic async task did not finish; inspect persisted task before cleanup');
+}
+test('HTTP async + PostgreSQL: liberar, executar 202, GET tarefa, replay e documentos', async () => fixture(async f => {
+  const asyncTaskIds=[];
+  try {
+  await pg.user.update({where:{id:f.userId},data:{role:'user'}});
+  const id = f.ids[1], base = `/companies/${id}/operacoes/${pa}`;
+  let authenticated = true, transmitted = false;
+  const services = [];
+  mockAuthenticate.mockReset();
+  mockAuthenticate.mockResolvedValue({ accessToken: 'synthetic', jwtToken: 'synthetic' });
+  axios.request.mockReset();
+  axios.request.mockImplementation(async ({ data }) => {
+    const portal = await pg.portalClient.findUnique({ where: { id } });
+    expect(data.contribuinte.numero).toBe(portal.cnpj);
+    const service = data.pedidoDados.idServico;
+    services.push(service);
+    if (service === 'CONSDECLARACAO13') return { status: 200, data: { dados: JSON.stringify(transmitted ? [{ numeroDeclaracao: `http-${id}` }] : []) } };
+    if (service === 'TRANSDECLARACAO11') {
+      transmitted = true;
+      return { status: 200, data: { dados: JSON.stringify({ idDeclaracao: `http-${id}`, valoresDevidos: [{ codigoTributo: '1001', valor: 10 }] }) } };
+    }
+    if (service === 'CONSULTIMADECREC14') {
+      const pdf = await syntheticPdf(id);
+      return { status: 200, data: { dados: JSON.stringify({ numeroDeclaracao: `http-${id}`, declaracao: { pdf }, recibo: { pdf } }) } };
+    }
+    throw Error(`Fiscal call not allowed in fixture: ${service}`);
+  });
+  await pg.guide.create({ data: { portalClientId: id, competencia: pa, tipo: 'SIMPLES', status: 'PROCESSED', pdfBytes: Buffer.from('synthetic-existing-guide'), source: 'LOCAL' } });
+  const app = express(); app.use(express.json());
+  app.use((req, _res, next) => { req.auth = authenticated ? { user: { id: f.userId, role: 'user', accountType: 'FIRM' } } : null; next(); });
+  app.use(createOperationsRouter({ prisma: pg, requireFirmCompanyAccess }));
+  mountPersistedTaskRead(app);
+  const read = await request(app).get(base);
+  expect(read.status).toBe(200); expect(read.body.status).toBe('PENDING');
+  expect(services).toEqual([]);
+  const confirm = await request(app).put(base).send({ action: 'confirm', expectedRevision: read.body.revision, requestId: randomUUID() });
+  expect(confirm.status).toBe(200); expect(confirm.body.status).toBe('CONFIRMED');
+  expect(services).toEqual([]);
+  const stale = await request(app).put(base).send({ action: 'release', expectedRevision: read.body.revision, requestId: randomUUID() });
+  expect(stale.status).toBe(409);
+  const release = await request(app).put(base).send({ action: 'release', expectedRevision: confirm.body.revision, requestId: randomUUID() });
+  expect(release.status).toBe(200); expect(release.body.status).toBe('RELEASED');
+  expect(services).toEqual([]);
+  const invalid = await request(app).post(`${base}/executar`).send({ expectedRevision: release.body.revision, confirmCompetencia: '2026-09' });
+  expect(invalid.status).toBe(422); expect(services).toEqual([]);
+  const key=randomUUID(), payload={expectedRevision:release.body.revision,confirmCompetencia:pa};
+  const execution=await request(app).post(`${base}/executar`).set('Prefer','respond-async').set('Idempotency-Key',key).send(payload);
+  if(execution.body.taskId)asyncTaskIds.push(execution.body.taskId);
+  expect(execution.status).toBe(202);expect(execution.body.taskId).toEqual(expect.any(String));
+  const completed=await readFinishedTask(app,execution.body.taskId);
+  expect(completed.status).toBe('done');expect(completed.responseStatus).toBe(200);expect(completed.result.ok).toBe(true);
+  expect(await pg.manualTask.findUnique({where:{id:execution.body.taskId}})).toMatchObject({ownerId:f.userId,kind:'operacoes-execucao',status:'done',competencia:pa,companyIds:[id]});
+  const same=await request(app).post(`${base}/executar`).set('Prefer','respond-async').set('Idempotency-Key',key).send(payload);
+  expect(same.status).toBe(202);expect(same.body.taskId).toBe(execution.body.taskId);
+  expect((await readFinishedTask(app,same.body.taskId)).result).toEqual(completed.result);
+  expect(services.filter(s => s === 'TRANSDECLARACAO11')).toHaveLength(1);
+  const after = await request(app).get(base);
+  expect(after.body.status).toBe('EXECUTED');
+  const calls = services.length;
+  const documents = await request(app).get(`${base}/transmission-documents`);
+  expect(documents.status).toBe(200); expect(documents.body.items.length).toBeGreaterThan(0);
+  expect(services).toHaveLength(calls);
+  const replay = await request(app).post(`${base}/executar`).set('Prefer','respond-async').set('Idempotency-Key',randomUUID()).send(payload);
+  if(replay.body.taskId)asyncTaskIds.push(replay.body.taskId);
+  expect(replay.status).toBe(202);
+  const refused=await readFinishedTask(app,replay.body.taskId);expect(refused.status).toBe('error');expect(refused.responseStatus).toBe(409);
+  expect(refused.result).toMatchObject({ ok: false, message: 'Esta liberação já teve uma tentativa. Confira o resultado em Tarefas; não haverá reenvio automático.' });
+  expect(services.filter(s => s === 'TRANSDECLARACAO11')).toHaveLength(1);
+  await pg.companyFirmAccess.update({ where: { companyId_userId: { companyId: id, userId: f.userId } }, data: { status: 'INACTIVE' } });
+  expect((await request(app).get(`/firm/jobs/tarefas/${execution.body.taskId}`)).status).toBe(404);
+  const settingsBeforeDenial = await pg.appSetting.findMany({ orderBy: { key: 'asc' } });
+  const guidesBeforeDenial = await pg.guide.findMany({ where: { portalClientId: id } });
+  const snapshotBeforeDenial = await pg.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: id, competencia: pa } } });
+  expect((await request(app).get(base)).status).toBe(403);
+  expect((await request(app).put(base).send({ action: 'confirm' })).status).toBe(403);
+  expect((await request(app).post(`${base}/executar`).send({ confirmCompetencia: pa })).status).toBe(403);
+  expect((await request(app).get(`${base}/transmission-documents`)).status).toBe(403);
+  expect(await pg.appSetting.findMany({ orderBy: { key: 'asc' } })).toEqual(settingsBeforeDenial);
+  expect(await pg.guide.findMany({ where: { portalClientId: id } })).toEqual(guidesBeforeDenial);
+  expect(await pg.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId: id, competencia: pa } } })).toEqual(snapshotBeforeDenial);
+  expect(services).toHaveLength(calls);
+  } finally { for(const taskId of asyncTaskIds) await drainAcceptedTask(taskId); }
+}, { confirmed: false }), 120000);

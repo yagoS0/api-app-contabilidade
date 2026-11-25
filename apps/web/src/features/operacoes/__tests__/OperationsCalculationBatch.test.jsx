@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OperationsCalculationBatch } from '../OperationsCalculationBatch';
 import { OperationsExternalBatch } from '../OperationsExternalBatch';
 
@@ -37,6 +37,36 @@ test('resultado incerto recupera mesma tentativa por GET sem repetir o POST', as
   expect(await screen.findByText('Calculado')).toBeInTheDocument();
   expect(api.getOperationsCalculationResult).toHaveBeenCalledWith('a', competencia, requestId);
   expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(1);
+});
+
+test('E1 duas aptas: falha da primeira preserva sucesso da segunda e consulta não repete cálculo', async () => {
+  const { api, onChanged } = setup({
+    previewOperationsCalculation: jest.fn(async id => ({ ...preview(id), canCalculate:true, blockers:[], regime:'SIMPLES' })),
+    executeOperationsCalculation: jest.fn(async (id, pa, input) => {
+      if (id === 'a') throw Error('Timeout sintético da empresa A');
+      return { companyId:id, competencia:pa, requestId:input.requestId, status:'CALCULATED',
+        calculation:{ receita:2000, imposto:120 }, audit:{ status:'COMPLETE', totalAchados:0 } };
+    }),
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name:'Confirmar cálculo (2)' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name:'Confirmar cálculo (2)' }));
+  await screen.findByText('Calculado');
+  const failedRow = screen.getByRole('rowheader', { name:'Empresa A' }).closest('tr');
+  const successfulRow = screen.getByRole('rowheader', { name:'Empresa B' }).closest('tr');
+  expect(within(failedRow).getByText('Resultado a conferir')).toBeInTheDocument();
+  expect(within(successfulRow).getByText('Calculado')).toBeInTheDocument();
+  expect(within(successfulRow).queryByRole('alert')).not.toBeInTheDocument();
+  expect(api.executeOperationsCalculation.mock.calls.map(([id, pa]) => [id, pa])).toEqual([['a', competencia], ['b', competencia]]);
+  expect(onChanged).toHaveBeenCalledTimes(1);
+  const requestId = api.executeOperationsCalculation.mock.calls[0][2].requestId;
+  api.getOperationsCalculationResult.mockResolvedValue({ companyId:'a', competencia,
+    attempt:{ companyId:'a', competencia, requestId, status:'UNCERTAIN', reason:'Resultado externo ainda incerto' } });
+  fireEvent.click(within(failedRow).getByRole('button', { name:'Conferir resultado' }));
+  await screen.findByText('Resultado externo ainda incerto');
+  expect(within(successfulRow).getByText('Calculado')).toBeInTheDocument();
+  expect(api.getOperationsCalculationResult).toHaveBeenCalledWith('a', competencia, requestId);
+  expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('button', { name:/Confirmar cálculo/ })).not.toBeInTheDocument();
 });
 test('recusa resultado de outra tentativa e reconhecimento vazio do background', async () => {
   const { api } = setup({ executeOperationsCalculation: jest.fn(async () => ({ companyId: 'a', competencia, status: 'accepted', taskId: 'task' })), getOperationsCalculationResult: jest.fn(async () => ({ companyId: 'a', competencia, attempt: { requestId: 'outro', status: 'CALCULATED' } })) });
@@ -98,4 +128,43 @@ test('dependência real da tarefa externa bloqueia gravação e informa o motivo
   await screen.findByText('Aguardando: apurar.');
   expect(screen.getByRole('button', { name: 'Confirmar conclusão externa (0)' })).toBeDisabled();
   expect(api.saveOperationsExternal).not.toHaveBeenCalled();
+});
+
+test('falha ao criar identidade do cálculo é visível, libera Voltar e não consulta', async () => {
+  const { api } = setup();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cálculo (1)' })).toBeEnabled());
+  const original = crypto.randomUUID;
+  crypto.randomUUID = () => { throw Error('Identidade indisponível'); };
+  try {
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cálculo (1)' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Identidade indisponível');
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeEnabled();
+    expect(api.executeOperationsCalculation).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Conferir resultado' })).not.toBeInTheDocument();
+  } finally { crypto.randomUUID = original; }
+});
+
+test.each([undefined, { ok: false }, { companyId: 'outra', competencia, revision: 'r', canCalculate: true, blockers: [] }])('prévia inválida %j informa erro sem habilitar cálculo', async response => {
+  const { api } = setup({ previewOperationsCalculation: jest.fn(async () => response) });
+  await screen.findAllByText('Prévia incompatível. Atualize antes de calcular.');
+  expect(screen.getByRole('button', { name: 'Confirmar cálculo (0)' })).toBeDisabled();
+  expect(api.executeOperationsCalculation).not.toHaveBeenCalled();
+});
+
+test.each([undefined, { ok: false }])('resposta vazia ou negativa de cálculo %j não comprova sucesso', async response => {
+  const { api, onChanged } = setup({ executeOperationsCalculation: jest.fn(async () => response) });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cálculo (1)' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cálculo (1)' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Resultado não confirmado');
+  expect(screen.getByRole('button', { name: 'Voltar' })).toBeEnabled();
+  expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(1);
+  expect(onChanged).not.toHaveBeenCalled();
+});
+test('lote executa somente elegibilidade booleana comprovada na prévia', async () => {
+  const { api } = setup({ previewOperationsCalculation: jest.fn(async id => ({ ...preview(id), canCalculate: id === 'a' ? true : 'false' })) });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cálculo (1)' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cálculo (1)' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Voltar' })).toBeEnabled());
+  expect(api.executeOperationsCalculation).toHaveBeenCalledTimes(1);
+  expect(api.executeOperationsCalculation.mock.calls[0][0]).toBe('a');
 });

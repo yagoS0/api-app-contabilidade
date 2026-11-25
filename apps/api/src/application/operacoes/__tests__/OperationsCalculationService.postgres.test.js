@@ -1,3 +1,8 @@
+import { createFirmPortalRouter } from '../../../routes/firm/index.js';
+import express from 'express';
+import request from 'supertest';
+import { createOperationsRouter } from '../../../routes/firm/operacoes.js';
+import { requireFirmCompanyAccess } from '../../../middlewares/requireFirmCompanyAccess.js';
 jest.mock('../../fiscal/serpro/SerproRuntimeSettings.js', () => ({ getResolvedSerproCredentials: jest.fn(async () => ({ certificate: { hasCertificate: true, document: '11111111000191' } })) }));
 const mockSimular = jest.fn(async () => ({ dasValor: 6, raw: { synthetic: true } }));
 jest.mock('../../fiscal/serpro/PgdasSimulacaoService.js', () => ({ ...jest.requireActual('../../fiscal/serpro/PgdasSimulacaoService.js'), PgdasSimulacaoService: jest.fn().mockImplementation(() => ({ simular: args => mockSimular(args), transmitir: () => { throw Error('Transmissão proibida neste teste'); } })) }));
@@ -26,7 +31,7 @@ try{
  await pg.cadastroFiscal.create({data:{portalClientId:id,regime:'SIMPLES_NACIONAL',regimeApuracao:'COMPETENCIA',cnaePrincipal:'6201501',usaFatorR:false}});
  await pg.appSetting.create({data:{key:`ciclo_simples_config:${id}`,value:{enabled:false,fontes:['NFSE']}}});
  await run({id,userId,companyId});
-}finally{await pg.appSetting.deleteMany({where:{OR:[{key:{contains:id}},{key:{startsWith:`operations_request:${userId}:`}}]}});await pg.portalClient.deleteMany({where:{id}});await pg.company.deleteMany({where:{id:companyId}});await pg.client.deleteMany({where:{id:clientId}});await pg.user.deleteMany({where:{id:userId}});}}
+}finally{await assertFixtureCanBeCleaned(userId);await pg.appSetting.deleteMany({where:{OR:[{key:{contains:id}},{key:{startsWith:`operations_request:${userId}:`}}]}});await pg.portalClient.deleteMany({where:{id}});await pg.company.deleteMany({where:{id:companyId}});await pg.client.deleteMany({where:{id:clientId}});await pg.user.deleteMany({where:{id:userId}});}}
 test('PostgreSQL reserva, persiste cálculo, recupera pedido exato e não repete transporte',async()=>fixture('SIMPLES',async({id,userId})=>{
  const deps={audit:async()=>({empresa:{portalClientId:id},competencia:'2026-10',totalAchados:0,foraDaConferencia:{total:0},manutencao:{notasNaoLidas:0},perguntas:[1,2,3].map(id=>({id:String(id),situacao:'CONFERIDA',achados:[],naoAvaliadas:[]}))}),context:async()=>({hash:'stable'}),collect:jest.fn(async()=>({ok:true,complete:true,partial:false,cnpj:'12345678000199'})),getDados:async()=>({atividades:[{idAtividade:'1',valorInterno:100,valorExterno:0,sujeitoFatorR:false}],faturamento:{total:100},rbt12:1000,rbt12Origem:'EXTRATO_PGDAS'}),calculate:jest.fn(async a=>{await a.manualOperation.beforeDispatch();await a.manualOperation.verify();return{ok:true,calculoId:'synthetic',dasValor:6};})};
  const preview=await prepararCalculoOperacoes(pg,id,'2026-10',deps);expect(preview.canCalculate).toBe(true);
@@ -114,3 +119,138 @@ test('base RBT sem extrato completo permanece revisão sem simular nem inventar 
   expect((await pg.rbtExtratoCache.findUnique({where:{portalClientId_competencia:{portalClientId:id,competencia:'2026-10'}}})).origem).toBe('PARCIAL_LOCAL');
  }finally{await pg.portalInvoice.deleteMany({where:{clientId:id}});await pg.atividadePgdasd.delete({where:{id:seed.activityId}});}
 }));
+
+async function assertFixtureCanBeCleaned(ownerId) {
+ const running=await pg.manualTask.findMany({where:{ownerId,status:'running'},select:{id:true}});
+ if(running.length) throw Error(`Fixture PRESERVED: owner ${ownerId} still has running tasks ${running.map(t=>t.id).join(',')}; do not delete rows until work stops. Investigate the isolated test database.`);
+}
+
+test('E1 PostgreSQL: alteração de receita invalida confirmação; recálculo e nova conferência persistem sem transmissão', async () => fixture('SIMPLES', async ({ id, userId, companyId }) => {
+ const seed = await seedRealBase({ id, companyId });
+ mockSimular.mockClear();
+ const deps = { collect: seed.collect };
+ const calculate = async () => {
+  const preview = await prepararCalculoOperacoes(pg, id, '2026-10', deps);
+  expect(preview.canCalculate).toBe(true);
+  return executarCalculoOperacoes(pg, { companyId:id, competencia:'2026-10', userId,
+   expectedRevision:preview.revision, requestId:randomUUID(), confirmCompetencia:'2026-10' }, deps);
+ };
+ try {
+  const first = await calculate();
+  expect(first.status).toBe('CALCULATED');
+  const before = await lerOperacao(pg, id, '2026-10');
+  const confirmed = await salvarOperacao(pg, id, '2026-10', userId,
+   { action:'confirm', expectedRevision:before.revision, requestId:randomUUID() }, { isAdmin:true });
+  expect(confirmed.status).toBe('CONFIRMED');
+  const released = await salvarOperacao(pg, id, '2026-10', userId,
+   { action:'release', expectedRevision:confirmed.revision, requestId:randomUUID() }, { isAdmin:true });
+  expect(released.status).toBe('RELEASED');
+  const invoice = await pg.portalInvoice.findFirst({ where:{ clientId:id }, include:{ itens:true } });
+  await pg.portalInvoice.update({ where:{ id:invoice.id }, data:{ total:200, issqnBaseCalculo:200, issqnValor:4,
+   itens:{ update:{ where:{ id:invoice.itens[0].id }, data:{ valor:200 } } } } });
+  const stale = await lerOperacao(pg, id, '2026-10');
+  expect(stale.status).toBe('INVALIDATED');
+  expect(stale.blocked).toBeTruthy();
+  const transmit = jest.fn();
+  await expect(executarOperacao(pg, { companyId:id, competencia:'2026-10', userId,
+   isAdmin:true, revision:released.revision }, { transmit })).rejects.toThrow(stale.blocked);
+  expect(transmit).not.toHaveBeenCalled();
+  expect(await pg.appSetting.count({ where:{ key:{ startsWith:`operations_execution:${id}:2026-10:` } } })).toBe(0);
+  // A segunda coleta concluída não reimporta a nota nem duplica a receita.
+  seed.collect.mockImplementation(async () => ({ ok:true, complete:true, partial:false, cnpj:'12345678000199' }));
+  mockSimular.mockResolvedValueOnce({ dasValor:12, raw:{ synthetic:true, revision:2 } });
+  const second = await calculate();
+  expect(second).toMatchObject({ status:'CALCULATED', calculation:{ receita:200, imposto:12 } });
+  expect(second.calculation.calculoId).not.toBe(first.calculation.calculoId);
+  const current = await lerOperacao(pg, id, '2026-10');
+  expect(current.blocked).toBeNull();
+  await salvarOperacao(pg, id, '2026-10', userId,
+   { action:'confirm', expectedRevision:current.revision, requestId:randomUUID() }, { isAdmin:true });
+  const connection = new PrismaClient({ datasources:{ db:{ url:raw } } });
+  try {
+   expect((await lerOperacao(connection, id, '2026-10')).status).toBe('CONFIRMED');
+   expect((await lerResultadoCalculoOperacoes(connection, id, '2026-10', first.requestId)).attempt).toEqual(first);
+   expect((await lerResultadoCalculoOperacoes(connection, id, '2026-10', second.requestId)).attempt).toEqual(second);
+   expect((await lerResultadoCalculoOperacoes(connection, id, '2026-09', second.requestId)).attempt).toBeNull();
+   expect((await lerOperacao(connection, id, '2026-09')).status).toBe('PENDING');
+  } finally { await connection.$disconnect(); }
+  expect(await pg.apuracaoSnapshot.count({ where:{ portalClientId:id } })).toBe(1);
+  expect((await pg.apuracaoSnapshot.findUnique({ where:{ portalClientId_competencia:{ portalClientId:id, competencia:'2026-10' } } })).estado).toBe('calculada');
+  expect(mockSimular).toHaveBeenCalledTimes(2);
+ } finally {
+  await pg.portalInvoice.deleteMany({ where:{ clientId:id } });
+  await pg.guideIngestionLock.deleteMany({ where:{ id:{ contains:id } } });
+  await pg.atividadePgdasd.delete({ where:{ id:seed.activityId } });
+ }
+}), 120000);
+async function drainAcceptedTask(taskId) {
+ const deadline=Date.now()+30000;
+ while(Date.now()<deadline) {
+  const task=await pg.manualTask.findUnique({where:{id:taskId}});
+  if(task && task.status!=='running')return;
+  await new Promise(resolve=>setTimeout(resolve,20));
+ }
+ throw Error('Accepted task still running; investigate fixture cleanup');
+}
+// Uses the production GET handler including owner/company ACL. Session identity is
+// supplied by the fixture, as in the existing HTTP integration (no login test).
+function mountPersistedTaskRead(app) {
+ const firm = createFirmPortalRouter({ensureAuthorized: async () => {}, log: {info(){},warn(){},error(){}}});
+ const layer = firm.stack.find(layer => layer.route?.path === '/jobs/tarefas/:taskId' && layer.route.methods.get);
+ expect(layer).toBeDefined();
+ app.get('/firm/jobs/tarefas/:taskId', ...layer.route.stack.map(entry => entry.handle));
+}
+async function readFinishedTask(app, taskId) {
+ const deadline = Date.now() + 30000;
+ while (Date.now() < deadline) {
+  const response = await request(app).get(`/firm/jobs/tarefas/${encodeURIComponent(taskId)}`);
+  expect(response.status).toBe(200);
+  expect(response.body.task.jobId).toBe(taskId);
+  if (response.body.task.status !== 'running') return response.body.task;
+  await new Promise(resolve => setTimeout(resolve, 20));
+ }
+ throw Error('Synthetic async task did not finish; inspect persisted task before cleanup');
+}
+
+test('HTTP async + PostgreSQL: cálculo 202, resultado persistido, replay e confirmação sem transmissão', async () => fixture('SIMPLES', async ({id,userId,companyId}) => {
+ const seed=await seedRealBase({id,companyId}); mockSimular.mockClear();
+ const app=express();app.use(express.json());
+ app.use((req,_res,next)=>{req.auth={user:{id:userId,role:'admin',accountType:'FIRM'}};next();});
+ app.use(createOperationsRouter({prisma:pg,requireFirmCompanyAccess,calculationDependencies:{collect:seed.collect}}));
+ mountPersistedTaskRead(app);
+ const base=`/companies/${id}/operacoes/2026-10`, taskIds=[];
+ try {
+  const preview=await request(app).get(`${base}/calculo/previa`);
+  expect(preview.status).toBe(200);expect(preview.body.canCalculate).toBe(true);
+  const command={expectedRevision:preview.body.revision,requestId:randomUUID(),confirmCompetencia:'2026-10'};
+  const key=randomUUID();
+  const accepted=await request(app).post(`${base}/calculo`).set('Prefer','respond-async').set('Idempotency-Key',key).send(command);
+  if(accepted.body.taskId)taskIds.push(accepted.body.taskId);
+  expect(accepted.status).toBe(202);expect(accepted.body.taskId).toEqual(expect.any(String));
+  expect(accepted.body.calculation).toBeUndefined();
+  const result=await readFinishedTask(app,accepted.body.taskId);
+  expect(result.responseStatus).toBe(200);
+  expect(result.result).toMatchObject({ok:true,companyId:id,competencia:'2026-10',requestId:command.requestId,status:'CALCULATED',calculation:{receita:100,imposto:6}});
+  const stored=await pg.manualTask.findUnique({where:{id:accepted.body.taskId}});
+  expect(stored).toMatchObject({ownerId:userId,kind:'operacoes-calculo-nfse',status:'done',competencia:'2026-10',companyIds:[id]});
+  const replay=await request(app).post(`${base}/calculo`).set('Prefer','respond-async').set('Idempotency-Key',key).send(command);
+  expect(replay.status).toBe(202);expect(replay.body.taskId).toBe(accepted.body.taskId);
+  expect((await readFinishedTask(app,replay.body.taskId)).result).toEqual(result.result);
+  const exact=await request(app).get(`${base}/calculo/resultado`).query({requestId:command.requestId});
+  expect(exact.status).toBe(200);expect(exact.body.attempt).toMatchObject({requestId:command.requestId,status:'CALCULATED'});
+  const operation=await request(app).get(base);expect(operation.status).toBe(200);expect(operation.body.blocked).toBeNull();
+  const confirmed=await request(app).put(base).send({action:'confirm',expectedRevision:operation.body.revision,requestId:randomUUID()});
+  expect(confirmed.status).toBe(200);expect(confirmed.body.status).toBe('CONFIRMED');
+  expect(mockSimular).toHaveBeenCalledTimes(1);expect(seed.collect).toHaveBeenCalledTimes(1);
+  expect((await pg.apuracaoSnapshot.findUnique({where:{portalClientId_competencia:{portalClientId:id,competencia:'2026-10'}}})).estado).toBe('calculada');
+  expect(await pg.manualTask.count({where:{ownerId:userId}})).toBe(1);
+ } finally {
+  // Drain accepted work before fixture rows are removed, including on assertion failure.
+  for(const taskId of taskIds) await drainAcceptedTask(taskId);
+  await assertFixtureCanBeCleaned(userId);
+  await pg.manualTask.deleteMany({where:{ownerId:userId}});
+  await pg.portalInvoice.deleteMany({where:{clientId:id}});
+  await pg.guideIngestionLock.deleteMany({where:{id:{contains:id}}});
+  await pg.atividadePgdasd.delete({where:{id:seed.activityId}});
+ }
+}),120000);

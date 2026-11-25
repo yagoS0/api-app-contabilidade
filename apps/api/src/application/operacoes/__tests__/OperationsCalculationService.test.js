@@ -57,6 +57,19 @@ test('sem movimento pode passar na prévia, mas exige revisão antes de simular'
  expect(f.deps.collect).toHaveBeenCalledTimes(1);
  expect(f.deps.calculate).not.toHaveBeenCalled();
 });
+
+test.each([null, undefined, ''])('E1 receita ausente (%p) não é convertida em zero nem enviada ao cálculo', async total => {
+ const f = fixture();
+ f.deps.getDados.mockResolvedValue({
+  atividades:[{ idAtividade:'1', valorInterno:100, valorExterno:0, sujeitoFatorR:false }],
+  faturamento:{ total }, rbt12Origem:'EXTRATO_PGDAS', rbt12:1000,
+ });
+ const result = await executarCalculoOperacoes(f.db, await command(f), f.deps);
+ expect(result.status).toBe('REVIEW');
+ expect(result.calculation).toBeNull();
+ expect(result.reason).toContain('Receita incompleta');
+ expect(f.deps.calculate).not.toHaveBeenCalled();
+});
 test('coleta NFS-e, audita e simula uma vez; replay não coleta nem calcula',async()=>{const f=fixture(),c=await command(f); const out=await executarCalculoOperacoes(f.db,c,f.deps);expect(out.status).toBe('CALCULATED');expect(out.calculation).toMatchObject({receita:100,imposto:6});expect(await executarCalculoOperacoes(f.db,c,f.deps)).toEqual(out);expect(f.deps.collect).toHaveBeenCalledTimes(1);expect(f.deps.calculate).toHaveBeenCalledTimes(1);expect((await lerResultadoCalculoOperacoes(f.db,'a','2026-10','request-123')).attempt.requestId).toBe('request-123');await conferirCalculoManualOperacoes(f.db,'a','2026-10',f.deps);});
 test.each([{complete:false},{partial:true},{cnpj:'999'},{ok:false}])('coleta incompleta/identidade inválida impede simulação %j',async patch=>{const f=fixture(),c=await command(f);f.deps.collect.mockResolvedValue({ok:true,complete:true,partial:false,cnpj:'12345678000199',...patch});expect((await executarCalculoOperacoes(f.db,c,f.deps)).status).toBe('REVIEW');expect(f.deps.calculate).not.toHaveBeenCalled();});
 test('NF-e efetiva bloqueia mesmo sem fonte configurada',async()=>{const f=fixture();f.db.portalInvoice.count.mockResolvedValue(1);expect((await prepararCalculoOperacoes(f.db,'a','2026-10',f.deps)).canCalculate).toBe(false);});
@@ -72,4 +85,14 @@ test('cálculo legado preserva fallback comprovado sem exigir fontes NFS-e do no
  const f=fixture();f.db.regimeHistorico.findMany.mockResolvedValue([]);f.db.cadastroFiscal.findUnique.mockResolvedValue({regime:'SIMPLES_NACIONAL',regimeApuracao:'COMPETENCIA',dataOpcaoSN:new Date('2020-01-01')});f.db.portalInvoice.count.mockResolvedValue(1);
  await expect(conferirCalculoManualOperacoes(f.db,'a','2026-10',f.deps)).resolves.toBeUndefined();expect(f.db.portalInvoice.count).not.toHaveBeenCalled();
  f.db.cadastroFiscal.findUnique.mockResolvedValue({regime:'SIMPLES_NACIONAL',regimeApuracao:'COMPETENCIA'});await expect(conferirCalculoManualOperacoes(f.db,'a','2026-10',f.deps)).rejects.toThrow('Simples não comprovado');
+});
+
+test.each([['2026-11', /integração fiscal da FS12/], ['2026-12', /integração fiscal da FS12/], ['2027-01', /2027.*homologação/]])('FS12 Operações: %s recusa cálculo antes de coleta ou reserva', async (competencia, message) => {
+ const f = fixture(); f.audit.competencia = competencia;
+ const preview = await prepararCalculoOperacoes(f.db, 'a', competencia, f.deps);
+ expect(preview.canCalculate).toBe(false);
+ expect(preview.blockers.join(' ')).toMatch(message);
+ await expect(executarCalculoOperacoes(f.db, { companyId:'a', competencia, userId:'user', requestId:'fs12-guard-request', confirmCompetencia:competencia, expectedRevision:preview.revision }, f.deps)).rejects.toThrow(message);
+ expect(f.deps.collect).not.toHaveBeenCalled(); expect(f.deps.calculate).not.toHaveBeenCalled();
+ expect(f.db.appSetting.upsert).not.toHaveBeenCalled();
 });

@@ -71,3 +71,12 @@ test('regime histórico alterado após confirmação recusa liberação sem modi
  db.regimeHistorico.findMany.mockResolvedValue([{regime:'LUCRO_PRESUMIDO',vigenciaInicio:new Date('2020-01-01')}]);
  await expect(save(db,'release')).rejects.toThrow('Simples não comprovado');expect(await lerOperacao(db,'a','2026-09')).toEqual(before);expect(db.appSetting.create).toHaveBeenCalledTimes(1);
 });
+
+test.each([['2026-11', /integração fiscal da FS12/], ['2026-12', /integração fiscal da FS12/], ['2027-01', /2027.*homologação/]])('FS12 Operações: %s não confirma nem libera cálculo bloqueado', async (competencia, message) => {
+ const db = database(); const before = await lerOperacao(db, 'a', competencia);
+ expect(before.blocked).toMatch(message);
+ for (const action of ['confirm', 'release']) {
+  await expect(salvarOperacao(db, 'a', competencia, 'user', { action, requestId:'fs12-guard-' + action, expectedRevision:before.revision })).rejects.toThrow(message);
+ }
+ expect(db.appSetting.upsert).not.toHaveBeenCalled(); expect(db.appSetting.create).not.toHaveBeenCalled();
+});
