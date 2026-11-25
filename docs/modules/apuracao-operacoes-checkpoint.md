@@ -19,17 +19,26 @@ Evidências locais em `.altan-governance/e2-validation/final-focal/`:
 - Navegador/API/PG reais, provedor fiscal simulado: `e2e-evidence/e2-20261125-256d2053/browser-confirmed-history-324ad9ac-c491-415a-af0d-5041597001e4/report.json` aprovado em desktop/mobile antes/depois de recarga.
 - Revisões delimitadas existentes: `review-confirmed-history-static.json` e `review-transmission-ui-contract-static.json`; não repetir sem mudança relevante.
 
-## Próximo incremento: cálculo em lote persistido
+## Cálculo em lote — validação funcional concluída em 25/11/2026
 
-Campanha sintética `e2-20261125-256d2053`, casos T156.7/T156.2/T159.2, PA11/2026. FS12 revisão1 confirmada por API, XML sintético processado por extratores reais, auditoria completa.
+Implementação existente validada sem nova alteração produtiva: Calcular abre a prévia individual; Calcular selecionadas e Confirmar cálculo processam cada empresa com identidade própria. Sucesso parcial não é perdido quando outra empresa falha. Não há mudança de regra operacional; R01/R02/R19/R20/R22 e seção38 preservadas.
 
-O clique do lote chegou à API com três intenções; todas terminaram REVIEW antes da etapa fiscal pretendida. Evidência: `browser-batch-90958e52-e9f3-424b-9640-dcc2c42c6101/report.json`. Não apagar ledgers nem repetir o roteiro antigo.
+Campanha sintética `e2-20261125-256d2053`, PA11/2026, casos T156.7/T156.2/T159.2. A preparação anterior foi concluída: prova de zero despachos nas tentativas antigas, histórico PA10 pela API com `somenteDocumentos:true`, correção somente da classificação sintética para o CNAE existente. Requests antigos REVIEW e FS12 revisão1 preservados. Não repetir esses pedidos nem apagar os arquivos `.once.json`.
 
-Diagnóstico encerrado: RBT12 é PARCIAL_LOCAL porque o histórico configurado no provedor fake ainda não foi recuperado; T156.2/T159.2 têm classificação sintética não Fator R incompatível com seu CNAE sintético. Dados detalhados: `batch-read-diagnostic-1795624504211.json`. Não alterar guardas produtivas para contornar esses bloqueios.
+Resultado: T156.7 CALCULATED com snapshot/vínculo FS12; T156.2 recusa MSG_ISN_029 recuperada para REVIEW pela evidência causal; T159.2 permanece UNCERTAIN/DESCONHECIDA, bloqueada para repetição. Exatamente um comando SIMULAR e um despacho por empresa, sem transmissão real. Recarga da interface e dois reinícios da API preservaram os resultados; reconciliação não gerou chamadas adicionais ao provedor.
 
-Próximas ações: comprovar zero comandos/despachos por PG e log do provedor; recuperar PA10 pela rota real `circular/2026-10/sync-pgdas` com `somenteDocumentos:true`; ajustar insumos sintéticos coerentemente; reler contexto/FS12/auditoria/RBT e iniciar nova intenção explícita, preservando requests anteriores. Preparação parcial em `.altan-governance/prepared-operations-batch-reprepare/`; revisar o arquivo existente antes de executar, sem reconstruir diagnóstico.
+Evidências no diretório da campanha:
+- `browser-batch-v2-299381a5-2ce4-4a6d-b79e-5200ce6a1bca/report.json`: PASS, lote e recarga por navegador/API/PG reais.
+- `operations-batch-v2-readback-bd5a50cd-e734-4d41-9a97-c281ff1aaa7a.json` e `operations-batch-v2-readback-354164e6-7cf2-42f8-9e69-b2cf3489ae5f.json`: PASS, custódia/envelope/FS12/snapshot e preservação após reinício. A ordem de referência está no campo previousEvidence do segundo relatório.
+- `operations-batch-reconciliation-reconcile-e4f78407-9939-4f0b-9b5d-56b177f3a5cc.json` e `operations-batch-reconciliation-after-restart-98ef84ea-6748-4c83-98d0-4ae0c88c59db.json`: PASS, recusa causal e desconhecido preservados sem reenvio.
+- `.altan-governance/e2-validation/final-focal/batch-api.json`: 47 testes aprovados (CalculationService/Recovery).
+- `.altan-governance/e2-validation/final-focal/batch-web.json`: 32 testes aprovados (Batch/Recovery/Selection). Nenhuma suíte integral executada.
 
-Depois: uma empresa com sucesso, uma recusa fiscal e uma resposta desconhecida, recarga/reinício sem reenvio. Reaproveitar `prepared-operations-batch-journey`, `prepared-batch-reconciliation` e roteiro parcial `prepared-factor-r-ui-transmission`; não tratar preparação como teste aprovado.
+Falhas de preparo preservadas: primeira inicialização da API não ficou pronta; segunda inicialização aprovada. Uma chamada do verificador foi recusada antes de ação por caminho ausente; corrigido o nome do artefato. Nenhuma delas repetiu cálculo fiscal. Provedor simulado: valores não homologam tributação nem comprovam prontidão produtiva.
+
+## Próximo incremento
+
+Validar o caminho Fator R/FS12 de conferência e transmissão pela interface, reutilizando `prepared-factor-r-ui-transmission` (ainda parcial, não aprovado), sem repetir o lote já concluído. E3, 2027, provedor real e permissões produtivas permanecem fora desta entrega. PR319 depende da base PR318; sem merge/deploy. Código funcional mantido em ef2724e e na base 424d0588; este incremento encerra a validação integrada e atualiza somente este checkpoint.
 
 ## Estado de execução e limites
 
