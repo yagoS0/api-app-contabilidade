@@ -24,12 +24,16 @@ function pasAnteriores(competencia, n = 12) {
   return out;
 }
 
-export function FechamentoModal({ api, feedback, portalClientId, competencia, razao, retificar = false, onClose, onChanged }) {
+function FechamentoContainer({ embedded, titulo, children, ...props }) {
+  return embedded ? <section className="fechamento-modal" aria-label={titulo}>{children}</section> : <Modal titulo={titulo} {...props}>{children}</Modal>;
+}
+export function FechamentoModal({ api, feedback, portalClientId, competencia, razao, retificar = false, onClose, onChanged, embedded = false, onBusyChange, disabled = false }) {
   const contexto = portalClientId + ':' + competencia;
   const contextoAtual = useRef(contexto); contextoAtual.current = contexto;
   const revisao = useRef(0);
   const operacao = useRef(false);
   const pedidoAtual = useRef(0);
+  const pedidoSimulacao = useRef(null);
   const [dados, setDados] = useState(null);
   const [erroLocal, setErroLocal] = useState(null);
   const [erroCarga, setErroCarga] = useState(false);
@@ -56,6 +60,23 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
+  const [fs12Busy, setFs12Busy] = useState(false), [aptidao, setAptidao] = useState(null), [aptidaoErro, setAptidaoErro] = useState('');
+  const aptidaoGeneration = useRef(0);
+  useEffect(() => { onBusyChange?.(acting || fs12Busy); return () => onBusyChange?.(false); }, [acting, fs12Busy, onBusyChange]);
+  async function lerAptidao() {
+    const generation = ++aptidaoGeneration.current;
+    setAptidao(null); setAptidaoErro('');
+    if (competencia < '2026-11') return;
+    try {
+      if (!api.getAptidaoFiscalFechamento) throw Error('Aptidão fiscal indisponível.');
+      const response = await api.getAptidaoFiscalFechamento(portalClientId, competencia);
+      if (contextoAtual.current !== contexto || generation !== aptidaoGeneration.current) return;
+      if (response?.ok !== true || response.aptidao?.portalClientId !== portalClientId || response.aptidao?.competencia !== competencia) throw Error('Aptidão fiscal incompatível.');
+      setAptidao(response.aptidao);
+    } catch (error) { if (contextoAtual.current === contexto && generation === aptidaoGeneration.current) setAptidaoErro(error.message || 'Aptidão fiscal indisponível.'); }
+  }
+  useEffect(() => { void lerAptidao(); return () => { aptidaoGeneration.current++; }; }, [api, portalClientId, competencia]);
+  function folhaConfirmada() { invalidarCalculo(); void lerAptidao(); }
   const [atividades, setAtividades] = useState([]);
   const [atividadeOpcoes, setAtividadeOpcoes] = useState([]); // Q19: catálogo PGDAS-D p/ dropdown
   const [folha, setFolha] = useState({}); // { pa: valor }
@@ -176,13 +197,15 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   );
   const declaracaoZerada = somaAtividades === 0;
   // O backend recusa antes de gastar a chamada; aqui é só antecipação, com o motivo à vista.
-  const motivoCalcularBloqueado = novaApresentacaoFs12
-    ? 'Novo cálculo indisponível: a conferência fiscal mensal da FS12 e sua integração ainda estão pendentes.'
+  const motivoCalcularBloqueado = disabled ? 'Seu acesso permite somente consulta.' : novaApresentacaoFs12 && aptidao?.capacidades?.calcular !== true
+    ? aptidaoErro || aptidao?.impedimentos?.map(p => typeof p === 'string' ? p : p.mensagem).join(' ') || 'Conferindo aptidão fiscal e folha confirmada.'
     : !declaracaoZerada || semMovimento
     ? ""
     : (dados?.semMovimentoDisponivel
       ? "As atividades somam R$ 0,00. Marque \"Declarar SEM MOVIMENTO\" se o mês não teve receita."
       : `A empresa tem faturamento de ${fmtMoney(dados?.faturamento?.total)} na competência — preencha os valores das atividades antes de calcular.`);
+
+  const motivoTransmitirBloqueado = novaApresentacaoFs12 && aptidao?.capacidades?.transmitir !== true ? aptidaoErro || aptidao?.impedimentos?.map(p => typeof p === 'string' ? p : p.mensagem).join(' ') || 'Transmissão não autorizada para este cálculo. Recarregue a aptidão.' : '';
 
   // Conferência da folha: o backend deriva dos lançamentos contábeis (FolhaDerivadaService).
   // Serve para COMPARAR com o que é digitado — o Fator R decide Anexo III ou V e, até aqui, esse
@@ -312,7 +335,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
 
   async function handleCalcular() {
     if (motivoCalcularBloqueado) return;
-    if (operacao.current) return;
+    if (operacao.current || fs12Busy || disabled) return;
     operacao.current = true;
     const anterior = { resultado, relatorio, relatorioErro, formularioRecuperado };
     setErroLocal(null);
@@ -322,8 +345,12 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     setActing(true);
     let calculou = false;
     try {
+      const assinatura = JSON.stringify({contexto,atividades,folhaSerie,semMovimento,regime:dados?.regimeApuracao,fs12:aptidao?.fs12});
+      if (novaApresentacaoFs12 && pedidoSimulacao.current?.assinatura !== assinatura) pedidoSimulacao.current = { assinatura, chave: crypto.randomUUID() };
       const out = await api.calcularFechamento(portalClientId, competencia, {
+        ...(novaApresentacaoFs12 ? { chaveIdempotencia: pedidoSimulacao.current.chave } : {}),
         atividades, folhaMensal12: folhaSerie, regimeApuracao: dados?.regimeApuracao,
+        ...(novaApresentacaoFs12 ? { fs12RevisaoEsperada: aptidao?.fs12?.revisao, fs12ContextoRevisao: aptidao?.fs12?.contextoRevisao } : {}),
         // Pela SOMA, não pelo comprimento — é o que o payload do PGDAS-D de fato leva.
         semMovimento: semMovimento && declaracaoZerada,
       });
@@ -332,7 +359,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (!vigente()) return;
       setResultado({ ...out.result, calculoId: out.result?.calculoId || out.result?.snapshot?.idempotencyKey });
       feedback?.notifySuccess?.(`DAS calculado: ${fmtMoney(out.result?.dasValor || 0)}`);
-      calculou = true;
+      calculou = true; await lerAptidao();
     } catch (err) {
       if (vigente()) {
         if ((err?.code || err?.payload?.error) === "SERPRO_CHAMADA_REPETIDA" && anterior.resultado?.calculoId) {
@@ -349,7 +376,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
 
   async function handleSalvar() {
-    if (operacao.current || !resultado?.calculoId) return;
+    if (operacao.current || disabled || fs12Busy || !resultado?.calculoId) return;
     operacao.current = true;
     setErroLocal(null);
     setActing(true);
@@ -357,6 +384,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       const out = await api.salvarFechamento(portalClientId, competencia, {
         calculoId: resultado.calculoId,
         atividades, folhaMensal12: folhaSerie, regimeApuracao: dados?.regimeApuracao,
+        ...(novaApresentacaoFs12 ? { fs12RevisaoEsperada: aptidao?.fs12?.revisao, fs12ContextoRevisao: aptidao?.fs12?.contextoRevisao } : {}),
       });
       if (contextoAtual.current !== contexto) return;
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
@@ -369,7 +397,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }
 
   async function handleTransmitir() {
-    if (operacao.current || !resultado?.calculoId) return;
+    if (motivoTransmitirBloqueado) return;
+    if (operacao.current || disabled || fs12Busy || !resultado?.calculoId) return;
     if (confirmComp !== competencia) { feedback?.notifyError?.("Digite a competência exata."); return; }
     operacao.current = true;
     setActing(true);
@@ -433,7 +462,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   }, [showTransmit, onClose]);
 
   return (
-    <Modal titulo={`Fechamento — ${razao} · ${competencia}`} aoFechar={() => { if (!operacao.current) onClose?.(); }} ocupado={acting} fecharAoEscape={false} tamanho="lg" className="fechamento-modal">
+    <FechamentoContainer embedded={embedded} titulo={`Fechamento — ${razao} · ${competencia}`} aoFechar={() => { if (!operacao.current) onClose?.(); }} ocupado={acting || fs12Busy} fecharAoEscape={false} tamanho="lg" className="fechamento-modal">
       <div className="fechamento-conteudo">
         <PendenciasPeriodoBanner api={api} companyId={portalClientId} competencia={competencia} ocupado={acting} />
         {erroLocal && <Aviso tom="erro" titulo="Não foi possível concluir"><div role="alert">{erroLocal}</div>{erroCarga && <Button onClick={load} disabled={loading}>Recarregar dados</Button>}</Aviso>}
@@ -441,7 +470,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
         {loading && <div style={{ color: PANEL.muted, padding: 20 }}>Carregando…</div>}
 
         {dados && !loading && (
-          <fieldset disabled={acting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "contents" }}>
+          <fieldset disabled={disabled || acting || fs12Busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "contents" }}>
             {/* Q44: Cadastro fiscal acessível aqui (a aba "Apuração V2" saiu do menu). */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {!dados.cadastroCompleto && (
@@ -617,7 +646,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             </section>
 
             {/* Folha 12m (Fator-R) — só se houver atividade sujeita */}
-            {novaApresentacaoFs12 && <Fs12DeclaratoriaPanel key={contexto} razao={razao} api={api} portalClientId={portalClientId}
+            {novaApresentacaoFs12 && <Fs12DeclaratoriaPanel onConfirmed={folhaConfirmada} onBusyChange={setFs12Busy} calculoDisponivel={aptidao?.capacidades?.calcular === true} disabled={disabled || acting || fs12Busy} key={contexto} razao={razao} api={api} portalClientId={portalClientId}
               competencia={competencia} temFatorR={temFatorR}
               referencia={formularioRecuperado?.folhaMensal12 ?? dados?.folhaMensal12}
               recuperado={Boolean(formularioRecuperado)} />}
@@ -778,7 +807,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 há UM accent, e ele é sempre o próximo passo legítimo.
                 As cores antigas eram token de ESTADO em botão de AÇÃO (ciano = categoria,
                 âmbar = pendência) — ver `apps/web/CLAUDE.md`. */}
-            {motivoCalcularBloqueado && !novaApresentacaoFs12 && <Aviso compacto tom="atencao" titulo="Antes de calcular">{dados?.semMovimentoDisponivel ? "As atividades somam R$ 0,00. Confirme a opção de declaração sem movimento antes de calcular." : motivoCalcularBloqueado}</Aviso>}
+            {motivoTransmitirBloqueado && <Aviso compacto tom="atencao" titulo="Antes de transmitir">{motivoTransmitirBloqueado}</Aviso>}
+            {motivoCalcularBloqueado && <Aviso compacto tom="atencao" titulo="Antes de calcular">{motivoCalcularBloqueado}</Aviso>}
             <div className="fechamento-acoes">
               {/* ⚠ Saída no RODAPÉ, não só no ✕ do topo. O modal rola por dentro
                   (`maxHeight: 94vh` + `overflowY: auto`) e o cabeçalho rola junto: quem desceu até
@@ -789,19 +819,19 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   matando a regra do bloco acima. Só existem `primary | secondary | danger`.
                   O `marginRight: auto` separa a saída do grupo de ação: sair não é um passo do
                   fluxo, é o oposto dele. */}
-              <Button disabled={acting} onClick={onClose} variant="secondary" style={{ marginRight: "auto" }}
+              <Button disabled={disabled || acting || fs12Busy} onClick={onClose} variant="secondary" style={{ marginRight: "auto" }}
                 title="Fecha sem salvar. Nada é transmitido.">Fechar</Button>
               {/* ⚠ Desabilitado NOMEIA o motivo. Antes a condição era `atividades.length === 0 &&
                   !semMovimento`: com a lista preenchida de R$ 0,00 o botão ficava ATIVO e o clique
                   virava chamada PAGA ao SERPRO para levar 400 da RFB ("O valor da atividade deve
                   ser maior que zero") — e, quando ficava desabilitado, ficava sem nenhum título
                   dizendo por quê. */}
-              <Button onClick={handleCalcular} disabled={acting || Boolean(motivoCalcularBloqueado)}
+              <Button onClick={handleCalcular} disabled={disabled || acting || fs12Busy || Boolean(motivoCalcularBloqueado)}
                 title={motivoCalcularBloqueado}
                 variant={resultado ? "secondary" : "primary"}>{acting ? "…" : (declaracaoZerada && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</Button>
-              <Button onClick={handleSalvar} disabled={acting || !resultado?.calculoId}
+              <Button onClick={handleSalvar} disabled={disabled || acting || fs12Busy || !resultado?.calculoId}
                 variant="secondary" title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</Button>
-              <Button onClick={() => setShowTransmit(true)} disabled={acting || !resultado?.calculoId}
+              <Button onClick={() => setShowTransmit(true)} disabled={disabled || acting || fs12Busy || !resultado?.calculoId || Boolean(motivoTransmitirBloqueado)}
                 variant={resultado ? "primary" : "secondary"} title={!resultado ? "Calcule antes de transmitir" : ""}>
                 {retificar ? "🔄 Retransmitir (retificadora)" : "📤 Apurar/Transmitir"}
               </Button>
@@ -831,15 +861,15 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   {/* Este é o clique irreversível do lado da Receita — `danger` é o único lugar
                       desta tela onde o vermelho é a AÇÃO, e ele já vive dentro da caixa de
                       confirmação com a competência digitada. */}
-                  <Button variant="secondary" disabled={acting} onClick={() => { setShowTransmit(false); setConfirmComp(""); }}>Voltar à conferência</Button>
-                  <Button onClick={handleTransmitir} disabled={acting || confirmComp !== competencia} variant="danger">{acting ? "Transmitindo…" : "Confirmar"}</Button>
+                  <Button variant="secondary" disabled={disabled || acting || fs12Busy} onClick={() => { setShowTransmit(false); setConfirmComp(""); }}>Voltar à conferência</Button>
+                  <Button onClick={handleTransmitir} disabled={disabled || acting || fs12Busy || confirmComp !== competencia} variant="danger">{acting ? "Transmitindo…" : "Confirmar"}</Button>
                 </div>
               </div>
             )}
           </fieldset>
         )}
       </div>
-    </Modal>
+    </FechamentoContainer>
   );
 }
 

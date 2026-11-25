@@ -1,7 +1,7 @@
 import { criarHandlerPendenciasDas446 } from './pendenciasDas446Http.js';
 import { lerOperacaoExterna, salvarOperacaoExterna } from '../../application/operacoes/OperationsExternalService.js';
 import { listarErrosConsultas, listarEvidenciasOperacoes } from '../../application/operacoes/OperationsConsultas.js';
-import { prepararCalculoOperacoes, executarCalculoOperacoes, lerResultadoCalculoOperacoes } from '../../application/operacoes/OperationsCalculationService.js';
+import { reconciliarCalculoOperacoes, prepararCalculoOperacoes, executarCalculoOperacoes, lerResultadoCalculoOperacoes } from '../../application/operacoes/OperationsCalculationService.js';
 import { Router } from 'express';
 import { lerOperacao, salvarOperacao } from '../../application/operacoes/OperationsService.js';
 import { executarOperacao } from '../../application/operacoes/OperationsExecution.js';
@@ -29,7 +29,7 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batch
   router.get('/operacoes/consultas', run(async req => listarErrosConsultas(prisma, await empresasVisiveis(req), req.query.competencia)));
   router.get('/operacoes/evidencias', run(async req => {
     const ids = await empresasVisiveis(req);
-    return prisma.$transaction(tx => listarEvidenciasOperacoes(tx, ids, req.query.competencia, { rootDb: prisma }), { isolationLevel: 'RepeatableRead', timeout: 20000 });
+    return prisma.$transaction(tx => listarEvidenciasOperacoes(tx, ids, req.query.competencia, { rootDb: prisma, autorId: req.auth.user.id }), { isolationLevel: 'RepeatableRead', timeout: 20000 });
   }));
   router.get('/operacoes/lotes', run(req => batches().list({ userId: req.auth.user.id, competencia: req.query.competencia })));
   router.post('/operacoes/lotes/previa', run(async req => ({ preview: await batches().preview({ userId: req.auth.user.id, competencia: req.body?.competencia, batchId: req.body?.batchId || null }) })));
@@ -38,9 +38,10 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batch
   const base = '/companies/:companyId/operacoes/:competencia';
   // 4.4.5 composition applies the canonical FIRM + company ACCOUNTANT guards.
   router.get(`${base}/pendencias-das`, criarHandlerPendenciasDas446());
-  router.get(`${base}/calculo/previa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => prepararCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, calculationDependencies)));
+  router.get(`${base}/calculo/previa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => prepararCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, { ...calculationDependencies, autorId: req.auth.user.id })));
+  router.post(`${base}/calculo/reconciliar`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => reconciliarCalculoOperacoes(prisma, {...req.params,userId:req.auth.user.id,requestId:req.body?.requestId,encerrarSemDespacho:req.body?.encerrarSemDespacho===true,confirmEncerramentoSemDespacho:req.body?.confirmEncerramentoSemDespacho===true,confirmCompetencia:req.body?.confirmCompetencia}, calculationDependencies)));
   router.get(`${base}/calculo/resultado`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => lerResultadoCalculoOperacoes(prisma, req.params.companyId, req.params.competencia, req.query.requestId)));
-  router.post(`${base}/calculo`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute('operacoes-calculo-nfse', run(req => executarCalculoOperacoes(prisma, { ...req.params, userId: req.auth.user.id, expectedRevision: req.body?.expectedRevision, requestId: req.body?.requestId, confirmCompetencia: req.body?.confirmCompetencia }, calculationDependencies)), 'Calcular NFS-e'));
+  router.post(`${base}/calculo`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute('operacoes-calculo-nfse', run(req => executarCalculoOperacoes(prisma, { ...req.params, userId: req.auth.user.id, expectedRevision: req.body?.expectedRevision, requestId: req.body?.requestId, confirmCompetencia: req.body?.confirmCompetencia, confirmSemMovimento: req.body?.confirmSemMovimento === true }, calculationDependencies)), 'Calcular NFS-e'));
   router.get(`${base}/externa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => lerOperacaoExterna(prisma, req.params.companyId, req.params.competencia)));
   router.post(`${base}/externa`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarOperacaoExterna(prisma, { ...req.params, userId: req.auth.user.id, chave: req.body?.chave, versao: req.body?.versao, hash: req.body?.hash, confirmCompetencia: req.body?.confirmCompetencia })));
   const guideEvidence = createOperationsGuideEvidence({ db: prisma });
@@ -102,7 +103,7 @@ export function createOperationsRouter({ prisma, requireFirmCompanyAccess, batch
     ]);
     return { items, total, offset };
   }));
-  router.get(base, requireFirmCompanyAccess(), run(req => prisma.$transaction(tx => lerOperacao(tx, req.params.companyId, req.params.competencia, { rootDb: prisma }), { isolationLevel: 'RepeatableRead', timeout: 20000 })));
+  router.get(base, requireFirmCompanyAccess(), run(req => prisma.$transaction(tx => lerOperacao(tx, req.params.companyId, req.params.competencia, { rootDb: prisma, autorId: req.auth.user.id }), { isolationLevel: 'RepeatableRead', timeout: 20000 })));
   router.put(base, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), run(req => salvarOperacao(prisma, req.params.companyId, req.params.competencia, req.auth.user.id, req.body, { isAdmin: String(req.auth.user.role).toLowerCase() === 'admin' })));
   router.post(`${base}/executar`, requireFirmCompanyAccess({ minRole: 'ACCOUNTANT' }), backgroundRoute('operacoes-execucao', run(async req => {
     if (req.body?.confirmCompetencia !== req.params.competencia) throw Object.assign(new Error('Confirme a competência antes de executar a liberação.'), { status: 422 });

@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {configuration,json} from './common.mjs';
+const cfg=await configuration(process.argv[2]);
+const webRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../../web');
+const envDir=path.join(cfg.output,'vite-empty-env');await fs.mkdir(envDir,{recursive:true});
+const contents=await fs.readdir(envDir);if(contents.some(name=>name.startsWith('.env')))throw Error('Diretório Vite deve permanecer sem .env');
+process.env.VITE_API_MODE='real';process.env.VITE_API_BASE_URL=cfg.apiUrl;process.env.VITE_API_TOKEN='';
+const {createServer}=await import('vite');
+const server=await createServer({root:webRoot,envDir,mode:'fs12synthetic',server:{host:'127.0.0.1',port:Number(new URL(cfg.webUrl).port),strictPort:true}});
+await server.listen();
+await json(path.join(cfg.output,'web-process.json'),{pid:process.pid,origin:cfg.webUrl,root:webRoot,mode:'real',envDir});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{await server.close();process.exit(0);});

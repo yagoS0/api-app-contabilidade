@@ -1,0 +1,24 @@
+{
+  "summary": "Registro documental da autorização E2 de Apuração recebida em 25/11/2026.",
+  "operationalImpact": "Seção38 substitui delimitadamente restrições das seções36/37 para integração FS12/Operações, custódia e reconciliação. Preserva pendências E1, contratos fiscais, R25/R26 e autorização específica para atos externos. Nenhum efeito produtivo.",
+  "risk": "high",
+  "domains": [
+    "documentation",
+    "governance"
+  ],
+  "tests": [
+    "Revisão independente documental por revisao_fluxo: aprovada; três ajustes incorporados.",
+    "Canônica e snapshot SHA256 99a27e4a2191f8243cffa662e18074ea92216bb4cad4ec0b08caa42d650cb745 iguais; metadata correspondente.",
+    "Nenhum teste funcional executado; registro documental. T156–T162 definem critérios ainda não comprovados."
+  ],
+  "humanDecisions": [
+    "Anexo f3291f45-ea92-40fa-b862-aed1ce7465dc/Texto colado.txt: aprovação técnica E1 PR317 e autorização E2; sem merge, deploy ou atos fiscais reais."
+  ],
+  "rollback": "Correção documental rastreável, sincronizando canônica, snapshot e hash; preservar histórico e não reativar implicitamente restrições superadas.",
+  "status": "documented_decision",
+  "baseSha": "3bb3f0bba27678268fc42a8be00637ab21b97d9a",
+  "sourcePaths": [
+    "REGRAS_OPERACIONAIS.md",
+    "docs/governance/operational-reference.json"
+  ]
+}

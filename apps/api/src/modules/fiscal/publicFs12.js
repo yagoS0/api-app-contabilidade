@@ -8,3 +8,9 @@ export { confirmarFs12DaApuracao } from './application/confirmarFs12DaApuracao.j
 export { exigirDespachoPgdasFs12Permitido, exigirEnvelopePgdasFs12Permitido } from './domain/guardaPgdasFs12.js';
 export { prepararFs12ParaNovoCalculo, vincularFs12AoCalculo, consultarVinculoFs12DoCalculo, validarUsoFs12DoCalculo } from './application/vincularFs12AoCalculo.js';
 export { registrarFatoCalculoFs12 } from './application/registrarFatoCalculoFs12.js';
+
+export { selecionarSerieDeclaratoriaFs12 } from './domain/selecionarSerieDeclaratoriaFs12.js';
+
+
+// Pure fiscal-context interpretation shared with Operations; no dispatch authority.
+export { interpretarContextoMensalFs12 } from './domain/contextoMensalFs12.js';

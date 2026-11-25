@@ -72,11 +72,37 @@ test('regime histórico alterado após confirmação recusa liberação sem modi
  await expect(save(db,'release')).rejects.toThrow('Simples não comprovado');expect(await lerOperacao(db,'a','2026-09')).toEqual(before);expect(db.appSetting.create).toHaveBeenCalledTimes(1);
 });
 
-test.each([['2026-11', /integração fiscal da FS12/], ['2026-12', /integração fiscal da FS12/], ['2027-01', /2027.*homologação/]])('FS12 Operações: %s não confirma nem libera cálculo bloqueado', async (competencia, message) => {
- const db = database(); const before = await lerOperacao(db, 'a', competencia);
- expect(before.blocked).toMatch(message);
- for (const action of ['confirm', 'release']) {
-  await expect(salvarOperacao(db, 'a', competencia, 'user', { action, requestId:'fs12-guard-' + action, expectedRevision:before.revision })).rejects.toThrow(message);
- }
- expect(db.appSetting.upsert).not.toHaveBeenCalled(); expect(db.appSetting.create).not.toHaveBeenCalled();
+// Real fiscal composition/B31/B32 policy and ACL; only persistence is a fixture.
+function fiscalDatabase() {
+ const db=database();
+ db.user={findUnique:jest.fn(async()=>({id:'user',role:'accountant',accountType:'FIRM',status:'active'}))};
+ db.portalClient.findUnique.mockResolvedValue({id:'a',companyId:'legacy',cnpj:'12345678000199'});
+ db.company.findUnique.mockResolvedValue({id:'legacy',dataAbertura:new Date('2020-01-01'),regimeHistorico:[{id:'history',companyId:'legacy',regime:'SIMPLES',vigenciaInicio:new Date('2020-01-01'),vigenciaFim:null,updatedAt:new Date('2026-01-01')} ]});
+ db.apuracaoFs12Revisao={findMany:jest.fn(async()=>[]),findFirst:jest.fn(async()=>null)};
+ db.companyMonthlyCircular={findUnique:jest.fn(async()=>null)};
+ db.guide={findFirst:jest.fn(async()=>null)};
+ db.entregaObrigacaoArquivo={findFirst:jest.fn(async()=>null)};
+ db.appSetting.findMany=jest.fn(async()=>[]);
+ return db;
+}
+test.each(['2026-11','2026-12','2027-01'])('FS12 real %s não confirma/libera sem capacidade comprovada',async competencia=>{
+ const db=fiscalDatabase();
+ const before=await lerOperacao(db,'a',competencia,{autorId:'user'});
+ expect(before.blocked).toMatch(/Confirme a folha mensal/);
+ expect(before.aptidaoFiscal.capacidades.transmitir).toBe(false);
+ expect(before.aptidaoFiscal.impedimentos).toEqual(expect.arrayContaining([expect.objectContaining({code:'FS12_CONFIRMACAO_AUSENTE'})]));
+ if(competencia==='2027-01')expect(before.aptidaoFiscal.impedimentos).toEqual(expect.arrayContaining([expect.objectContaining({code:'FS12_POLITICA_NAO_HOMOLOGADA'})]));
+ for(const action of ['confirm','release'])await expect(salvarOperacao(db,'a',competencia,'user',{action,requestId:'fs12-guard-'+action,expectedRevision:before.revision,autorId:'forged'})).rejects.toThrow(/Confirme a folha mensal/);
+ expect(db.user.findUnique.mock.calls.every(([args])=>args.where.id==='user')).toBe(true);
+ expect(db.appSetting.upsert).not.toHaveBeenCalled();expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+test('leitura FS12 sem ator mantém recusa de autenticação real',async()=>{
+ const db=fiscalDatabase();await expect(lerOperacao(db,'a','2026-11')).rejects.toMatchObject({code:'FS12_SEM_AUTENTICACAO',status:401});
+ expect(db.appSetting.upsert).not.toHaveBeenCalled();expect(db.appSetting.create).not.toHaveBeenCalled();
+});
+test('acesso revogado impede confirmação sem usar ator enviado no input',async()=>{
+ const db=fiscalDatabase();const before=await lerOperacao(db,'a','2026-11',{autorId:'user'});
+ db.companyFirmAccess.findUnique.mockResolvedValue({status:'REVOKED',role:'ACCOUNTANT'});
+ await expect(salvarOperacao(db,'a','2026-11','user',{action:'confirm',requestId:'revoked-request',expectedRevision:before.revision,autorId:'admin-forged'})).rejects.toMatchObject({status:403});
+ expect(db.appSetting.upsert).not.toHaveBeenCalled();expect(db.appSetting.create).not.toHaveBeenCalled();
 });

@@ -13,14 +13,14 @@ export async function connect() {
   if (!raw) throw Error('Explicit ALTAN_FS12_DDL_DATABASE_URL required');
   const url = new URL(raw);
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== '127.0.0.1'
-    || url.port !== '55491' || url.pathname !== '/altan_ddl_governance_test'
-    || url.username !== 'altan_ddl_test' || url.search || url.hash)
-    throw Error('Only the dedicated B33b1 disposable destination is permitted');
+    || url.port !== '54661' || url.pathname !== '/altan_rotinas_governance_test'
+    || url.username !== 'altan_test' || url.search || url.hash)
+    throw Error('Only the dedicated E2 disposable destination is permitted');
   const db = new pg.Client({ connectionString: raw });
   await db.connect();
   const { rows: [s] } = await db.query("SELECT current_setting('server_version_num')::int AS version, current_database() AS database");
   assert.ok(s.version >= 160000 && s.version < 170000);
-  assert.equal(s.database, 'altan_ddl_governance_test');
+  assert.equal(s.database, 'altan_rotinas_governance_test');
   await db.query("SET statement_timeout='10s'; SET lock_timeout='5s'");
   return db;
 }

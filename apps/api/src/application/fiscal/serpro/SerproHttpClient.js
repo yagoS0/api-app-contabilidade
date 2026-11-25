@@ -1,5 +1,5 @@
 import axios from "axios";
-import { exigirEnvelopePgdasFs12Permitido } from '../../../modules/fiscal/publicFs12.js';
+import {prepararTransporteComandoFs12,custodiarRespostaComandoFs12} from '../../../modules/fiscal/publicComandosFs12.js';
 import { conferirTransporteCicloFiscal as conferirContextoCicloFiscal, conferirContribuinteCicloFiscal } from '../automacaoCicloFiscalContext.js';
 import { mapSerproError } from "./SerproErrorMapper.js";
 import { SerproAuthService } from "./SerproAuthService.js";
@@ -22,10 +22,10 @@ export class SerproHttpClient {
   }
 
   async request({ method = "POST", path = "", data, headers = {}, params, raw = false, validateStatus }) {
-    exigirEnvelopePgdasFs12Permitido({ payload: data });
+    const fs12=prepararTransporteComandoFs12({payload:data,rota:path,method,params});
     await conferirContextoCicloFiscal();
     await conferirContribuinteCicloFiscal(data?.contribuinte?.numero);
-    const salva = await lerResposta(data, path);
+    const salva = fs12 ? null : await lerResposta(data, path);
     if (salva !== null) return raw ? { status: 200, data: salva, headers: {} } : salva;
     // GUARDA DE CUSTO — antes de qualquer coisa, inclusive antes de autenticar. Este é o único
     // ponto central dos consumidores deste client, e a identificação (CNPJ + idServiço) sai do
@@ -46,11 +46,20 @@ export class SerproHttpClient {
     // Não está no catch HTTP: bloqueio antes da rede não é resultado fiscal incerto.
     await autorizarDespacho(autorizacao);
     let response;
+    const observe=async received=>{
+      if(!Buffer.isBuffer(received.data))throw Object.assign(new Error('Resposta fiscal sem bytes recuperáveis. Confira a tentativa antes de repetir.'),{code:'FS12_RESPOSTA_BYTES_INVALIDOS'});
+      const receivedAt=new Date().toISOString();
+      await custodiarRespostaComandoFs12(autorizacao,{corpo:received.data,httpStatus:received.status,recebidoEm:receivedAt});
+      // Parse only after stage and durable custody. Malformed JSON remains recoverable.
+      try{return {...received,data:JSON.parse(received.data.toString('utf8'))};}
+      catch(cause){throw Object.assign(new Error('Resposta fiscal guardada, mas conteúdo inválido. Confira a tentativa antes de repetir.',{cause}),{code:'FS12_RESPOSTA_INVALIDA'});}
+    };
     try {
       response = await axios.request({
         method,
         url: this.buildUrl(runtime.baseUrl, path),
-        data,
+        data:fs12?fs12.bytes:data,
+        ...(fs12?{responseType:'arraybuffer',transformResponse:[value=>value],maxContentLength:16777216}:{}),
         params,
         timeout: runtime.timeoutMs,
         httpsAgent,
@@ -66,6 +75,15 @@ export class SerproHttpClient {
         },
       });
     } catch (error) {
+      if(fs12 && error?.response) {
+        const observed=await observe(error.response);
+        await concluirChamada(autorizacao,{httpStatus:observed.status,
+          erroCodigo:observed.status>=400?'HTTP_'+observed.status:null,
+          erroMensagem:observed.status>=400?'Resposta HTTP de erro do provedor.':null});
+        if(raw)return {status:observed.status,data:observed.data,headers:observed.headers};
+        const mappedError=Object.create(error); mappedError.response=observed;
+        throw mapSerproError(mappedError);
+      }
       // Q43.2: no modo raw, o chamador quer inspecionar QUALQUER status (ex.: SITFIS 304 no /Apoiar,
       // que o axios teima em lançar mesmo com validateStatus). Se houver response, devolve-a em vez de lançar.
       if (raw && error?.response) {
@@ -88,8 +106,9 @@ export class SerproHttpClient {
     }
     // Persistir antes de liberar a reserva e antes de interpretar PDF/gerar lançamentos.
     // Se falhar, a reserva permanece em aberto e impede uma repetição silenciosa.
-    try { await guardarResposta(data, path, response); }
-    catch {
+    try { if(fs12) response=await observe(response); else await guardarResposta(data, path, response); }
+    catch (cause) {
+      if(fs12)throw cause;
       const erro = new Error("A resposta SERPRO não pôde ser guardada. Confira a tentativa anterior antes de repetir.");
       erro.code = "SERPRO_REGISTRO_INDETERMINADO";
       throw erro;

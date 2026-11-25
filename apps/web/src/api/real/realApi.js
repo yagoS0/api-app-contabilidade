@@ -855,6 +855,7 @@ export function createRealApi() {
     saveCompanyOperation: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}`, { method: 'PUT', body: JSON.stringify(input) }),
     previewOperationsCalculation: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo/previa`),
     executeOperationsCalculation: (companyId, competencia, input) => background.request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo`, { method: 'POST', body: JSON.stringify(input) }),
+    reconcileOperationsCalculation: (companyId, competencia, requestId, encerrarSemDespacho = false) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo/reconciliar`, { method: 'POST', body: JSON.stringify({requestId, ...(encerrarSemDespacho ? {encerrarSemDespacho:true,confirmEncerramentoSemDespacho:true,confirmCompetencia:competencia} : {})}) }),
     getOperationsCalculationResult: (companyId, competencia, requestId) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/calculo/resultado${requestId ? `?requestId=${encodeURIComponent(requestId)}` : ''}`),
     getOperationsExternal: (companyId, competencia) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/externa`),
     saveOperationsExternal: (companyId, competencia, input) => request(`/firm/companies/${encodeURIComponent(companyId)}/operacoes/${encodeURIComponent(competencia)}/externa`, { method: 'POST', body: JSON.stringify(input) }),
@@ -2866,8 +2867,15 @@ export function createRealApi() {
       );
     },
     // Q15 — fechamento
-    async conferirTransmissaoFechamento(companyId, competencia) {
-      return background.request('/firm/companies/' + encodeURIComponent(companyId) + '/fechamento/' + encodeURIComponent(competencia) + '/conferir-transmissao', { method: 'POST' });
+    async getAptidaoFiscalFechamento(companyId, competencia) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/fechamento/${encodeURIComponent(competencia)}/aptidao`);
+    },
+    async conferirTransmissaoFechamento(companyId, competencia, options = {}) {
+      const encerrar = options.encerrarSemDespacho === true;
+      if (encerrar && (options.confirmEncerramentoSemDespacho !== true || options.confirmCompetencia !== competencia)) throw new Error('Confirme explicitamente o encerramento e a competência.');
+      return background.request('/firm/companies/' + encodeURIComponent(companyId) + '/fechamento/' + encodeURIComponent(competencia) + '/conferir-transmissao', {
+        method: 'POST', ...(encerrar ? { body: JSON.stringify({encerrarSemDespacho:true,confirmEncerramentoSemDespacho:true,confirmCompetencia:competencia}) } : {}),
+      });
     },
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);

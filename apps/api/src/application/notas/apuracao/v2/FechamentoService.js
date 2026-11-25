@@ -1,3 +1,6 @@
+import { transacaoCoordenadaFs12 } from '../../../../modules/fiscal/infrastructure/prisma/coordenacaoFs12.js';
+import { executarFiscalFs12, recuperarPedidoFiscalFs12, recuperarFiscalFs12, exigirRuntimeFs12, avaliarAptidaoFiscalOperacoes } from '../../../../composition/execucaoFs12.js';
+import { selecionarSerieDeclaratoriaFs12 } from '../../../../modules/fiscal/domain/selecionarSerieDeclaratoriaFs12.js';
 import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/serproCallContext.js";
 import { exigirDespachoPgdasFs12Permitido, documentosPgdas } from '../../../../modules/fiscal/public.js';
 import { validarFs12ParaNovoCalculo, validarUsoFs12DoCalculo } from '../../../../composition/fs12DoCalculo.js';
@@ -713,6 +716,16 @@ export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
 export async function calcularFechamento(params) {
+  exigirRegimeSuportado(params.regimeApuracao);
+  // Calendar policy precedes runtime availability and replay lookup.
+  if (params.competencia >= '2027-01') exigirDespachoPgdasFs12Permitido({competencia:params.competencia});
+  if(params.competencia>='2026-11') {
+    params={...params,autorId:params.autorId||contextoSerproAtual().userId};
+    params.pedidoHash=hashCalculo({intencao:'SIMULAR',atividades:params.atividades||[],regimeApuracao:params.regimeApuracao||'COMPETENCIA',
+      semMovimento:Boolean(params.semMovimento),revisao:params.fs12RevisaoEsperada,contexto:params.fs12ContextoRevisao,operationsRequestId:params.manualOperation?.requestId||null});
+    const replay=params.chaveIdempotencia ? await recuperarPedidoFiscalFs12({...params,intencao:'SIMULAR'}) : null;
+    if(replay) return replay;
+  }
   // A origem automática vem do contexto interno, nunca de um campo HTTP.
   // Revalida também a identidade empresarial antes de reservar o cálculo.
   const automatico = Boolean(await conferirContextoCicloFiscal(undefined, { requireCompany: true, portalClientId: params.portalClientId }));
@@ -722,7 +735,7 @@ export async function calcularFechamento(params) {
   finally { await lease.release(); }
 }
 
-async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false, expectedAutomaticContextHash, manualOperation }, lease, { automatico = false } = {}) {
+async function calcularFechamentoReservado({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false, expectedAutomaticContextHash, manualOperation, autorId, fs12RevisaoEsperada, fs12ContextoRevisao, chaveIdempotencia, pedidoHash }, lease, { automatico = false } = {}) {
   const preparo = automatico ? preparacaoAutomaticaAtual() : null;
   if (automatico && (!preparo || preparo.prova.portalClientId !== portalClientId || preparo.prova.competencia !== competencia || hashCalculo(preparo.formulario) !== hashCalculo({ atividades, folhaMensal12, regimeApuracao, semMovimento }))) throw erroCalculoObsoleto();
   exigirRegimeSuportado(regimeApuracao);
@@ -734,18 +747,18 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
     throw new FechamentoError('PGDAS_APURACAO_EXTERNA', 'Apuração realizada fora da Altan. Consulte a declaração e recupere seus documentos.');
   }
   if (anterior?.estado === 'transmitida') throw new FechamentoError('ESTADO_INVALIDO', 'Reabra a apuração para retificar antes de calcular novamente.');
-  // B3.2: recuperar é leitura, não uma nova simulação. Não materializar RBT nem
-  // consumir a revisão atual como prova retroativa de um cálculo legado.
+  let provaFs12 = null;
   if (competencia >= '2026-11') {
-    const contexto = await contextoOrigemCalculo({ portalClientId, competencia });
-    const salvo = recuperarCalculo(anterior, { portalClientId, competencia,
-      cnpj: contexto.contribuinteCnpj, regimeApuracao: regimeCadastrado?.regimeApuracao || 'COMPETENCIA',
-      contextoOrigem: contexto }).calculoRecuperavel;
-    if (salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao })))
-      return { ok: true, ...salvo, recuperado: true, snapshot: anterior };
-    if (!automatico && competencia < '2027-01') await validarFs12ParaNovoCalculo({
-      portalClientId, competencia, autorId: contextoSerproAtual().userId });
-    exigirDespachoPgdasFs12Permitido({ competencia });
+    autorId ||= contextoSerproAtual().userId;
+    // Preserve the domain failure (missing/stale revision) instead of masking it
+    // behind the aggregate aptitude intended for display.
+    provaFs12 = await validarFs12ParaNovoCalculo({portalClientId,competencia,autorId});
+    exigirRuntimeFs12();
+    const aptidao=await avaliarAptidaoFiscalOperacoes({portalClientId,competencia,autorId});
+    if(!aptidao.capacidades.calcular) throw new FechamentoError('FS12_CALCULO_IMPEDIDO',aptidao.impedimentos.map(i=>i.mensagem).join(' ')||'Reabra a apuração antes de novo cálculo.');
+
+    folhaMensal12 = selecionarSerieDeclaratoriaFs12({competencia,prova:provaFs12,
+      revisaoEsperada:fs12RevisaoEsperada,contextoHash:fs12ContextoRevisao});
   }
   // Normaliza pra [] — o restante usa atividades.reduce/JSON.stringify.
   atividades = Array.isArray(atividades) ? atividades : [];
@@ -810,12 +823,12 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   if (automatico && expectedAutomaticContextHash && hashCalculo(contextoOrigem) !== expectedAutomaticContextHash) throw erroCalculoObsoleto();
   const recuperacao = recuperarCalculo(anterior, { portalClientId, competencia, cnpj: contribuinteCnpj, regimeApuracao: regimeCadastrado?.regimeApuracao || 'COMPETENCIA', contextoOrigem });
   const salvo = recuperacao.calculoRecuperavel;
-  if (salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao }))) {
+  if (!provaFs12 && salvo && hashCalculo(salvo.formulario) === hashCalculo(insumosFormulario({ atividades, folhaMensal12, regimeApuracao }))) {
     return { ok: true, ...salvo, recuperado: true, snapshot: anterior };
   }
 
   const sim = new PgdasSimulacaoService();
-  const folhasSalario = preparo ? preparo.folhasSalario : await folhasSalarioSeAplicavel(atividades, folhaMensal12);
+  const folhasSalario = provaFs12 ? folhaMensal12 : preparo ? preparo.folhasSalario : await folhasSalarioSeAplicavel(atividades, folhaMensal12);
 
   // ─── PARTIR DA LISTA QUE A RFB JÁ ACEITOU ─────────────────────────────────────────────────
   //
@@ -836,8 +849,8 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
       ? (lista || []).filter((r) => aceitosPa.includes(String(r.pa)))
       : (lista || [])
   );
-  const receitasIniciais = preparo ? preparo.receitasBrutasAnteriores : podar(rbt.detalhePorMes, aceitos?.receitas);
-  const folhasIniciais = podar(folhasSalario, aceitos?.folhas);
+  const receitasIniciais = provaFs12 ? rbt.detalhePorMes : preparo ? preparo.receitasBrutasAnteriores : podar(rbt.detalhePorMes, aceitos?.receitas);
+  const folhasIniciais = provaFs12 ? folhasSalario : podar(folhasSalario, aceitos?.folhas);
 
   const executar = async p => {
     lease.assertActive();
@@ -849,6 +862,24 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
   const params = { contratanteCnpj, contribuinteCnpj, competencia,
     regimeApuracao: regimeApuracao || "COMPETENCIA", atividades: atividades || [],
     receitasBrutasAnteriores: receitasIniciais, folhasSalario: folhasIniciais, permitirSemMovimento: semMovimento && semAtividades };
+  if (provaFs12) {
+    const formulario=insumosFormulario({atividades,folhaMensal12,regimeApuracao});
+    const fs12={revisaoId:provaFs12.revisaoFs12Id,revisao:provaFs12.revisaoFs12,
+      contextoHash:provaFs12.contextoHash,politicaVersao:provaFs12.politicaVersao};
+    const dadosCalculo={portalClientId,competencia,formulario,receitasBrutasAnteriores:receitasIniciais,
+      folhasSalario:folhasIniciais,contribuinteCnpj,contratanteCnpj,contextoOrigem,fs12,
+      ...(anterior?.estado==='aberta' && String(anterior.idempotencyKey).startsWith('reaberta:') ? {reaberturaReferencia:anterior.idempotencyKey} : anterior?.simulacaoSerpro?._portalCalculo?.reaberturaReferencia ? {reaberturaReferencia:anterior.simulacaoSerpro._portalCalculo.reaberturaReferencia} : {})};
+    const calculoId=`fech:v1:${randomUUID()}:${hashCalculo(dadosCalculo)}`;
+    const receitaPorTipo=(await receitaPorTipoMercado({portalClientId,competencia})).receitaPorTipo;
+    await manualOperation?.verify?.();
+    return executarFiscalFs12({portalClientId,competencia,autorId,intencao:'SIMULAR',
+      fs12RevisaoEsperada,fs12ContextoRevisao,chaveIdempotencia,despachar:executar,
+      provaPreparacao:{versao:1,pedidoHash,operationsRequestId:manualOperation?.requestId||null,snapshotAnterior:anterior?{id:anterior.id,estado:anterior.estado,idempotencyKey:anterior.idempotencyKey}:null,
+        contextoOrigem,formulario,fs12,parametros:params,calculoId,calculoConfirmado:{...dadosCalculo,calculoId},
+        snapshotDados:{rbt12:round2(rbt.rbt12),rbt12Extrato:round2(rbt.rbt12),atividadesEscolhidas:atividades,
+          folhaMensal12,receitaInterna:round2(atividades.reduce((a,b)=>a+Number(b.valorInterno||0),0)),
+          receitaExterna:round2(atividades.reduce((a,b)=>a+Number(b.valorExterno||0),0)),receitaPorTipo}}});
+  }
   const executarAutomatico = () => executarComAjusteDePeriodos(executar, preparo.parametrosPreparados, {
     maxTentativas: 1,
     onPeriodoRemovido: async recusa => {
@@ -969,6 +1000,22 @@ async function calcularFechamentoReservado({ portalClientId, competencia, ativid
  * [Salvar] — congela a config (estado "fechada") + grava memória pra próxima.
  */
 export async function salvarFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, userId, calculoId }) {
+  if (competencia >= '2026-11') {
+    if (!['2026-11','2026-12'].includes(competencia)) exigirDespachoPgdasFs12Permitido({competencia});
+    return transacaoCoordenadaFs12(prisma,{portalClientId,competencia,autorId:userId},async tx=>{
+      const existing=await tx.apuracaoSnapshot.findUnique({where:{portalClientId_competencia:{portalClientId,competencia}}});
+      exigirEstadoLivre(existing);
+      if(!existing || !['calculada','fechada'].includes(existing.estado)) throw erroCalculoObsoleto();
+      // The browser cannot replace the confirmed declaratory series on save.
+      const vinculo=validarCalculoConfirmado(existing,{portalClientId,competencia,calculoId,
+        formulario:insumosFormulario({atividades,folhaMensal12:existing.folhaMensal12,regimeApuracao})});
+      await validarUsoFs12DoCalculo({portalClientId,competencia,calculoId,autorId:userId},{db:prisma,tx});
+      if(hashCalculo(await contextoOrigemCalculo({portalClientId,competencia},tx))!==hashCalculo(vinculo.contextoOrigem)) throw erroCalculoObsoleto();
+      if(existing.conferenciaStatus==='divergente') throw new FechamentoError('DIVERGENCIA_CONFERENCIA','Resolva a divergência da conferência antes de fechar.');
+      const snapshot=await tx.apuracaoSnapshot.update({where:{id:existing.id},data:{estado:'fechada',fechadaEm:new Date(),fechadaPor:userId}});
+      return {ok:true,snapshot};
+    });
+  }
   const existing = await prisma.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
@@ -1104,7 +1151,40 @@ async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarRee
   return out;
 }
 
-export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false, calculoId, antesDeTransmitir, somenteDocumentosFaltantes = false }) {
+export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false, calculoId, antesDeTransmitir, somenteDocumentosFaltantes = false, chaveIdempotencia }) {
+  if (competencia >= '2027-01') exigirDespachoPgdasFs12Permitido({competencia});
+  if (competencia >= '2026-11') {
+    const pedidoHash=hashCalculo({intencao:retificar?'RETIFICAR':'TRANSMITIR',calculoId});
+    const replay=chaveIdempotencia ? await recuperarPedidoFiscalFs12({portalClientId,competencia,autorId:userId,intencao:retificar?'RETIFICAR':'TRANSMITIR',chaveIdempotencia,pedidoHash}) : null;
+    if(replay) return replay;
+    await antesDeTransmitir?.();
+    const snapshot=await prisma.apuracaoSnapshot.findUnique({where:{portalClientId_competencia:{portalClientId,competencia}}});
+    exigirEstadoLivre(snapshot);
+
+    const vinculo=validarCalculoConfirmado(snapshot,{portalClientId,competencia,calculoId});
+    if (snapshot?.estado!=='fechada') throw new FechamentoError('ESTADO_INVALIDO','Confirme a apuração antes de transmitir.');
+    const {vinculo:fs12Vinculo}=await validarUsoFs12DoCalculo({portalClientId,competencia,calculoId,autorId:userId});
+    exigirRuntimeFs12();
+    const contextoOrigem=await contextoOrigemCalculo({portalClientId,competencia});
+    if(hashCalculo(contextoOrigem)!==hashCalculo(vinculo.contextoOrigem)) throw erroCalculoObsoleto();
+    const params={...vinculo.formulario,contratanteCnpj:vinculo.contratanteCnpj,contribuinteCnpj:vinculo.contribuinteCnpj,
+      competencia,receitasBrutasAnteriores:vinculo.receitasBrutasAnteriores,folhasSalario:vinculo.folhasSalario,
+      permitirSemMovimento:somaAtividades(vinculo.formulario.atividades)===0,tipoDeclaracao:retificar?2:1};
+    const aptidao=await avaliarAptidaoFiscalOperacoes({portalClientId,competencia,autorId:userId,calculoId});
+    if(!aptidao.capacidades.transmitir) throw new FechamentoError('FS12_TRANSMISSAO_IMPEDIDA',aptidao.impedimentos.map(i=>i.mensagem).join(' ')||'A transmissão não está autorizada.');
+    if(Boolean(vinculo.reaberturaReferencia)!==Boolean(retificar)) throw new FechamentoError('FS12_INTENCAO_DIVERGENTE','Confira a intenção de transmissão ou retificação.');
+    const sim=new PgdasSimulacaoService();
+    const resultado=await executarFiscalFs12({portalClientId,competencia,autorId:userId,intencao:retificar?'RETIFICAR':'TRANSMITIR',
+      fs12RevisaoEsperada:fs12Vinculo.revisaoFs12,fs12ContextoRevisao:fs12Vinculo.contextoHash,chaveIdempotencia,
+      despachar:async p=>{await antesDeTransmitir?.();return sim.transmitir(p);},
+      provaPreparacao:{versao:1,pedidoHash,snapshotAnterior:{id:snapshot.id,estado:snapshot.estado,idempotencyKey:snapshot.idempotencyKey},
+        contextoOrigem,formulario:vinculo.formulario,fs12:vinculo.fs12,parametros:params,calculoId,calculoConfirmado:vinculo}});
+    // Fiscal commit already succeeded. Document failure cannot turn it uncertain.
+    let posTransmissao;
+    try {posTransmissao=await sincronizarExtratoEGuia({portalClientId,competencia,liberarReenvio:retificar,atualizar:true,somenteDocumentosFaltantes});}
+    catch(error){posTransmissao={ok:false,pendente:true,motivo:error.code||'DOCUMENTOS_PENDENTES'};}
+    return {...resultado,posTransmissao};
+  }
   await antesDeTransmitir?.();
   const snapshot = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
   exigirEstadoLivre(snapshot);
@@ -1294,7 +1374,8 @@ export async function reabrirFechamento({ portalClientId, competencia, userId, m
 }
 
 // Reconciliação explícita: ausência temporária no índice NÃO prova que um envio incerto falhou.
-export async function conferirTransmissaoFechamento({ portalClientId, competencia }) {
+export async function conferirTransmissaoFechamento({ portalClientId, competencia, autorId, encerrarSemDespacho = false }) {
+  if (competencia >= '2026-11') return recuperarFiscalFs12({portalClientId,competencia,autorId,encerrarSemDespacho:encerrarSemDespacho===true});
   const snapshot = await prisma.apuracaoSnapshot.findUnique({ where: { portalClientId_competencia: { portalClientId, competencia } } });
   if (snapshot?.estado !== 'erro_transmissao') throw new FechamentoError('ESTADO_INVALIDO', 'A conferência está disponível para transmissões sem confirmação.');
   if (snapshot.simulacaoSerpro?._portalTransmissao?.retificar || snapshot.numeroDeclaracao) return { ok: true, confirmada: false, mensagem: 'A competência já tinha uma declaração anterior. O índice sozinho não comprova a retificadora. Confira o recibo da retificação no portal oficial; o envio permanece bloqueado para evitar uma nova retificadora.' };

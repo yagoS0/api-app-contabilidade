@@ -62,8 +62,10 @@ describe('observado: HttpClient e CallGuard reais; I/O e políticas adjacentes e
   test('PA10 reserva antes da rede; ledger técnico não contém revisão FS12/cálculo', async () => {
     await comContextoSerpro({ acaoId: 'comando-fixture', userId: 'contador', origem: 'teste:b33b' }, () => client.post('/Declarar', envelope()));
     expect(db.rows).toHaveLength(1);
-    // Gap observed: identificarChamada does not extract TRANSDECLARACAO11.pa.
-    expect(db.rows[0]).toMatchObject({ acaoId: 'comando-fixture', portalClientId: 'portal-fixture', status: 'ok', competencia: null });
+    // E2 correlates canonical PA in the technical ledger; legacy fiscal behavior stays unchanged.
+    expect(db.rows[0]).toMatchObject({ acaoId: 'comando-fixture', portalClientId: 'portal-fixture', status: 'ok', competencia: '2026-10' });
+    expect(db.rows[0].assinatura).toBe(jest.requireActual('../SerproRespostaCache.js').chaveResposta(envelope(), '/Declarar'));
+    expect(axios.request.mock.calls[0][0].data).toEqual(envelope());
     expect(db.rows[0]).not.toHaveProperty('calculoId'); expect(db.rows[0]).not.toHaveProperty('revisaoFs12');
     expect(guardarResposta).toHaveBeenCalledTimes(1); expect(axios.request).toHaveBeenCalledTimes(1);
   });

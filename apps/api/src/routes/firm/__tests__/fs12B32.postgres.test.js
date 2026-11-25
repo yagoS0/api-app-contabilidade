@@ -1,6 +1,9 @@
 // Real HTTP, PostgreSQL, canonical ACL, FS12 composition and Fechamento guards.
 // Only session and recovery context are synthetic; all fiscal transport is forbidden.
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import express from 'express';
 import request from 'supertest';
@@ -16,9 +19,16 @@ jest.mock('../../../application/notas/apuracao/v2/RecuperacaoCalculo.js', () => 
 import { createApuracaoV2Router } from '../apuracaoV2.js';
 import { SerproHttpClient } from '../../../application/fiscal/serpro/SerproHttpClient.js';
 import { hashCalculo } from '../../../application/notas/apuracao/v2/CalculoConfirmado.js';
+import { registrarRuntimeFs12 } from '../../../composition/execucaoFs12.js';
+import { criarRuntimeFiscalFs12 } from '../../../composition/criarRuntimeFiscalFs12.js';
+import { criarCifraFs12 } from '../../../modules/fiscal/infrastructure/custody/cifraRespostaFs12.js';
+import { criarCifraEnvelopeFs12 } from '../../../modules/fiscal/infrastructure/custody/cifraEnvelopeFs12.js';
+import { criarStageRespostaFs12 } from '../../../modules/fiscal/infrastructure/custody/stageRespostaFs12.js';
+import { identificarChamada } from '../../../application/fiscal/serpro/SerproCallGuard.js';
+import { chaveCoordenacaoFs12 } from '../../../modules/fiscal/infrastructure/prisma/coordenacaoFs12.js';
 const suite = process.env.ALTAN_TESTE_POSTGRES === '1' ? describe : describe.skip;
 const key = () => randomUUID();
-let secondDb, queries;
+let secondDb, queries, queryEvents;
 function app(user) {
   const a = express(); a.use(express.json());
   a.use((req, _res, next) => { if (user) req.auth = { user }; next(); });
@@ -54,19 +64,45 @@ suite('B3.2 real HTTP/PG boundaries', () => {
       || u.search || u.hash) throw Error('B32 disposable loopback database required');
     mockDb = new PrismaClient({ datasources: { db: { url: raw } }, log: [{ emit: 'event', level: 'query' }] });
     secondDb = new PrismaClient({ datasources: { db: { url: raw } } });
-    mockDb.$on('query', e => queries.push(e.query));
+    mockDb.$on('query', e => {queries.push(e.query);queryEvents.push(e);});
   });
-  beforeEach(() => { queries = []; jest.clearAllMocks(); });
+  beforeEach(() => { queries = []; queryEvents = []; jest.clearAllMocks(); });
   afterEach(() => expect(SerproHttpClient).not.toHaveBeenCalled());
   afterAll(async () => { await mockDb?.$disconnect(); await secondDb?.$disconnect(); });
-  test('missing confirmation and valid manual confirmation both stop before new fiscal simulation', async () => {
+  test('unconfigured runtime is unavailable, while 2027 retains its calendar guard', async () => {
     const f = await fixture();
-    const missing = await calculate(f); expect(missing.status).toBe(409); expect(missing.body.error).toBe('FS12_CONFIRMACAO_AUSENTE');
-    await confirm(f);
-    const valid = await calculate(f); expect(valid.status).toBe(422); expect(valid.body.error).toBe('FS12_INTEGRACAO_B33_PENDENTE');
-    expect(await mockDb.apuracaoSnapshot.count({ where: { portalClientId: f.portal.id } })).toBe(0);
-    expect(await mockDb.apuracaoFs12Calculo.count({ where: { portalClientId: f.portal.id } })).toBe(0);
+    await confirm(f); // Valid domain prerequisite isolates runtime absence from missing FS12.
+    const unavailable = await calculate(f);
+    expect(unavailable.status).toBe(503); expect(unavailable.body.error).toBe('FS12_CUSTODIA_INDISPONIVEL');
+    const future = await calculate(f,'2027-01');
+    expect(future.status).toBe(422); expect(future.body.error).toBe('FS12_HOMOLOGACAO_2027_PENDENTE');
+    expect(await mockDb.fs12Comando.count({where:{portalClientId:f.portal.id}})).toBe(0);
   });
+  describe('configured real runtime: predispatch domain guards', () => {
+    beforeAll(async () => {
+      const bytes=randomBytes(32), keyId='synthetic-b32-guards';
+      const resolveKey=async id=>id===keyId?bytes:null;
+      const cifraResposta=criarCifraFs12({resolveKey});
+      const cifraEnvelope=criarCifraEnvelopeFs12({keyId,resolveKey});
+      const root=await mkdtemp(path.join(tmpdir(),'altan-synthetic-b32-guards-'));
+      // No stage writes should occur in these guard cases. Directory durability is
+      // real/default, with no no-op sync adapter and no relaxed runtime guarantee.
+      const stageResposta=criarStageRespostaFs12({root,cifra:cifraResposta});
+      registrarRuntimeFs12(criarRuntimeFiscalFs12({db:mockDb,cifraResposta,cifraEnvelope,stageResposta,
+        custodianteId:'synthetic-b32',capacidadeId:'synthetic-guards',keyIdAtivo:keyId,identificarEnvelope:identificarChamada}));
+    });
+    test('missing confirmation has its precise domain error; confirmed revision without explicit client version is stale', async () => {
+      const f=await fixture();
+      const missing=await calculate(f);
+      expect(missing.status).toBe(409); expect(missing.body.error).toBe('FS12_CONFIRMACAO_AUSENTE');
+      await confirm(f);
+      const stale=await calculate(f);
+      expect(stale.status).toBe(409); expect(stale.body.error).toBe('FS12_CALCULO_CONFLITO');
+      expect(await mockDb.apuracaoSnapshot.count({where:{portalClientId:f.portal.id}})).toBe(0);
+      expect(await mockDb.apuracaoFs12Calculo.count({where:{portalClientId:f.portal.id}})).toBe(0);
+      expect(await mockDb.fs12Comando.count({where:{portalClientId:f.portal.id}})).toBe(0);
+      expect(await mockDb.fs12ComandoResposta.count({where:{reserva:{comando:{portalClientId:f.portal.id}}}})).toBe(0);
+    });
   test('changed fiscal context invalidates confirmed revision before dispatch', async () => {
     const f = await fixture(); await confirm(f);
     await secondDb.company.update({ where: { id: f.company.id }, data: { dataAbertura: new Date('2020-02-01') } });
@@ -110,11 +146,24 @@ suite('B3.2 real HTTP/PG boundaries', () => {
     await mockDb.apuracaoFs12Calculo.create({ data: { portalClientId: f.portal.id, companyId: f.company.id,
       competencia: '2026-11', calculoId, revisaoFs12: revision.revisao, contextoHash: revision.contextoRevisao,
       politicaVersao: revision.politicaVersao, calculoConfirmado, calculoHash: hashCalculo(calculoConfirmado) } });
-    await confirm(f); queries = [];
+    await confirm(f);
+    const coordinationKey=chaveCoordenacaoFs12({portalClientId:f.portal.id,competencia:'2026-11'});
+    const beforeCoord=await mockDb.appSetting.findUnique({where:{key:coordinationKey}});
+    const beforeSnapshot=await mockDb.apuracaoSnapshot.findUnique({where:{id:snapshot.id}});
+    const beforeLinks=await mockDb.apuracaoFs12Calculo.findMany({where:{portalClientId:f.portal.id}});
+    queries=[]; queryEvents=[];
     const result = await request(app(f.user)).post(`${base(f)}/salvar`).send({ ...formulario, calculoId });
     expect(result.status).toBe(409); expect(result.body.error).toBe('FS12_CALCULO_CONFLITO');
-    expect((await mockDb.apuracaoSnapshot.findUnique({ where: { id: snapshot.id } })).estado).toBe('calculada');
-    expect(queries.filter(q => /\b(INSERT INTO|UPDATE |DELETE FROM)\b/i.test(q))).toEqual([]);
+    expect(await mockDb.apuracaoSnapshot.findUnique({where:{id:snapshot.id}})).toEqual(beforeSnapshot);
+    expect(await mockDb.apuracaoFs12Calculo.findMany({where:{portalClientId:f.portal.id}})).toEqual(beforeLinks);
+    expect(await mockDb.appSetting.findUnique({where:{key:coordinationKey}})).toEqual(beforeCoord);
+    expect(await mockDb.fs12Comando.count({where:{portalClientId:f.portal.id}})).toBe(0);
+    const writes=queryEvents.filter(e=>/\b(INSERT INTO|UPDATE |DELETE FROM)\b/i.test(e.query));
+    expect(writes).toHaveLength(1);
+    expect(writes[0].query).toMatch(/INSERT INTO "AppSetting"/);
+    expect(writes[0].query).toContain('ON CONFLICT ("key") DO UPDATE');
+    expect(JSON.parse(writes[0].params)).toEqual([coordinationKey]);
+    expect(queries.some(q=>/^ROLLBACK/i.test(q))).toBe(true);
   });
   test('real membership revocation and inactive identity override stale session', async () => {
     const f = await fixture(); const other = await fixture();
@@ -125,4 +174,5 @@ suite('B3.2 real HTTP/PG boundaries', () => {
     await secondDb.user.update({ where: { id: f.user.id }, data: { status: 'inactive' } });
     expect((await history(f, 'unknown', '2026-11', { ...f.user, role: 'admin' })).status).toBe(403);
   });
+  }); // configured real runtime
 });

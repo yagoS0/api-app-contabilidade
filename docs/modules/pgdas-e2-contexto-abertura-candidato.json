@@ -1,0 +1,39 @@
+{
+  "status": "candidate_unvalidated",
+  "decision": "Preparar contexto cadastral do PA de abertura cobrindo período efetivo de existência; não altera datas persistidas.",
+  "rules": [
+    "R01",
+    "R02",
+    "R07",
+    "R19",
+    "R20",
+    "seção38"
+  ],
+  "interpretation": [
+    "Exceção somente quando data civil de abertura pertence ao PA e único histórico válido cobre abertura até fim do mês.",
+    "No PA de abertura, qualquer histórico iniciado antes da existência é contraditório; não ignorar para conceder cobertura.",
+    "Empresa já existente continua exigindo cobertura do mês integral; divisão ou sobreposição não é conciliada.",
+    "Abertura ausente/futura/não normalizada não produz comprovação de regime neste contexto."
+  ],
+  "officialSources": [
+    {
+      "url": "https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/MANUAL_PGDAS-D_2018_V4.pdf",
+      "consulted": "2026-11-25",
+      "sections": "8.2.1–8.3; páginas impressas75–78",
+      "evidence": "Fator R usa folha/receita do PA na abertura; depois soma desde mês de abertura até anterior. Início de atividade refere inscrição no CNPJ."
+    },
+    {
+      "url": "https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-sn/pgdasd/servicos/entregar_declaracao_mensal_entrada/",
+      "consulted": "2026-11-25",
+      "evidence": "Campo mensal pa/valor não define sozinho seleção exata startup; capacidade remota não homologada por esta alteração."
+    }
+  ],
+  "limitations": [
+    "Não homologa payload SERPRO de empresa recém-constituída com/sem fator R.",
+    "Não altera B1, seleção técnica de meses, guards, transporte ou política2027.",
+    "Não anualiza folha nem gera meses anteriores à constituição.",
+    "Nenhum teste/Node/PG/build/navegador executado.",
+    "Preparação ignorada pelo Git; executor/controlador deve incorporar e executar testes próprios e regressão de leituraContextoFs12."
+  ],
+  "validation": "pending_controller"
+}

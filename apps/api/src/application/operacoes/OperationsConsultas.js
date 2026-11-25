@@ -7,7 +7,7 @@ import { lerOperacao, validarCompetencia } from './OperationsService.js';
 
 // Batch the inputs of the existing revision/fingerprint verifier. The adapter only
 // supplies its exact selects; adding grouping fields to a hash would invalidate it.
-export async function listarEvidenciasOperacoes(db, companyIds, competencia, { rootDb = db } = {}) {
+export async function listarEvidenciasOperacoes(db, companyIds, competencia, { rootDb = db, autorId } = {}) {
   validarCompetencia(competencia);
   if (!companyIds.length) return { items: [], total: 0, competencia };
   const [ano, mes] = competencia.split('-').map(Number);
@@ -15,7 +15,7 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
   const portals = await db.portalClient.findMany({ where: { id: { in: companyIds } }, select: { id: true, cnpj: true, companyId: true, razao: true, hasProlabore: true, temFolha: true, empresaZerada: true } });
   const [cadastros, companies, notas, rbts, folha, snapshots, pendencias, settings, histories] = await Promise.all([
     db.cadastroFiscal.findMany({ where: { portalClientId: { in: companyIds } } }),
-    db.company.findMany({ where: { id: { in: portals.map(p => p.companyId).filter(Boolean) } }, select: { id: true, cnpj: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true, cnaePrincipal: true, cnaesSecundarios: true } }),
+    db.company.findMany({ where: { id: { in: portals.map(p => p.companyId).filter(Boolean) } }, select: { id: true, cnpj: true, dataAbertura: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true, cnaePrincipal: true, cnaesSecundarios: true } }),
     db.portalInvoice.findMany({ where: { clientId: { in: companyIds }, papel: 'EMIT', statusEfetivo: 'autorizada', competencia: { gte: new Date(Date.UTC(ano, mes - 13, 1)), lt: new Date(Date.UTC(ano, mes, 1)) } }, select: { clientId: true, id: true, competencia: true, total: true, itens: { select: { id: true, valor: true, tipoReceita: true, flagST: true, flagMonofasico: true, flagExportacao: true } } } }),
     db.rbtExtratoCache.findMany({ where: { portalClientId: { in: companyIds }, competencia } }),
     db.accountingEntry.findMany({ where: { portalClientId: { in: companyIds }, tipo: 'FOLHA', competencia: { in: pas } }, select: { portalClientId: true, id: true, competencia: true, lines: { select: { tipo: true, valor: true, conta: true } } } }),
@@ -43,12 +43,13 @@ export async function listarEvidenciasOperacoes(db, companyIds, competencia, { r
     const unique = rows => ({ findUnique: async ({ where, select: fields }) => select(rows.find(r => Object.entries(where).every(([key, value]) => typeof value === 'object' ? Object.entries(value).every(([k, v]) => r[k] === v) : r[key] === value)), fields) });
     const many = rows => ({ findMany: async ({ select: fields }) => rows.map(r => select(r, fields)) });
     const adapter = {
+      regimeHistorico: many(histories.filter(h => h.companyId === portals.find(p => p.id === companyId)?.companyId)),
       portalClient: unique(portals), company: unique(companies), cadastroFiscal: unique(cadastros), rbtExtratoCache: unique(rbts),
       apuracaoSnapshot: unique(snapshots), appSetting: unique([...settings, ...executions]),
       portalInvoice: many(notas.filter(n => n.clientId === companyId)), accountingEntry: many(folha.filter(e => e.portalClientId === companyId)),
       pendenciaPosFechamento: many(pendencias.filter(p => p.portalClientId === companyId)),
     };
-    const evidence = await lerOperacao(adapter, companyId, competencia, { rootDb });
+    const evidence = await lerOperacao(adapter, companyId, competencia, { rootDb, autorId });
     const snapshot = snapshots.find(row => row.portalClientId === companyId && row.competencia === competencia);
     // Presentation only, from the same snapshot used by the revision verifier.
     // This compact projection is deliberately not a substitute for the audit,

@@ -43,7 +43,7 @@ export async function conferirEvolucaoDocumental(db, { companyId, competencia, r
   return evidence;
 }
 export async function conferirExecucao(db, { companyId, competencia, userId, isAdmin, contextHash }, procurador) {
-  await conferirCalculoManualOperacoes(db, companyId, competencia);
+  await conferirCalculoManualOperacoes(db, companyId, competencia, { autorId: userId });
   if (!isAdmin) {
     const access = await db.companyFirmAccess.findUnique({ where: { companyId_userId: { companyId, userId: String(userId) } } });
     if (access?.status !== 'ACTIVE' || !['ACCOUNTANT', 'FIRM_ADMIN'].includes(access.role)) throw fail('Acesso à empresa alterado. Execução bloqueada.');
@@ -69,7 +69,7 @@ export async function executarOperacao(db, args, deps = {}) {
     if (!state?.releaseId) throw fail('Nenhuma liberação disponível.');
     const key = `operations_execution:${companyId}:${competencia}:${state.releaseId}`;
     if (await tx.appSetting.findUnique({ where: { key } })) throw fail('Esta liberação já teve uma tentativa. Confira o resultado em Tarefas; não haverá reenvio automático.');
-    const current = await lerOperacao(tx, companyId, competencia, { rootDb: db });
+    const current = await lerOperacao(tx, companyId, competencia, { rootDb: db, fiscalDb: tx, autorId: userId });
     if (current.status !== 'RELEASED' || current.revision !== revision || current.blocked) throw fail(current.blocked || 'A liberação mudou. Atualize antes de executar.');
     const context = await contextoOrigemCalculo({ portalClientId: companyId, competencia }, tx);
     const guardArgs = { ...args, contextHash: context.hash };

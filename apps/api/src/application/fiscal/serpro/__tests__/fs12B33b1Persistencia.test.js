@@ -67,12 +67,16 @@ beforeEach(() => {
   guardarResposta.mockImplementation((payload, route, response) => cache.guardarResposta(payload, route, response, db));
 });
 describe('B33b.1: identidade e custódia existentes; transporte fake, sem coordenador', () => {
-  test('pa não alimenta competência; alias inválido ainda é aceito pelo identificador legado', () => {
+  test('PA canônico identifica competência sem alterar envelope; metadata não autoriza despacho', () => {
     const payload = envelope();
-    expect(guard.identificarChamada(payload, '/Declarar').competencia).toBeNull();
+    const before = JSON.stringify(payload), signature = cache.chaveResposta(payload, '/Declarar');
+    expect(guard.identificarChamada(payload, '/Declarar')).toMatchObject({ competencia: '2026-10', assinatura: signature });
+    expect(JSON.stringify(payload)).toBe(before);
     payload.pedidoDados.dados = JSON.stringify({ pa: 202610, competencia: '2026-13', indicadorTransmissao: false });
-    expect(guard.identificarChamada(payload, '/Declarar').competencia).toBe('2026-13');
-    // Characterization, not approval. No prospective normalizer exists.
+    const conflicting = JSON.stringify(payload);
+    expect(guard.identificarChamada(payload, '/Declarar').competencia).toBe('2026-10');
+    expect(JSON.stringify(payload)).toBe(conflicting);
+    // Identifier is metadata only: canonical pa wins; conflicting aliases are not normalized or approved here.
   });
   test('hash ordena chaves; tipo de pa e modo continuam identidades diferentes', () => {
     const original = envelope(), reordered = envelope();
@@ -93,7 +97,7 @@ describe('B33b.1: identidade e custódia existentes; transporte fake, sem coorde
   });
   test('transmissão PA10 termina ok sem custódia do corpo; cache real é no-op', async () => {
     await expect(client.post('/Declarar', envelope(202610, true))).resolves.toEqual({ fixture: true });
-    expect(db.rows[0]).toMatchObject({ status: 'ok', competencia: null });
+    expect(db.rows[0]).toMatchObject({ status: 'ok', competencia: '2026-10' });
     expect(db.serproRespostaCache.upsert).not.toHaveBeenCalled();
     expect(cached.size).toBe(0);
     expect(db.rows[0]).not.toHaveProperty('resposta');
@@ -171,4 +175,22 @@ describe('B33b.1: identidade e custódia existentes; transporte fake, sem coorde
     expect(lerResposta).not.toHaveBeenCalled(); expect(db.rows).toEqual([]);
     expect(auth.authenticate).not.toHaveBeenCalled(); expect(axios.request).not.toHaveBeenCalled();
   });
+});
+
+// Exact identity extraction is independent of authorization: direct PA11/12/2027
+// dispatch remains refused by the existing cases below/above without capability.
+test.each([[202610, '2026-10'], [202611, '2026-11'], [202612, '2026-12'], [202701, '2027-01']])('canonical PA %s preserves bytes and cache signature', (pa, competencia) => {
+  for (const value of [pa, String(pa)]) {
+    const payload = envelope(value), before = JSON.stringify(payload);
+    expect(guard.identificarChamada(payload, '/Declarar')).toMatchObject({ competencia, assinatura: cache.chaveResposta(payload, '/Declarar') });
+    expect(JSON.stringify(payload)).toBe(before);
+  }
+});
+test.each(['GERARDAS12', 'CONSDECLARACAO13'])('PA extraction for %s retains legacy alias contract', service => {
+  const payload = envelope(202611, false, service);
+  expect(guard.identificarChamada(payload, '/Consultar').competencia).toBeNull();
+  payload.pedidoDados.dados = JSON.stringify({ pa: 202611, competencia: '2026-10' });
+  const before = JSON.stringify(payload);
+  expect(guard.identificarChamada(payload, '/Consultar')).toMatchObject({ competencia: '2026-10', assinatura: cache.chaveResposta(payload, '/Consultar') });
+  expect(JSON.stringify(payload)).toBe(before);
 });

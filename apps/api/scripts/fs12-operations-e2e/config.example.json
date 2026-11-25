@@ -1,0 +1,21 @@
+{
+ "runId":"REPLACE-with-unique-run-id",
+ "confirmSyntheticDatabase":true,
+ "output":"C:/Users/yagoa/Documents/ChatGPT/ALTAN/worktrees/apuracao-e2-integracao-20261125/.altan-governance/e2e-evidence/REPLACE-run-id",
+ "apiUrl":"http://127.0.0.1:43191",
+ "webUrl":"http://127.0.0.1:43192",
+ "syntheticPassword":"REPLACE-generated-synthetic-only-password",
+ "providerControlSecret":"REPLACE-generated-synthetic-only-control-secret",
+ "env":{
+  "NODE_ENV":"test","HOST":"127.0.0.1","PORT":"43191",
+  "DATABASE_URL":"postgresql://REPLACE:REPLACE@127.0.0.1:5432/altan_fs12_governance_test",
+  "JWT_SECRET":"REPLACE-generated-synthetic-only-jwt-secret",
+  "CERT_SECRET_KEY":"REPLACE-generated-synthetic-only-32plus-secret",
+  "SERPRO_ENABLE_PGDASD":"1",
+  "FS12_CUSTODY_ROOT":"C:/Users/yagoa/Documents/ChatGPT/ALTAN/worktrees/apuracao-e2-integracao-20261125/.altan-governance/e2e-evidence/REPLACE-run-id/custody",
+  "FS12_CUSTODY_ACTIVE_KEY_ID":"synthetic-test-key",
+  "FS12_CUSTODY_KEYRING_JSON":"[{\"id\":\"synthetic-test-key\",\"keyBase64\":\"REPLACE-generated-32-byte-key-base64\"}]",
+  "FS12_CUSTODIAN_ID":"REPLACE-generated-uuid","FS12_CAPABILITY_ID":"REPLACE-generated-uuid",
+  "FS12_CUSTODY_DURABILITY":"PROCESS_RESTART_ONLY"
+ }
+}

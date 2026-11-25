@@ -1,3 +1,4 @@
+import { interpretarContextoMensalFs12 } from '../../modules/fiscal/publicFs12.js';
 // Diagnóstico local do atalho NFS-e. Não concede autorização de cálculo/transmissão.
 const civil = value => {
   const text = value instanceof Date ? value.toISOString().slice(0, 10) : value;
@@ -34,7 +35,14 @@ export function avaliarAuditoriaNfse(audit, companyId, competencia) {
 }
 
 export function regimeComprovado(history, competencia, cadastro, company) {
-  if (history?.length) return regimeDoPeriodo(history, competencia);
+  if (history?.length) {
+    const normal = regimeDoPeriodo(history, competencia);
+    if (normal || competencia < '2026-11' || !['2026-11','2026-12'].includes(competencia)) return normal;
+    // Reuse B1's evidenced effective lifetime; never move regime inception to day01.
+    if (!company?.id || civil(company.dataAbertura)?.slice(0,7) !== competencia) return null;
+    const contexto = interpretarContextoMensalFs12({...company,regimeHistorico:history},competencia);
+    return contexto.regimeDoPeriodo?.tipo === 'SIMPLES_NACIONAL' ? 'SIMPLES' : null;
+  }
   const opcao = civil(cadastro?.dataOpcaoSN);
   if (cadastro?.regime === 'SIMPLES_NACIONAL' && ['SIMPLES', 'SIMPLES_NACIONAL'].includes(company?.regimeTributario)
       && opcao && opcao <= `${competencia}-01`) return 'SIMPLES';

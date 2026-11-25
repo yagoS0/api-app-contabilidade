@@ -50,17 +50,19 @@ test('normalization does not mutate envelope, its serialization or any signature
   }
 });
 
-test('real legacy identifier and signature remain unchanged while prospective pa is computed separately', async () => {
+test('E2 PGDAS identifier recognizes canonical PA without mutating envelope or signature', async () => {
   // Prevent config discovery of private env files; this test never invokes a database or transport operation.
   process.env.DOTENV_CONFIG_PATH = new URL('./synthetic-env-does-not-exist', import.meta.url).pathname;
   process.env.DATABASE_URL = 'postgresql://synthetic:synthetic@127.0.0.1:1/validation_only_governance_test';
   process.env.NODE_ENV = 'test';
   process.env.LOG_LEVEL = 'silent';
   const { identificarChamada } = await import('../../src/application/fiscal/serpro/SerproCallGuard.js');
+  const { chaveResposta } = await import('../../src/application/fiscal/serpro/SerproRespostaCache.js');
   for (const transmitir of [false, true]) for (const asString of [false, true]) {
     const p = payload({ pa: 202611, transmitir, folhasSalario: [] }, asString);
     const before = identificarChamada(p, '/Declarar'), serialized = JSON.stringify(p);
-    assert.equal(before.competencia, null, 'Legacy pa-only omission remains characterized');
+    assert.equal(before.competencia, '2026-11', 'E2 correlates canonical PGDAS PA with its reservation');
+    assert.equal(before.assinatura, chaveResposta(p, '/Declarar'));
     assert.equal(normalizarPaFixture(p), '2026-11');
     assert.deepEqual(identificarChamada(p, '/Declarar'), before);
     assert.equal(JSON.stringify(p), serialized);
@@ -70,6 +72,11 @@ test('real legacy identifier and signature remain unchanged while prospective pa
   assert.equal(identificarChamada(invalid, '/Declarar').competencia, '2026-13');
   assert.throws(() => normalizarPaFixture(invalid), /PA_INVALIDO/);
   const conflicting = payload({ pa: 202611, competencia: '2026-12' });
-  assert.equal(identificarChamada(conflicting, '/Declarar').competencia, '2026-12');
+  assert.equal(identificarChamada(conflicting, '/Declarar').competencia, '2026-11', 'Canonical PGDAS PA has identification precedence; it does not validate conflicting aliases');
   assert.throws(() => normalizarPaFixture(conflicting), /PA_DIVERGENTE/);
+  for (const service of ['GERARDAS12','CONSDECLARACAO13']) {
+    const other = payload({pa:202611,competencia:'2026-12'}); other.pedidoDados.idServico=service;
+    assert.equal(identificarChamada(other,'/Consultar').competencia,'2026-12');
+    assert.equal(identificarChamada(other,'/Consultar').assinatura,chaveResposta(other,'/Consultar'));
+  }
 });

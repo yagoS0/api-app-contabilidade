@@ -150,7 +150,7 @@ describe("PGDAS-2026-A/B3.2 — legado e bloqueio de novos comandos", () => {
     }
   });
   // Esta fixture não possui ator autenticado nem confirmação mensal persistida.
-  // Os casos HTTP/PostgreSQL B32 cobrem confirmação válida ainda bloqueada por B3.3.
+  // HTTP/PostgreSQL B32 cobre guardas; aceite E2 separado cobre a cadeia com provedor sintético.
   // Não simular a composição/guarda para reabrir o antigo caminho de despacho.
   test.each([
     ['2026-11', 'FS12_SEM_AUTENTICACAO'],

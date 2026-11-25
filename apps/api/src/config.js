@@ -791,3 +791,15 @@ if (INTEGRACAO_WHATSAPP) {
   if (WHATSAPP_GRAPH_VERSION && !/^v\d+\.\d+$/.test(WHATSAPP_GRAPH_VERSION))
     log.warn(`WHATSAPP_GRAPH_VERSION fora do formato esperado ("vNN.N"): ${WHATSAPP_GRAPH_VERSION}`);
 }
+
+// FS12 E2: explicit custody capability; empty values keep affected acts blocked.
+// Never reuse the certificate secret or emit keyring contents to logs/API responses.
+export const FS12_CUSTODY_CONFIG = Object.freeze({
+  root: process.env.FS12_CUSTODY_ROOT || '',
+  keyIdAtivo: process.env.FS12_CUSTODY_ACTIVE_KEY_ID || '',
+  keyringJson: process.env.FS12_CUSTODY_KEYRING_JSON || '',
+  custodianteId: process.env.FS12_CUSTODIAN_ID || '',
+  capacidadeId: process.env.FS12_CAPABILITY_ID || '',
+  modo: process.env.FS12_CUSTODY_DURABILITY || 'DIRECTORY_SYNC_REQUIRED',
+  ambiente: process.env.NODE_ENV || 'development',
+});

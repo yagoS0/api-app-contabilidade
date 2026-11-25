@@ -1,5 +1,6 @@
+import { regimeComprovado } from './OperationsEligibility.js';
 import { conferirCalculoManualOperacoes } from './OperationsCalculationService.js';
-import { exigirDespachoPgdasFs12Permitido } from '../../modules/fiscal/public.js';
+import { avaliarAptidaoFiscalOperacoes } from '../../composition/execucaoFs12.js';
 import { createHash } from 'node:crypto';
 import { contextoOrigemCalculo, recuperarCalculo } from '../notas/apuracao/v2/RecuperacaoCalculo.js';
 import { conferirProvaAutomatica } from '../notas/apuracao/v2/PreparacaoAutomaticaSimples.js';
@@ -12,7 +13,7 @@ export function validarCompetencia(competencia) {
 }
 
 // Estado operacional independente. Nunca escreve em apuração, fechamento, guia ou Calendário.
-export async function lerOperacao(db, companyId, competencia, { rootDb = db, conferirProva = conferirProvaAutomatica } = {}) {
+export async function lerOperacao(db, companyId, competencia, { rootDb = db, fiscalDb = rootDb, autorId, avaliarFiscal = avaliarAptidaoFiscalOperacoes, conferirProva = conferirProvaAutomatica } = {}) {
   validarCompetencia(competencia);
   const contexto = await contextoOrigemCalculo({ portalClientId: companyId, competencia }, db);
   const [snapshot, pending, saved] = await Promise.all([
@@ -20,7 +21,23 @@ export async function lerOperacao(db, companyId, competencia, { rootDb = db, con
     db.pendenciaPosFechamento.findMany({ where: { portalClientId: companyId, competencia, resolvida: false }, orderBy: { id: 'asc' }, select: { id: true, motivo: true, observacoes: true, createdAt: true } }),
     db.appSetting.findUnique({ where: { key: keyFor(companyId, competencia) } }),
   ]);
-  const fingerprint = hash([contexto.hash, snapshot, pending.map(p => p.id)]);
+  let aptidaoFiscal = null;
+  if (competencia >= '2026-11') {
+    const portal = await db.portalClient.findUnique({ where: { id: companyId } });
+    const [history, cadastro, company] = await Promise.all([
+      portal?.companyId ? db.regimeHistorico.findMany({ where: { companyId: portal.companyId }, orderBy: { vigenciaInicio: 'asc' } }) : [],
+      db.cadastroFiscal.findUnique({ where: { portalClientId: companyId } }),
+      portal?.companyId ? db.company.findUnique({ where: { id: portal.companyId } }) : null,
+    ]);
+    if (regimeComprovado(history, competencia, cadastro, company) === 'SIMPLES') {
+      try { aptidaoFiscal = await avaliarFiscal({ portalClientId: companyId, competencia, calculoId: snapshot?.idempotencyKey, autorId }, { db: fiscalDb }); }
+      catch (error) {
+        if (Number(error.status || error.statusCode) !== 403) throw error;
+        aptidaoFiscal = { portalClientId: companyId, competencia, capacidades: { calcular: false, transmitir: false, retificar: false, reconciliar: false }, impedimentos: [{ code: 'ACESSO_INSUFICIENTE', mensagem: 'Seu acesso não permite conferir a aptidão fiscal.' }] };
+      }
+    }
+  }
+  const fingerprint = hash([contexto.hash, snapshot, pending.map(p => p.id), ...(aptidaoFiscal ? [aptidaoFiscal.fs12] : [])]);
   const state = saved?.value || { status: 'PENDING', schedule: null };
   let preparacaoAtual, proofError;
   if (snapshot?.simulacaoSerpro?._portalCalculo?.origemCalculo === 'AUTOMATICO_SIMPLES' || String(snapshot?.idempotencyKey || '').startsWith('fech:auto:')) {
@@ -36,9 +53,8 @@ export async function lerOperacao(db, companyId, competencia, { rootDb = db, con
   let fiscalBlock = null;
   // Apenas novas ações dependentes de cálculo; histórico transmitido/documental
   // mantém seu caminho. A guarda final também cobre liberações antigas e lotes.
-  if (snapshot && ['aberta', 'calculada', 'fechada'].includes(snapshot.estado)) {
-    try { exigirDespachoPgdasFs12Permitido({ competencia }); }
-    catch (error) { fiscalBlock = error.message; }
+  if (aptidaoFiscal && aptidaoFiscal.capacidades?.transmitir !== true) {
+    fiscalBlock = aptidaoFiscal.impedimentos?.map(p => typeof p === 'string' ? p : p.mensagem).join(' ') || aptidaoFiscal.fiscal?.motivo || 'Transmissão não autorizada para o contexto atual.';
   }
   const blocked = pending.length ? 'Há notas ou eventos posteriores à apuração. Revise as pendências da competência.'
     : fiscalBlock ? fiscalBlock
@@ -46,7 +62,7 @@ export async function lerOperacao(db, companyId, competencia, { rootDb = db, con
   const execution = state.releaseId ? (await db.appSetting.findUnique({ where: { key: `operations_execution:${companyId}:${competencia}:${state.releaseId}` } }))?.value : null;
   const status = execution?.status === 'DONE' ? (pending.length || state.contextHash !== contexto.hash ? 'INVALIDATED' : 'EXECUTED')
     : execution ? 'ATTENTION' : ['CONFIRMED', 'RELEASED'].includes(state.status) && (state.fingerprint !== fingerprint || blocked) ? 'INVALIDATED' : state.status;
-  return { companyId, competencia, fingerprint, revision: hash([state, fingerprint]), status, schedule: state.schedule,
+  return { companyId, competencia, aptidaoFiscal, fingerprint, revision: hash([state, fingerprint]), status, schedule: state.schedule,
     changedAt: state.changedAt || null, blocked, pending, execution: execution ? { status: execution.status, message: execution.message || null } : null,
     calculation: recovery.calculoRecuperavel || recovery.calculoSalvo || null };
 }
@@ -69,8 +85,8 @@ export async function salvarOperacao(db, companyId, competencia, userId, input, 
       if (previousRequest.value.hash !== requestHash) throw fail('Solicitação já utilizada para outra alteração.');
       return previousRequest.value.result;
     }
-    if (['confirm', 'release'].includes(action)) await conferirCalculoManualOperacoes(tx, companyId, competencia);
-    const before = await lerOperacao(tx, companyId, competencia, { rootDb });
+    if (['confirm', 'release'].includes(action)) await conferirCalculoManualOperacoes(tx, companyId, competencia, { autorId: userId });
+    const before = await lerOperacao(tx, companyId, competencia, { rootDb, fiscalDb: tx, autorId: userId });
     if (action !== 'schedule' && before.execution && before.execution.status !== 'DONE') throw fail('Há uma tentativa em andamento ou a conferir. Consulte Tarefas e a central de apuração antes de nova ação.');
     if (before.revision !== expectedRevision) throw fail('Os dados mudaram. Atualize e confira novamente antes de continuar.');
     if (['confirm', 'release'].includes(action) && before.blocked) throw fail(before.blocked);
@@ -83,7 +99,7 @@ export async function salvarOperacao(db, companyId, competencia, userId, input, 
       fingerprint: before.fingerprint, schedule: action === 'schedule' ? schedule : before.schedule,
       changedAt: new Date().toISOString(), changedBy: String(userId) };
     await tx.appSetting.upsert({ where: { key: keyFor(companyId, competencia) }, create: { key: keyFor(companyId, competencia), value }, update: { value } });
-    const result = await lerOperacao(tx, companyId, competencia, { rootDb });
+    const result = await lerOperacao(tx, companyId, competencia, { rootDb, fiscalDb: tx, autorId: userId });
     await tx.appSetting.create({ data: { key: requestKey, value: { hash: requestHash, companyId, competencia, action, userId: String(userId), before, result } } });
     return result;
   };
