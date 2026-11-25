@@ -1,0 +1,27 @@
+{
+  "summary": "Prepare reviewed FS12 custody configuration and synthetic E2E example before functional integration",
+  "risk": "high",
+  "domains": [
+    "api",
+    "fiscal",
+    "operations",
+    "web",
+    "portal"
+  ],
+  "operationalImpact": "Implements configuration contract for authorized E2 section 38; no new tax or operational rule. No deployment, environment provisioning or real fiscal action.",
+  "tests": [
+    "Independent static bootstrap review: review-bootstrap-static.json; execution remains pending.",
+    "Independent static HTTP harness review: review-operations-e2e-static.json; mandatory transport selfcheck remains pending before company certificate/coleta.",
+    "Protected path integration only; full original gates and supplementary E2 evidence remain mandatory."
+  ],
+  "humanDecisions": [
+    "User authorized E2 implementation and synthetic validation on 25/11/2026. Principal handles protected configuration separately, preserving original controller restrictions."
+  ],
+  "rollback": "Revert only these configuration/documentation additions as a unit with dependent E2 runtime if necessary; preserve custody data, historical keys and evidence.",
+  "status": "configuration_preparation_integrated_tests_pending",
+  "sourcePaths": [
+    "apps/api/src/config.js",
+    "docs/modules/fs12-custody-config.md",
+    "apps/api/scripts/fs12-operations-e2e/config.example.json"
+  ]
+}
