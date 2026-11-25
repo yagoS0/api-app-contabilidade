@@ -171,3 +171,18 @@ test('Batch embedded porta confirmação para o rodapé sem alterar aceite/compe
 test('condições e custos preservam competência digitada e retorno sem aceitar lote',async()=>{
  const {api}=fixture();render(<OperationsBatch api={api} competencia={pa}/>);fireEvent.click(screen.getByRole('button', { name: 'Ver liberações' })); await screen.findByText(/Nenhuma liberação registrada/);fireEvent.click(screen.getByRole('button',{name:'Liberar rotina'}));const dialog=await screen.findByRole('dialog');fireEvent.change(within(dialog).getByLabelText(`Digite a competência ${pa}`),{target:{value:pa}});const trigger=within(dialog).getByRole('button',{name:'Condições e custos'});fireEvent.click(trigger);expect(within(dialog).getByRole('heading',{name:'Condições e custos'})).toHaveFocus();expect(within(dialog).getByText(/pode consultar documentos faltantes, com custo externo/)).toBeVisible();expect(within(dialog).getByText(/Resultados incertos exigem conferência e não serão repetidos/)).toBeVisible();expect(within(dialog).queryByRole('button',{name:'Liberar rotina'})).not.toBeInTheDocument();fireEvent.click(within(dialog).getByRole('button',{name:'Voltar às empresas'}));await waitFor(()=>expect(trigger).toHaveFocus());expect(within(dialog).getByLabelText(`Digite a competência ${pa}`)).toHaveValue(pa);expect(api.acceptOperationsBatch).not.toHaveBeenCalled();
 });
+
+test('aceite sem itens não quebra a tela nem anuncia liberação confirmada', async () => {
+  const { api } = fixture();
+  api.acceptOperationsBatch.mockResolvedValue({ ok: true, batch: { id: 'incomplete', competencia: pa } });
+  const onChanged = jest.fn();
+  render(<OperationsBatch api={api} competencia={pa} onChanged={onChanged} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Liberar rotina' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText(`Digite a competência ${pa}`), { target: { value: pa } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Liberar rotina' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Aceite não confirmado');
+  expect(onChanged).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Liberar rotina' })).toBeEnabled();
+  expect(api.acceptOperationsBatch).toHaveBeenCalledTimes(1);
+});

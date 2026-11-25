@@ -29,6 +29,7 @@ const quadros = [['apuracoes', 'Apurações pendentes', 'empresas'], ['faltantes
 const nome = c => c.razao || c.razaoSocial || c.nome || c.cnpj;
 const regime = row => ({SIMPLES:'Simples Nacional',PRESUMIDO:'Lucro Presumido',REAL:'Lucro Real'})[row.operation?.regime || row.company.regime || row.company.regimeTributario] || 'Regime a conferir';
 const EMPTY_COMPANIES = [];
+const continuationStage = operation => (operation?.regime === 'PRESUMIDO' ? operation.externalSummary?.apurar?.concluida === true : ['CONFIRMED','RELEASED','EXECUTED','ATTENTION','INVALIDATED'].includes(operation?.status)) ? 'confirmado' : 'calculado';
 const panelNames = { apurar: 'Apurar', guias: 'Guias', contabilizacao: 'Contabilização', concluido: 'Concluído', calculado: 'Calculado', confirmado: 'Confirmado', transmitido: 'Transmitido', disponivel: 'Disponível', enviado: 'Enviado', pago: 'Pago', ...Object.fromEntries(CHECKLIST_OPERACOES) };
 
 
@@ -163,8 +164,8 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
       <OperationsDasPendencias api={api} companies={companies} competencia={competencia} unavailable={unavailable} />
     </div>
     <div id="operacoes-tabela-contextual">{stageOpen && <>
-    <OperationsStageModal busy={busy || approvalBusy} onClose={closePanel} title={panel.title} competencia={competencia} loading={loading || (requiresManualEvidence && manualInss.loading)} error={error || (requiresManualEvidence && manualInss.error)} suspended={Boolean(calculationRow) || guideSuspended} footer={<><div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>{!approvalPanel && panel.key!=='pago' && !guideReviewing && <OperationsTablePagination page={page} total={filtered.length} onPage={setPage} disabled={busy}/>}</>}>
-      {approvalPanel ? <OperationsApproval embedded contextual modalStage tableContext={tableContext} footerTarget={guideFooter} stage={panel.key} evidence={evidence} key={`${competencia}:${panel.key}`} api={api} rows={rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <>
+    <OperationsStageModal preserveContent={approvalPanel} busy={busy || approvalBusy} onClose={closePanel} title={panel.title} competencia={competencia} loading={loading || (requiresManualEvidence && manualInss.loading)} error={error || (requiresManualEvidence && manualInss.error)} suspended={Boolean(calculationRow) || guideSuspended} footer={<><div ref={setGuideFooter} className="operacoes-guide-footer-slot"/>{!approvalPanel && panel.key!=='pago' && !guideReviewing && <OperationsTablePagination page={page} total={filtered.length} onPage={setPage} disabled={busy}/>}</>}>
+      {approvalPanel ? <OperationsApproval unavailable={unavailable} embedded contextual modalStage tableContext={tableContext} footerTarget={guideFooter} stage={panel.key} evidence={evidence} key={`${competencia}:${panel.key}`} api={api} rows={rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <>
       <div hidden={guideReviewing}>
         <div className="operacoes-search-row"><label className="operacoes-rotinas-filtros">Buscar empresa<input type="search" disabled={busy} value={query} onChange={e=>setQuery(e.target.value)}/></label>
           {!['apurar','concluido'].includes(panel.key) && <Button ref={filterTrigger} variant="secondary" disabled={busy} aria-expanded={filtersOpen} onClick={()=>{setFilterDraft(effectiveStageFilter);setFiltersOpen(true);}}>Filtros {effectiveStageFilter==='all'?0:1}</Button>}
@@ -182,7 +183,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
         {!compactCalculationPanel && <td>{accountingPanel ? <>{row.fluxo.contabilizacao?.conferenciaDesatualizada && <p role="status">Conferência desatualizada · revise a correção do mês fechado.</p>}</> : <><p>Revisão: {row.operation?.revision || 'A verificar'}</p>{row.operation?.blocked && <p role="alert">{row.operation.blocked}</p>}{row.operation?.execution?.message && <p>{row.operation.execution.message}</p>}<Button size="sm" variant="secondary" onClick={e => { calculationTrigger.current = e.currentTarget; setCalculationRow(row); }}>Ver evidências de {nome(row.company)}</Button></>}
           {!accountingPanel && <details><summary>Subetapas e evidências</summary><ul>{(row.fluxo.tarefas || []).map(t => <li key={t.chave}>{t.titulo} · {t.concluida ? 'Concluída' : 'Pendente'}{t.revisar ? ' · Revisar dados alterados' : ''}</li>)}</ul></details>}
           <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,accountingPanel ? 'lancamentos' : 'cadastroFiscal')}>{accountingPanel ? 'Abrir lançamentos' : 'Abrir apuração'}</InternalLink>
-          {!accountingPanel && <><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,'obrigacoes')}>Abrir obrigações</InternalLink>{['ACCOUNTANT','FIRM_ADMIN'].includes(row.company.myRole) && <Button size="sm" variant="secondary" disabled={!row.operation} onClick={() => { setApprovalStage("confirmado"); setApprovalRows([row]); closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}</>}
+          {!accountingPanel && <><InternalLink className="btn btn-secondary btn-sm" href={link(row.company,'obrigacoes')}>Abrir obrigações</InternalLink>{['ACCOUNTANT','FIRM_ADMIN'].includes(row.company.myRole) && <Button size="sm" variant="secondary" disabled={!row.operation} onClick={() => { setApprovalStage(continuationStage(row.operation)); setApprovalRows([row]); closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}</>}
           </div>
         </td>}
       </tr>)}</tbody></table></div>}
@@ -203,7 +204,7 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
         <div className="operacoes-acoes">
           <InternalLink className="btn btn-secondary btn-sm" href={link(calculationRow.company, 'cadastroFiscal')}>Abrir apuração</InternalLink>
           <InternalLink className="btn btn-secondary btn-sm" href={link(calculationRow.company, 'obrigacoes')}>Abrir obrigações</InternalLink>
-          {['ACCOUNTANT','FIRM_ADMIN'].includes(calculationRow.company.myRole) && <Button size="sm" variant="secondary" disabled={!calculationRow.operation} onClick={() => { setApprovalStage("confirmado"); setApprovalRows([calculationRow]); calculationTrigger.current = null; closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}
+          {['ACCOUNTANT','FIRM_ADMIN'].includes(calculationRow.company.myRole) && <Button size="sm" variant="secondary" disabled={!calculationRow.operation} onClick={() => { setApprovalStage(continuationStage(calculationRow.operation)); setApprovalRows([calculationRow]); calculationTrigger.current = null; closePanel(); setApprovalOpen(true); }}>Conferir e continuar rotina</Button>}
         </div>
       </>}
       <OperationsCalculationDetails api={api} companyId={calculationRow.company.companyId} competencia={competencia} />
@@ -223,7 +224,8 @@ export function OperationsPage({ api, companies = EMPTY_COMPANIES, competencia, 
       </Modal>;
     })()}
     {procuracao && <OperationsProcuracao api={api} company={procuracao} onClose={() => setProcuracao(null)} />}    {approvalOpen && <Modal titulo={approvalStage === 'calculado' ? 'Calculado' : 'Confirmado'} tamanho="lg" className="operacoes-dialogo" ocupado={approvalBusy} aoFechar={() => !approvalBusy && setApprovalOpen(false)} rodape={<><div ref={setApprovalFooter} className="operacoes-guide-footer-slot"/></>}>
-      {!unavailable ? <OperationsApproval embedded footerTarget={approvalFooter} stage={approvalStage} evidence={evidence} key={competencia} api={api} rows={approvalRows ? rows.filter(row => approvalRows.some(selected => selected.company.companyId === row.company.companyId)) : rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} /> : <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
+      {unavailable && <p role="alert">Atualize as empresas antes de conferir apurações.</p>}
+      <OperationsApproval unavailable={unavailable} embedded footerTarget={approvalFooter} stage={approvalStage} evidence={evidence} key={competencia} api={api} rows={approvalRows ? rows.filter(row => approvalRows.some(selected => selected.company.companyId === row.company.companyId)) : rows} competencia={competencia} onChanged={refresh} onBusyChange={setApprovalBusy} />
     </Modal>}
     {active?.id && <Modal titulo={inssDetail ? nome(selected.company) : selected ? `${nome(selected.company)} · ${selected.titulo}` : quadros.find(([key]) => key === active.group)?.[1]} aoFechar={() => !busy && closeDetail()} ocupado={busy} tamanho="md" className="operacoes-dialogo" rodape={inssDetail ? <div className="operacoes-inss-rodape"><Button variant="secondary" disabled={busy} onClick={closeDetail}>Fechar</Button>{!busy && <div className="operacoes-acoes"><InternalLink className="btn btn-secondary btn-md" href={link(selected.company, 'automacao')}>Configurar INSS manual</InternalLink><InternalLink className="btn btn-primary btn-md" href={link(selected.company, 'guides')}>Abrir Guias</InternalLink></div>}</div> : <Button variant="secondary" disabled={busy} onClick={closeDetail}>Fechar</Button>}>
       <div className="operacoes">

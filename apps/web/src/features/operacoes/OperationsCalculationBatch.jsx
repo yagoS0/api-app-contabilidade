@@ -7,7 +7,7 @@ const statusLabels = { CALCULADO: 'Calculado', CALCULATED: 'Calculado', COLLECTI
 const validIdentity = (value, item, competencia) => value && value.ok !== false && value.companyId === item.companyId && value.competencia === competencia;
 
 // Each explicit command retains its identity. Reloading a result never repeats a POST.
-export function OperationsCalculationBatch({ api, items, competencia, footerTarget, onClose, onChanged, onBusyChange, canWrite = () => true }) {
+export function OperationsCalculationBatch({ api, items, competencia, footerTarget, onClose, onChanged, onBusyChange, disabled = false, canWrite = () => true }) {
   const [values, setValues] = useState({});
   const [busy, setBusy] = useState(true);
   const [phase, setPhase] = useState('preview');
@@ -28,7 +28,7 @@ export function OperationsCalculationBatch({ api, items, competencia, footerTarg
         try {
           const value = await api.previewOperationsCalculation(item.companyId, competencia);
           if (!active()) return;
-          if (!validIdentity(value, item, competencia) || !value.revision || !Array.isArray(value.blockers)) throw Error('Prévia incompatível. Atualize antes de calcular.');
+          if (!validIdentity(value, item, competencia) || !value.revision || typeof value.canCalculate !== 'boolean' || !Array.isArray(value.blockers)) throw Error('Prévia incompatível. Atualize antes de calcular.');
           const previous = value.lastAttempt;
           if (validIdentity(previous, item, competencia) && typeof previous.requestId === 'string' && previous.requestId.length > 0 && statusLabels[previous.status]) commandIds.current.set(item.companyId, previous.requestId);
           setValues(old => ({ ...old, [item.companyId]: value }));
@@ -41,24 +41,28 @@ export function OperationsCalculationBatch({ api, items, competencia, footerTarg
   const eligible = items.filter(item => values[item.companyId]?.canCalculate === true);
   async function execute() {
     if (lock.current || busy || phase !== 'preview' || !eligible.length) return;
+    if (disabled) { setMessage('Atualize as empresas e as conferências antes de iniciar o cálculo.'); return; }
     const context = origin.current;
     lock.current = true; setBusy(true); setPhase('result'); setMessage('Coletando NFS-e, auditando e preparando os cálculos selecionados…');
     let changed = false;
     for (const item of items) {
       if (origin.current !== context) break;
       const preview = values[item.companyId];
-      if (!preview?.canCalculate) continue;
-      const requestId = crypto.randomUUID(); commandIds.current.set(item.companyId, requestId);
+      if (preview?.canCalculate !== true) continue;
+      let dispatched = false;
       setValues(old => ({ ...old, [item.companyId]: { ...old[item.companyId], status: 'RUNNING' } }));
       try {
         if (!access.current(item.companyId)) throw Error('Seu acesso mudou. Atualize antes de calcular.');
+        if (typeof crypto.randomUUID !== 'function') throw Error('Não foi possível preparar a identificação segura do cálculo. Nenhuma consulta foi iniciada.');
+        const requestId = crypto.randomUUID(); commandIds.current.set(item.companyId, requestId);
+        dispatched = true;
         const result = await api.executeOperationsCalculation(item.companyId, competencia, { expectedRevision: preview.revision, requestId, confirmCompetencia: competencia });
         if (origin.current !== context) break;
         if (!validIdentity(result, item, competencia) || result.requestId !== requestId || !statusLabels[result.status]) throw Error('Resultado não confirmado. Consulte a tentativa antes de continuar.');
         setValues(old => ({ ...old, [item.companyId]: { ...preview, ...result } }));
         changed = true;
       } catch (error) {
-        if (origin.current === context) setValues(old => ({ ...old, [item.companyId]: { ...preview, status: 'INCERTO', reason: error.message || 'Resposta não confirmada. Confira a tentativa; não repita o cálculo.' } }));
+        if (origin.current === context) setValues(old => ({ ...old, [item.companyId]: { ...preview, status: dispatched ? 'INCERTO' : 'ERROR', reason: error.message || 'Resposta não confirmada. Confira a tentativa; não repita o cálculo.' } }));
       }
     }
     lock.current = false;
@@ -80,7 +84,7 @@ export function OperationsCalculationBatch({ api, items, competencia, footerTarg
     } catch (error) { if (origin.current === context) setMessage(error.message || 'Não foi possível consultar a tentativa.'); }
     finally { lock.current = false; if (origin.current === context) setBusy(false); }
   }
-  const footer = <div className="operacoes-stage-footer"><span>{phase === 'preview' ? `${eligible.length} aptas · ${items.length - eligible.length} bloqueadas` : `${items.length} selecionadas`}</span><Button variant="secondary" disabled={busy} onClick={onClose}>Voltar</Button>{phase === 'preview' && <Button disabled={busy || !eligible.length} onClick={execute}>Confirmar cálculo ({eligible.length})</Button>}</div>;
+  const footer = <div className="operacoes-stage-footer"><span>{phase === 'preview' ? `${eligible.length} aptas · ${items.length - eligible.length} bloqueadas` : `${items.length} selecionadas`}</span><Button variant="secondary" disabled={busy} onClick={onClose}>Voltar</Button>{phase === 'preview' && <Button disabled={disabled || busy || !eligible.length} onClick={execute}>Confirmar cálculo ({eligible.length})</Button>}</div>;
   return <section aria-label="Cálculo de NFS-e selecionadas" className="operacoes-conferencia-detalhe">
     <h3 ref={heading} tabIndex={-1}>Calcular empresas selecionadas</h3>
     {phase === 'preview' && <p>Competência {competencia}. Busca de NFS-e e simulação do imposto podem consumir consultas. O cálculo não confirma nem transmite a apuração.</p>}

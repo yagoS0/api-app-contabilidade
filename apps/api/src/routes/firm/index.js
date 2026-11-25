@@ -5625,7 +5625,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     // Lista empresas que o usuário pode ver
     const companiesWhere = isAdminLike
       ? { status: { not: "SUSPENSA" } }
-      : { status: { not: "SUSPENSA" }, firmAccess: { some: { userId } } };
+      : { status: { not: "SUSPENSA" }, companyFirmAccess: { some: { userId, status: "ACTIVE" } } };
 
     if (search) {
       companiesWhere.OR = [
@@ -5911,7 +5911,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
    * ids que EXISTEM na carteira", que era a intenção certa com a query errada.
    *
    * Consequência real: um usuário do escritório A, mandando ids do escritório B, disparava consulta
-   * ao ADN e **baixava os XMLs** de empresas que não são dele. Multi-tenancy por `firmAccess` é
+   * ao ADN e **baixava os XMLs** de empresas que não são dele. Multi-tenancy por `companyFirmAccess` ativo é
    * inegociável neste projeto, e este era o furo.
    *
    * A cláusula correta já existia 250 linhas acima, em `/firm/apuracao` — mas escrita inline, e a
@@ -5926,7 +5926,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const userId = String(req.auth?.user?.id || "");
     const where = { id: { in: ids } };
     // admin/contador enxergam a carteira toda — mesma regra de `/companies` e `/firm/apuracao`.
-    if (!isAdminLikeUser(req.auth?.user)) where.firmAccess = { some: { userId } };
+    if (!isAdminLikeUser(req.auth?.user)) where.companyFirmAccess = { some: { userId, status: "ACTIVE" } };
     const existentes = await prisma.portalClient.findMany({ where, select: { id: true } });
     return existentes.map((c) => c.id);
   }

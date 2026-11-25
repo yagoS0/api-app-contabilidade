@@ -81,7 +81,7 @@ const ADMIN = { id: "user-admin", role: "admin", accountType: "FIRM", email: "ad
 
 // As duas empresas existem no banco; o STAFF só tem `CompanyFirmAccess` na primeira.
 const EXISTEM = new Set([MINHA, OUTRA]);
-const ACESSO_DO_STAFF = new Set([MINHA]);
+const ACESSO_DO_STAFF = new Map([[MINHA, "ACTIVE"]]);
 
 function montarApp(usuario) {
   const app = express();
@@ -96,20 +96,23 @@ function montarApp(usuario) {
 }
 
 // O dublê de `portalClient.findMany` responde às DUAS formas de `where` do arquivo: a de
-// `idsDaCarteira` (com `firmAccess`, o filtro de carteira) e a do enriquecimento por razão social
+// `idsDaCarteira` (com `companyFirmAccess` ativo, o filtro de carteira) e a do enriquecimento por razão social
 // (sem ele). Quem não é admin/contador só recebe de volta o que tem acesso.
 function bancoDeEmpresas() {
   prisma.portalClient.findMany.mockImplementation(async ({ where }) => {
-    const pedidos = where?.id?.in || [];
-    const restrito = Boolean(where?.firmAccess);
+    if (where && Object.prototype.hasOwnProperty.call(where, 'firmAccess')) throw Error('Unknown argument firmAccess: PortalClient uses companyFirmAccess');
+    const pedidos = where?.id?.in || [...EXISTEM];
+    const filtro = where?.companyFirmAccess?.some;
+    if (where?.companyFirmAccess && (!filtro || filtro.userId !== STAFF.id || filtro.status !== 'ACTIVE')) throw Error('Carteira requires current user and ACTIVE link');
     return pedidos
-      .filter((id) => EXISTEM.has(id) && (!restrito || ACESSO_DO_STAFF.has(id)))
-      .map((id) => ({ id, razao: `Razão de ${id}` }));
+      .filter(id => EXISTEM.has(id) && (!filtro || ACESSO_DO_STAFF.get(id) === filtro.status))
+      .map(id => ({ id, razao: `Razão de ${id}` }));
   });
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+  ACESSO_DO_STAFF.clear(); ACESSO_DO_STAFF.set(MINHA, "ACTIVE");
   bancoDeEmpresas();
 });
 
@@ -405,5 +408,69 @@ describe("B — o ZIP das notas e as rotas gêmeas", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.jobs.map((j) => j.jobId)).toEqual(["captura-minha"]);
+  });
+});
+
+
+describe('relação Prisma e vigência de acesso no polling', () => {
+  beforeEach(() => {
+    prisma.manualTask.updateMany.mockResolvedValue({ count: 0 });
+  });
+  test('dublê rejeita o nome inexistente em vez de validar um contrato fictício', async () => {
+    await expect(prisma.portalClient.findMany({where:{firmAccess:{some:{userId:STAFF.id}}}})).rejects.toThrow('Unknown argument firmAccess');
+  });
+  test.each(['REMOVED', 'INACTIVE', null])('tarefa aceita fica indisponível após vínculo %s, sem perder resultado', async status => {
+    const persisted={id:'accepted-task',ownerId:STAFF.id,companyIds:[MINHA],status:'done',result:{ok:true,saved:'evidence'},responseStatus:200};
+    prisma.manualTask.findFirst.mockImplementation(async ({where}) => where.ownerId===persisted.ownerId ? persisted : null);
+    const app=montarApp(STAFF);
+    const valid=await request(app).get('/firm/jobs/tarefas/accepted-task').expect(200);
+    expect(valid.body.task.result).toEqual(persisted.result);
+    expect(prisma.portalClient.findMany).toHaveBeenCalledWith({where:{id:{in:[MINHA]},companyFirmAccess:{some:{userId:STAFF.id,status:'ACTIVE'}}},select:{id:true}});
+    if(status)ACESSO_DO_STAFF.set(MINHA,status);else ACESSO_DO_STAFF.delete(MINHA);
+    const denied=await request(app).get('/firm/jobs/tarefas/accepted-task').expect(404);
+    expect(denied.body).toEqual({ok:false,error:'task_not_found'});
+    expect(persisted.result).toEqual({ok:true,saved:'evidence'});
+    expect(prisma.manualTask.findFirst).toHaveBeenLastCalledWith({where:{id:'accepted-task',ownerId:STAFF.id}});
+    expect(criarBatchJob).not.toHaveBeenCalled();expect(runApuracaoBatchOnce).not.toHaveBeenCalled();
+  });
+  test('um vínculo removido em job misto impede revelar o resultado inteiro', async () => {
+    ACESSO_DO_STAFF.set(OUTRA,'REMOVED');
+    prisma.manualTask.findFirst.mockResolvedValue({id:'mixed',ownerId:STAFF.id,companyIds:[MINHA,OUTRA],status:'done',result:{private:'do-not-leak'}});
+    const res=await request(montarApp(STAFF)).get('/firm/jobs/tarefas/mixed').expect(404);
+    expect(JSON.stringify(res.body)).not.toContain('do-not-leak');
+  });
+  test('dono diferente é recusado mesmo com empresa autorizada', async () => {
+    const persisted={id:'other-owner',ownerId:CONTADOR.id,companyIds:[MINHA],status:'done'};
+    prisma.manualTask.findFirst.mockImplementation(async ({where}) => where.ownerId===persisted.ownerId ? persisted : null);
+    await request(montarApp(STAFF)).get('/firm/jobs/tarefas/other-owner').expect(404);
+    expect(prisma.manualTask.findFirst).toHaveBeenCalledWith({where:{id:'other-owner',ownerId:STAFF.id}});
+  });
+  test.each([ADMIN,CONTADOR])('papel global $role conserva leitura da tarefa própria sem vínculo', async user => {
+    ACESSO_DO_STAFF.clear();
+    prisma.manualTask.findFirst.mockResolvedValue({id:'global',ownerId:user.id,companyIds:[OUTRA],status:'done',result:{ok:true},responseStatus:200});
+    const res=await request(montarApp(user)).get('/firm/jobs/tarefas/global').expect(200);
+    expect(res.body.task.result).toEqual({ok:true});
+    expect(prisma.manualTask.findFirst).toHaveBeenCalledWith({where:{id:'global',ownerId:user.id}});
+    expect(prisma.portalClient.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('lista de apuração usa vínculo ativo existente no schema', () => {
+  beforeEach(() => {
+    for(const model of [prisma.apuracaoSnapshot,prisma.companyMonthlyCircular,prisma.portalInvoice,prisma.portalSyncState]) model.findMany.mockResolvedValue([]);
+    prisma.pendenciaPosFechamento.groupBy.mockResolvedValue([]);
+  });
+  test.each(['ACTIVE','REMOVED','INACTIVE'])('STAFF com vínculo %s recebe somente carteira vigente', async status => {
+    ACESSO_DO_STAFF.set(MINHA,status);
+    const res=await request(montarApp(STAFF)).get('/firm/apuracao?competencia=2026-10').expect(200);
+    expect(res.body.items.map(item=>item.portalClientId)).toEqual(status==='ACTIVE'?[MINHA]:[]);
+    expect(prisma.portalClient.findMany).toHaveBeenCalledWith(expect.objectContaining({where:{status:{not:'SUSPENSA'},companyFirmAccess:{some:{userId:STAFF.id,status:'ACTIVE'}}}}));
+    expect(criarBatchJob).not.toHaveBeenCalled();expect(runApuracaoBatchOnce).not.toHaveBeenCalled();
+  });
+  test.each([ADMIN,CONTADOR])('lista global $role preserva o universo sem filtro de vínculo', async user => {
+    ACESSO_DO_STAFF.clear();
+    const res=await request(montarApp(user)).get('/firm/apuracao?competencia=2026-10').expect(200);
+    expect(res.body.items.map(item=>item.portalClientId)).toEqual([MINHA,OUTRA]);
+    expect(prisma.portalClient.findMany).toHaveBeenCalledWith(expect.objectContaining({where:{status:{not:'SUSPENSA'}}}));
   });
 });
