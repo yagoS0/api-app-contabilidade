@@ -455,3 +455,17 @@ test('cliente sem vínculo não lê apuração; competência inválida não alca
   expect(prisma.apuracaoSnapshot.findUnique).not.toHaveBeenCalled();
   expect((await request(montarApp(usuarioCliente('OWNER'))).get(`/client/companies/${PORTAL_ID}/nfse/periodo?competencia=2026-13`)).status).toBe(400);
 });
+
+test("cliente: endereço da obra normalizado conserva empresa autorizada pelo path", async () => {
+  cenario.emissaoClienteLiberada = true;
+  const end = { CEP: "01551-020", xLgr: " Rua obra ", nro: "0", xBairro: "Centro" };
+  const r = await emitir(usuarioCliente("OWNER"), { ...PAYLOAD, companyId: "outra", obra: { end } });
+  expect(r.status).toBe(201);
+  expect(NfseService.issue).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ companyId: LEGACY_ID, obra: { end: { ...end, CEP: "01551020", xLgr: "Rua obra" } } }) }));
+});
+test("cliente: endereço exterior não chega ao serviço", async () => {
+  cenario.emissaoClienteLiberada = true;
+  const r = await emitir(usuarioCliente("OWNER"), { ...PAYLOAD, obra: { endExt: {} } });
+  expect(r.status).toBe(400);
+  expect(NfseService.issue).not.toHaveBeenCalled();
+});

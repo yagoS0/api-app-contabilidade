@@ -36,7 +36,7 @@ import { localDaPrestacao } from './localDaPrestacao.js';
 import { pAliqDaDps } from "./pAliqDaDps.js";
 import { tributacaoMunicipalDoPerfil } from "./tributacaoMunicipalDoPerfil.js";
 import { xmlRetencoesComplementares } from "./retencoesComplementares.js";
-import { xmlDadosEspeciais } from "./dadosEspeciaisDaNota.js";
+import { xmlDadosEspeciais, validarEnderecoDaObra } from "./dadosEspeciaisDaNota.js";
 import { retencaoFederalDaDps } from "./retencaoFederalDaDps.js";
 import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
@@ -2051,6 +2051,7 @@ export class NfseService {
         err.correcao = retFedPreVoo.correcao;
         throw err;
       }
+      if (data.obra?.end) validarEnderecoDaObra(data.obra, codigoServicoDaNota);
     } catch (err) {
       return recusaAntesDeEscrever(err, "cadastro da empresa");
     }

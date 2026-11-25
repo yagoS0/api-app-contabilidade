@@ -1,5 +1,6 @@
 import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
 import { cpfTemDvValido } from "../../utils/cpf.js";
+import { normalizarObraDaNota } from "@contabilidade/shared";
 
 const OBRIGAM_OBRA = new Set(["070201", "070202", "070401", "070501", "070502", "070601", "070602", "070701", "070801", "071701", "071901", "141403", "141404"]);
 const texto = (v) => typeof v === "string" ? v.trim() : "";
@@ -10,12 +11,16 @@ function objeto(v, nome, chaves) {
 }
 
 export function normalizarObra(v) {
-  if (v == null) return null;
-  objeto(v, "Obra", ["cObra", "cCIB", "inscImobFisc"]);
-  const r = Object.fromEntries(Object.entries(v).map(([k, val]) => [k, texto(val)]).filter(([, val]) => val));
-  if (Boolean(r.cObra) === Boolean(r.cCIB)) throw new Error("Obra: informe CNO/CEI ou CIB, exclusivamente um identificador.");
-  if ((r.cObra && r.cObra.length > 30) || (r.cCIB && r.cCIB.length !== 8) || (r.inscImobFisc && r.inscImobFisc.length > 30)) throw new Error("Obra: CNO/CEI e inscrição têm até 30 caracteres; CIB tem 8 caracteres.");
-  return r;
+  return normalizarObraDaNota(v);
+}
+
+// Somente a alternativa nova: não muda a precedência dos identificadores legados.
+export function validarEnderecoDaObra(obra, cTribNac) {
+  try {
+    const o = normalizarObra(obra);
+    if (o?.end && !OBRIGAM_OBRA.has(cTribNac) && cTribNac !== "990101") throw new Error("Endereço da obra não permitido para este serviço (E0372).");
+    return o;
+  } catch (err) { throw Object.assign(err, { code: "NFSE_DADOS_ESPECIAIS_INVALIDOS" }); }
 }
 
 export function normalizarDestinatario(v) {
@@ -32,9 +37,10 @@ export function xmlDadosEspeciais({ obra, destinatario }, { cTribNac, ibscbsInfo
   try {
     const o = normalizarObra(obra), d = normalizarDestinatario(destinatario);
     if (OBRIGAM_OBRA.has(cTribNac) && !o) throw new Error("Informe os dados da obra para este serviço (E0370).");
+    if (o?.end) validarEnderecoDaObra(o, cTribNac);
     if (d && !ibscbsInformado) throw new Error("Destinatário diferente do tomador exige IBS/CBS configurado e ativo.");
     return {
-      obra: o ? `<obra>${o.inscImobFisc ? `<inscImobFisc>${esc(o.inscImobFisc)}</inscImobFisc>` : ""}${o.cObra ? `<cObra>${esc(o.cObra)}</cObra>` : `<cCIB>${esc(o.cCIB)}</cCIB>`}</obra>` : "",
+      obra: o?.end ? `<obra>${o.inscImobFisc ? `<inscImobFisc>${esc(o.inscImobFisc)}</inscImobFisc>` : ""}<end>${Object.entries(o.end).map(([k, v]) => `<${k}>${esc(v)}</${k}>`).join("")}</end></obra>` : o ? `<obra>${o.inscImobFisc ? `<inscImobFisc>${esc(o.inscImobFisc)}</inscImobFisc>` : ""}${o.cObra ? `<cObra>${esc(o.cObra)}</cObra>` : `<cCIB>${esc(o.cCIB)}</cCIB>`}</obra>` : "",
       indDest: d ? "1" : "0",
       destinatario: d ? `<dest><${d.cnpjCpf.length === 11 ? "CPF" : "CNPJ"}>${d.cnpjCpf}</${d.cnpjCpf.length === 11 ? "CPF" : "CNPJ"}><xNome>${esc(d.nome)}</xNome></dest>` : "",
     };

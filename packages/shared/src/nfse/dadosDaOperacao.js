@@ -1,8 +1,10 @@
 import { normalizarDocumento, documentoTemFormato } from "@contabilidade/shared/documentos-fiscais";
+import { normalizarObraDaNota, CAMPOS_ENDERECO_OBRA, ENDERECO_OBRA_VAZIO } from "./obraDaNota.js";
 // Valores desta nota, nunca inferidos do cadastro ou reaproveitados de outra emissão.
 export const OPERACAO_VAZIA = {
   vRetIRRF: "", vRetCP: "", obraTipo: "cObra", obraCodigo: "", obraInscricao: "",
   destinatarioDoc: "", destinatarioNome: "",
+  ...ENDERECO_OBRA_VAZIO,
 };
 
 function cpfValido(doc) {
@@ -33,7 +35,11 @@ export function conferirDadosDaOperacao(form, valorServicos) {
   if (Object.keys(retencoes).length) payload.retencoesComplementares = retencoes;
   if (totalRetido && totalRetido >= valorServicos) erros.push("A soma das retenções deve ser menor que o valor do serviço.");
   const codigo = texto("obraCodigo"), inscricao = texto("obraInscricao");
-  if (codigo || inscricao) {
+  if (form.obraTipo === "end") {
+    try {
+      payload.obra = normalizarObraDaNota({ ...(inscricao ? { inscImobFisc: inscricao } : {}), end: Object.fromEntries(CAMPOS_ENDERECO_OBRA.map(([k]) => [k, form[`obra${k}`] ?? ""])) });
+    } catch (err) { erros.push(err.message); }
+  } else if (codigo || inscricao) {
     const tipo = texto("obraTipo");
     if (!["cObra", "cCIB"].includes(tipo) || !codigo || (tipo === "cCIB" ? codigo.length !== 8 : codigo.length > 30) || inscricao.length > 30) {
       erros.push("Obra: informe CNO/CEI com até 30 caracteres ou CIB com 8; inscrição imobiliária tem até 30 caracteres.");
