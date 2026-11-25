@@ -29,7 +29,7 @@ Resultado: T156.7 CALCULATED com snapshot/vínculo FS12; T156.2 recusa MSG_ISN_0
 
 Evidências no diretório da campanha:
 - `browser-batch-v2-299381a5-2ce4-4a6d-b79e-5200ce6a1bca/report.json`: PASS, lote e recarga por navegador/API/PG reais.
-- `operations-batch-v2-readback-bd5a50cd-e734-4d41-9a97-c281ff1aaa7a.json` e `operations-batch-v2-readback-354164e6-7cf2-42f8-9e69-b2cf3489ae5f.json`: PASS, custódia/envelope/FS12/snapshot e preservação após reinício. A ordem de referência está no campo previousEvidence do segundo relatório.
+- `operations-batch-v2-readback-c51f4630-c885-4b82-9578-e7bf8ec3fd85.json` e `operations-batch-v2-readback-354164e6-7cf2-42f8-9e69-b2cf3489ae5f.json`: PASS, custódia/envelope/FS12/snapshot e preservação após reinício. A ordem de referência está no campo previousEvidence do segundo relatório.
 - `operations-batch-reconciliation-reconcile-e4f78407-9939-4f0b-9b5d-56b177f3a5cc.json` e `operations-batch-reconciliation-after-restart-98ef84ea-6748-4c83-98d0-4ae0c88c59db.json`: PASS, recusa causal e desconhecido preservados sem reenvio.
 - `.altan-governance/e2-validation/final-focal/batch-api.json`: 47 testes aprovados (CalculationService/Recovery).
 - `.altan-governance/e2-validation/final-focal/batch-web.json`: 32 testes aprovados (Batch/Recovery/Selection). Nenhuma suíte integral executada.
