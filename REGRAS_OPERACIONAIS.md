@@ -845,3 +845,45 @@ Até PA10/2026, preservar comportamento legado. Novos atos afetados em PA11/12/2
 Autorizadas somente implementação e migração aditiva em desenvolvimento/PostgreSQL16 descartável. Nenhum merge, deploy, migração produtiva, chamada fiscal real, reativação de Railway ou B3.3. O contrato de escrita do vínculo/fatos é preparado e testado com fixtures; enquanto o despacho afetado permanecer bloqueado, não fabricar cálculos ou tentativas para povoá-lo.
 
 Cenários: T149 — vínculo empresa/PA/revisão/cálculo imutável e sem backfill; T150 — replay/conflito/rollback e duas conexões; T151 — autorização revogada, Company remapeada e contexto obsoleto; T152 — recálculo/reabertura preservam vínculo sem atribuir número declaratório anterior; T153 — tentativa/incerto/confirmado distintos e prova correlacionada, sem redespacho; T154 — PA10 preservado,11/12 bloqueados e2027 pendente em todos os despachos; T155 — consultas históricas e assinaturas locais sem escrita/transporte. Registro não atesta execução dos testes. Impacto R01/R02/R04–R06/R19/R20/R22; preserva segurança275, pagamentos, documentos, provisões, fechamento e política de recuperação.
+
+## 38. E2 de Apuração e integração com Operações — decisão de 25/11/2026
+
+Origem: autorização expressa do proprietário no anexo “ALTAN — Aprovação técnica da E1 e autorização da E2”, recebida em 25/11/2026. O PR317, SHA 3bb3f0bba27678268fc42a8be00637ab21b97d9a, foi aprovado somente tecnicamente. As pendências funcionais da matriz E1 permanecem abertas. Esta decisão autoriza desenvolvimento e validação E2; não autoriza merge, deploy, migração produtiva, consultas pagas, transmissões ou retificações reais. O registro e seu hash não comprovam implementação, testes ou homologação.
+
+**Rotina normal em Operações.** Calcular, recalcular, apurar, conferir, transmitir e retificar o Simples Nacional devem utilizar as mesmas operações e fontes de verdade da Apuração, individualmente e em lote quando aplicável. Apuração permanece disponível para análise detalhada, configuração e exceções, sem passagem obrigatória na rotina normal. Reutilizar a entrada e confirmação manual FS12 existentes também no contexto de Operações; não criar cadastro de folha paralelo, integração DP/eSocial/Drive/Contabilidade ou segunda fonte de verdade. Confirmar folha atualiza elegibilidade conforme capacidades realmente implementadas e comprovadas, sem confirmar cálculo ou transmitir implicitamente.
+
+**Substituição delimitada das seções36/37.** Ficam superadas, apenas para a E2 autorizada, a proibição de iniciar B3.3, a localização exclusiva da entrada FS12 na aba Apuração e a proibição absoluta de evoluir payload/seleção SERPRO. Evolução do contrato fiscal exige primeiro fonte oficial vigente e definição por cenário de cálculo, simulação, entrega e consulta. Não presume efeitos idênticos, necessidade universal de nova API mensal ou suporte irrestrito à série completa explícita. Preservar regras tributárias de Fator R, III/V e CAIXA/COMPETENCIA enquanto não houver fundamento aplicável para alteração. T154 permanece critério histórico de bloqueio enquanto faltar capacidade comprovada; eventual substituição da guarda global exige provar liberação das combinações implementadas/homologadas e recusa das demais. Não liberar por remoção simples de data/flag. PA2027 mantém critérios e homologação próprios.
+
+**Identidade, coordenação e custódia.** Vincular empresa, competência, intenção, revisão fiscal/FS12, envelope enviado, reserva e resposta efetiva. Reutilizar política de janela, revisões imutáveis, vínculo B32 e reserva SERPRO; fatos de correlação não constituem segunda máquina de estados. Dados ausentes não viram zero. Mudança material de folha/receita invalida aprovações dependentes. Revalidar antes do despacho; guardar resposta recuperável e impedir promoção incompatível. Retorno tardio permanece rastreável na revisão de origem. Concorrência, repetição, falha local e reinício não autorizam repetir efeito fiscal incerto.
+
+**Recuperação efetiva.** Distinguir literalmente: não transmitida; em processamento; rejeitada; resultado desconhecido; confirmada. Tratar timeout antes/depois da recepção, aceite externo sem retorno, resposta parcialmente persistida, falha do banco, reinício de API/worker, resposta de revisão antiga e consulta inconclusiva. Usar evidência fiscal admissível e mecanismos oficiais. Nunca retransmitir automaticamente resultado desconhecido. Quando a reconciliação automática não resolver, oferecer procedimento operacional com permissão, prova admissível, validação de identidade/revisão e transição auditada. Ausência temporária em índice ou passagem do tempo não comprova não recepção nem libera repetição.
+
+**Estados e pendências.** Preservar estado fiscal, operacional, financeiro e contábil separados. Confirmação fiscal não é revertida/ocultada por falha documental ou contábil posterior; registrar pendência própria vinculada à declaração. Operações mostra aptidão para cálculo/apuração/transmissão, folha pendente, resultado desconhecido, confirmação e intervenção, com motivo específico e ação possível. R25/R26, histórico, pagamentos e fechamento contábil permanecem protegidos.
+
+**Matriz obrigatória FS12.** Cada linha precisa de teste identificado e evidência; nomes abaixo são critérios, não atestados:
+| ID | Cenário | Responsável e aceite mínimo |
+| --- | --- | --- |
+| T156.1 | Histórico completo | Fiscal: remessa conforme contrato, revisão e valores rastreáveis |
+| T156.2 | Histórico parcial | Fiscal: meses faltantes explícitos, sem completar com zero |
+| T156.3 | Histórico ausente | Fiscal: exigir informação/evidência válida, sem histórico inventado |
+| T156.4 | Empresa recém-constituída | Fiscal: janela de abertura fundada em contrato vigente |
+| T156.5 | Sem folha | Fiscal: ausência de folha explicitamente confirmada, distinta de dado ausente |
+| T156.6 | Valores zero | Fiscal: zeros explícitos preservados em remessa e histórico |
+| T156.7 | Sujeita ao Fator R | Fiscal/Operações: folha/revisão vinculadas e fluxo diretamente na central |
+| T156.8 | Não sujeita ao Fator R | Fiscal: obrigação declaratória FS12 avaliada sem presumir dispensa |
+| T157.1 | Divergência local/fiscal | Fiscal: conflito identificado; não substituir evidência silenciosamente |
+| T157.2 | Folha alterada após cálculo | Fiscal/Operações: autorização antiga invalidada |
+| T157.3 | Receita alterada após cálculo | Fiscal/Operações: cálculo antigo recusado sem despacho |
+| T157.4 | Revisão alterada antes de transmitir | Fiscal: revalidação impede efeito incompatível |
+| T158.1 | Retorno tardio | Fiscal/dados: custódia preservada, promoção incompatível recusada |
+| T158.2 | Transmissão interrompida | Fiscal/dados: recuperação após reinício sem repetição desconhecida |
+| T159.1 | Processamento simultâneo | Fiscal/dados: processos independentes, uma reserva/despacho válido |
+| T159.2 | Lote com falhas parciais | Operações: isolamento por empresa e resultado persistido após recarga |
+| T160 | Retificação sujeita à FS12 | Fiscal: revisão, intenção e custódia corretas; efeitos financeiros/contábeis completos permanecem critérios E3 |
+
+T161 — testes integrados navegador/API/PostgreSQL, recarga completa, reinício real de processo, atomicidade, idempotência, isolamento, revisão obsoleta e integrações PostgreSQL relevantes antes ignoradas. Simular somente a fronteira fiscal quando a prova usar provedor local, declarando essa limitação. Executar regressão de Guias e Contabilização e preservar catálogo/limites existentes.
+
+T162 — manter cada pendência E1 com etapa responsável, aceite e evidência: lote de cálculo persistido, Fator R/zero em Operações, Simples externo, navegador/API/banco, PostgreSQL relevante e recarga são entregas de integração da E2; homologação com provedor real e permissões produtivas ficam abertas para etapa específica após autorização concreta, sem alegar conclusão por simulação. Preservar os critérios E3 de positivo/zero, aumento/redução, DAS pago, mês fechado, sucessivas retificações, histórico integral e reconciliação de efeitos.
+
+**Integração e encerramento.** E2 pode usar branch/PR dependente de317 preservando seus commits, sem merge antecipado implícito. Aprovação técnica E2 exige integração FS12 no escopo definido, comandos/revisões corretos, custódia recuperável, recusa de promoção incompatível, reconciliação implementada, estados em Operações e testes integrados aprovados. Entregar matriz, PR/SHA/CI, evidências, riscos, pendências e plano E3. Impacto: R01/R02/R04–R06/R13–R16/R19–R22 e seções36/37; R25/R26 preservadas. Nenhum gate ou limite de governança é alterado.
+
